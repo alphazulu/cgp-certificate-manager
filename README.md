@@ -105,3 +105,7 @@ Install the optional dependency with sudo apt install whiptail. Run sudo bash in
 ### Leaving the setup wizard
 
 The first two main-menu entries are Save and exit and Exit without saving. The main-menu Exit button and Escape discard changes only after confirmation when settings have changed. Nested menus have a Back button. Ctrl+C cancels the wizard. Cancelling interactive installation stops before copying application files or systemd units. The standalone editor returns exit status 3 on cancellation, 0 after saving.
+
+## Administrative console (2.1 development)
+
+Run `sudo cgp-letsencrypt --console` after installation, or `sudo python3 -m cgp_cert_manager.console` from a checkout. The curses console uses the existing CLI without holding its operation lock. It displays an on-demand status snapshot, systemd timer information, domain details, SANs, and service logs. Enter opens domain actions; F2 opens the whiptail editor; F5 refreshes; F6 opens logs; F7 manages the timer; F8 verifies all domains; Q, Escape or F10 exits. Certificate mutations and timer changes require confirmation. Commands execute synchronously with normal terminal output. The current console is English; actual TLS verification requires an explicit verify action, not merely a ready status.

@@ -2,6 +2,8 @@
 
 ## 2.1.0 (development)
 
+- Optional curses administration console with domain details, certificate operations, journal and timer controls.
+
 - Optional whiptail setup and post-install configuration editor.
 - Explicit domain opt-in for new installations.
 - Stage credentials and settings before save; read-only connectivity tests.
