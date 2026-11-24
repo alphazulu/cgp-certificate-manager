@@ -302,6 +302,23 @@ class CLIFlowTests(unittest.TestCase):
             with self.assertRaisesRegex(core.Error,'CRITICAL'):
                 self.invoke('--rollback',NAME)
 
+    def test_deferred_issue_continues_next_domain(self):
+        second=dict(self.domain,cgp_domain='second.com',cert_name='second.com',names=['second.com'])
+        self.m['discover'].return_value=[self.domain,second]
+        self.set_state({NAME:{'backoff':{'issue':{'retry_at':4102444800}}}})
+        self.assertEqual(self.invoke(),1)
+        self.assertEqual(self.m['issue'].call_count,1)
+        self.assertEqual(self.m['issue'].call_args.args[1],second)
+        self.m['deploy'].assert_called_once_with(self.cfg,second)
+
+    def test_deferred_deploy_continues_next_domain(self):
+        second=dict(self.domain,cgp_domain='second.com',cert_name='second.com',names=['second.com'])
+        self.m['discover'].return_value=[self.domain,second]
+        self.set_state({NAME:{'backoff':{'deploy':{'retry_at':4102444800}}}})
+        self.assertEqual(self.invoke('--install-only'),1)
+        self.m['issue'].assert_not_called()
+        self.m['deploy'].assert_called_once_with(self.cfg,second)
+
 class HookNotifyTests(unittest.TestCase):
     def test_auth_and_cleanup(self):
         z={'example.com':{'id':'a'*32,'credentials':'one.ini'}}
