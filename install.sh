@@ -13,7 +13,16 @@ if [[ "$mode" == --auto && ! -f /etc/cgp-letsencrypt/config.json && -t 0 && -t 1
 fi
 if [[ "$mode" == --tui ]]; then
     command -v whiptail >/dev/null || { echo 'Install whiptail: apt install whiptail'; exit 1; }
-    python3 -m cgp_cert_manager.tui --setup
+    if python3 -m cgp_cert_manager.tui --setup; then
+        :
+    else
+        rc=$?
+        if [[ $rc -eq 3 || $rc -eq 130 ]]; then
+            echo 'Installation cancelled; no application files or systemd units changed.'
+            exit 0
+        fi
+        exit "$rc"
+    fi
 fi
 test -f /etc/cgp-letsencrypt/config.json || { echo 'Create configuration or run install.sh --tui'; exit 1; }
 [[ $(pwd -P) != /opt/cgp-certificate-manager ]] || { echo "Extract into /tmp first"; exit 1; }

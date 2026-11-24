@@ -18,6 +18,9 @@ from . import core
 
 LANGUAGE='en'
 
+SAVED=0
+CANCELLED=3
+
 RU={
 'Select a configuration section':'Выберите раздел настроек',
 'CommuniGate connection':'Подключение CommuniGate',
@@ -28,6 +31,9 @@ RU={
 'SMTP notifications':'Уведомления SMTP',
 'Read-only connection diagnostics':'Диагностика подключения',
 'Save and exit':'Сохранить и выйти',
+'Exit without saving':'Выйти без сохранения',
+'Exit':'Выход','Back':'Назад','Select':'Выбрать','OK':'ОК',
+'Exit without saving changes?':'Выйти без сохранения изменений?',
 'Discard and exit':'Отменить и выйти',
 'Renewal schedule':'Расписание продления',
 'Local CLI URL':'Локальный URL CLI',
@@ -63,11 +69,16 @@ def tr(text):
 class Cancel(Exception):
     pass
 
-def dialog(kind, *args):
+def dialog(kind, *args, main_menu=False):
     # whiptail writes selections to stderr; use a separate output descriptor
     # so the interface itself stays attached to the terminal.
     with tempfile.TemporaryFile() as output:
-        p = subprocess.run(['whiptail', '--title', 'CGP Certificate Manager',
+        buttons = []
+        if kind == '--menu':
+            buttons = ['--ok-button', tr('Select'), '--cancel-button', tr('Exit' if main_menu else 'Back')]
+        elif kind == '--inputbox':
+            buttons = ['--ok-button', tr('OK'), '--cancel-button', tr('Back')]
+        p = subprocess.run(['whiptail', '--title', 'CGP Certificate Manager', *buttons,
                             '--output-fd', str(output.fileno()), kind, *[tr(str(a)) if i==0 or (kind=='--menu' and i>=5 and i%2==1) else str(a) for i,a in enumerate(args)]],
                            pass_fds=(output.fileno(),))
         if p.returncode != 0:
@@ -193,7 +204,32 @@ def setup():
         except BlockingIOError:
             print('Certificate manager is busy', file=sys.stderr)
             return 1
-        return edit()
+        try:
+            return edit()
+        except KeyboardInterrupt:
+            print('\nConfiguration cancelled.', file=sys.stderr)
+            return CANCELLED
+
+def main_menu():
+    # Always place exit actions first and fit smaller terminals.
+    size = shutil.get_terminal_size((80,24))
+    height = max(10, min(22, size.lines - 2))
+    width = max(38, min(78, size.columns - 2))
+    return dialog('--menu','Select a configuration section',height,width,max(2,height-8),
+                  '8','Save and exit','9','Exit without saving',
+                  '1','CommuniGate connection','2','Cloudflare accounts',
+                  '3','Domain selection and SAN settings','4','ACME and DNS settings',
+                  '5','TLS verification defaults','6','SMTP notifications',
+                  '7','Read-only connection diagnostics','10','Renewal schedule',
+                  '11','Language / Язык',main_menu=True)
+
+def confirm_exit(dirty):
+    if not dirty:
+        return True
+    try:
+        return yes('Exit without saving changes?')
+    except Cancel:
+        return False
 
 def edit():
     from .cli import migrate
@@ -201,6 +237,7 @@ def edit():
     global LANGUAGE
     LANGUAGE=cfg.get('tui_language','en')
     cfg.setdefault('auto_enable_new_domains', True)
+    original = copy.deepcopy(cfg)
     # Stage new tokens in a root-only temporary directory. No persistent
     # credential or configuration changes until explicit Save.
     with tempfile.TemporaryDirectory(prefix='cgp-tui-') as tmp:
@@ -218,14 +255,11 @@ def edit():
             return core.discover(test, core.zones(test))
         while True:
             try:
-                choice = dialog('--menu','Select a configuration section',22,78,12,
-                    '1','CommuniGate connection','2','Cloudflare accounts',
-                    '3','Domain selection and SAN settings','4','ACME and DNS settings',
-                    '5','TLS verification defaults','6','SMTP notifications',
-                    '7','Read-only connection diagnostics','8','Save and exit','9','Discard and exit',
-                    '10','Renewal schedule','11','Language / Язык')
-            except Cancel:
-                return 1
+                choice = main_menu()
+            except Cancel as exc:
+                if exc.args not in ((1,), (255,)):
+                    raise
+                choice = '9'
             try:
                 if choice == '1':
                     c = dict(cfg['communigate'])
@@ -311,15 +345,22 @@ def edit():
                     if not yes('Save settings? No certificates will be issued or installed.'):
                         continue
                     save_config(cfg,pending,{a['credentials'] for a in accounts()})
-                    msg('Configuration saved. Run --plan and --verify before enabling the timer.')
-                    return 0
+                    try:
+                        msg('Configuration saved. Run --plan and --verify before enabling the timer.')
+                    except Cancel:
+                        pass
+                    return SAVED
                 elif choice == '9':
-                    if yes('Discard unsaved changes?'): return 1
+                    if confirm_exit(cfg != original):
+                        return CANCELLED
             except Cancel:
                 continue
             except Exception as exc:
                 # API exceptions may contain sensitive request data; show type only.
-                msg('Operation failed: '+(str(exc) if isinstance(exc,ValueError) else type(exc).__name__))
+                try:
+                    msg('Operation failed: '+(str(exc) if isinstance(exc,ValueError) else type(exc).__name__))
+                except Cancel:
+                    pass
 
 if __name__ == '__main__':
     parser=argparse.ArgumentParser()

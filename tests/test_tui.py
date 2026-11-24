@@ -51,3 +51,26 @@ class TUITests(unittest.TestCase):
                 with self.assertRaises(OSError):
                     tui.save_config({'new':True},{str(target):stage},{str(target)})
             self.assertEqual(core.load(conf),{'old':True})
+
+    def test_exit_actions_visible_first(self):
+        with patch.object(tui,'dialog',return_value='9') as d:
+            self.assertEqual(tui.main_menu(),'9')
+            args=d.call_args.args
+            self.assertEqual(args[5:9],('8','Save and exit','9','Exit without saving'))
+            self.assertTrue(d.call_args.kwargs['main_menu'])
+    def test_exit_confirmation(self):
+        with patch.object(tui,'yes',return_value=False) as q:
+            self.assertTrue(tui.confirm_exit(False))
+            q.assert_not_called()
+            self.assertFalse(tui.confirm_exit(True))
+        with patch.object(tui,'yes',side_effect=tui.Cancel(255)):
+            self.assertFalse(tui.confirm_exit(True))
+    def test_exit_without_save(self):
+        for action in ('9',tui.Cancel(1),tui.Cancel(255)):
+            with self.subTest(action=action), patch.object(core,'load',return_value=tui.default_config()), patch.object(tui,'main_menu',side_effect=[action]), patch.object(tui,'save_config') as save:
+                self.assertEqual(tui.edit(),tui.CANCELLED)
+                save.assert_not_called()
+    def test_dirty_exit_declined_then_confirmed(self):
+        with patch.object(core,'load',return_value=tui.default_config()), patch.object(tui,'main_menu',side_effect=['11','9','9']), patch.object(tui,'dialog',return_value='ru'), patch.object(tui,'yes',side_effect=[False,True]), patch.object(tui,'save_config') as save:
+            self.assertEqual(tui.edit(),tui.CANCELLED)
+            save.assert_not_called()
