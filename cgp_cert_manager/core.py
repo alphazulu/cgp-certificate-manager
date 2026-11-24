@@ -257,12 +257,13 @@ def expected_chain(d):
 
 def tls_endpoints(d):
     # HTTPS/SNI is the default; other listeners are opt-in.
-    if d.get('tls'): return d['tls']
+    if d.get('tls') and all(e.get('sni') for e in d['tls']): return d['tls']
     names=set(n for n in d['names'] if not n.startswith('*.'))
     for alias in d.get('aliases',[]):
         n,e=dns_name(alias)
         if n and not n.startswith('*.') and any(n==x or covered(n,x) for x in d['names']): names.add(n)
-    return [{'host':'127.0.0.1','port':443,'sni':n} for n in sorted(names)]
+    templates=d.get('tls') or [{'host':'127.0.0.1','port':443}]
+    return [dict(ep,sni=n) for ep in templates for n in sorted(names)]
 
 def probe_tls(endpoint,expected):
     host=endpoint.get('host','127.0.0.1'); port=int(endpoint['port']); sni=endpoint['sni']; mode=endpoint.get('starttls')

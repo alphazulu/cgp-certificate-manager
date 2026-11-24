@@ -3,6 +3,8 @@ import argparse
 import copy
 import fcntl
 import getpass
+import warnings
+import uuid
 import json
 import os
 import re
@@ -14,6 +16,50 @@ from pathlib import Path
 
 from . import core
 
+LANGUAGE='en'
+
+RU={
+'Select a configuration section':'Выберите раздел настроек',
+'CommuniGate connection':'Подключение CommuniGate',
+'Cloudflare accounts':'Аккаунты Cloudflare',
+'Domain selection and SAN settings':'Домены и настройки SAN',
+'ACME and DNS settings':'Настройки ACME и DNS',
+'TLS verification defaults':'Настройки проверки TLS',
+'SMTP notifications':'Уведомления SMTP',
+'Read-only connection diagnostics':'Диагностика подключения',
+'Save and exit':'Сохранить и выйти',
+'Discard and exit':'Отменить и выйти',
+'Renewal schedule':'Расписание продления',
+'Local CLI URL':'Локальный URL CLI',
+'Administrator login':'Логин администратора',
+'Password (blank keeps current)':'Пароль (пустой ввод сохраняет текущий)',
+'Cloudflare API token':'API-токен Cloudflare',
+'Cloudflare credentials':'Учётные данные Cloudflare',
+'Add or replace account':'Добавить или заменить аккаунт',
+'Remove account':'Удалить аккаунт',
+'List accessible zones':'Доступные зоны',
+'Select domain':'Выберите домен',
+'Additional SANs (space separated)':'Дополнительные SAN через пробел',
+'Excluded names (space separated)':'Исключённые имена через пробел',
+'ACME account email':'Email аккаунта ACME',
+'DNS propagation seconds':'Ожидание DNS в секундах',
+'Enable DNS delegation preflight?':'Проверять делегирование DNS?',
+'Automatically enable newly discovered domains?':'Автоматически включать новые домены?',
+'Use automatic HTTPS/SNI checks on loopback port 443?':'Использовать автоматическую проверку HTTPS/SNI на порту 443?',
+'TLS host':'Хост TLS', 'TLS port':'Порт TLS', 'SNI hostname':'Имя SNI',
+'STARTTLS protocol (empty for direct TLS)':'Протокол STARTTLS (пусто для прямого TLS)',
+'Enable SMTP error notifications?':'Включить уведомления SMTP?',
+'Recipient':'Получатель','Sender':'Отправитель','Trusted SMTP host':'Доверенный SMTP-сервер','SMTP port':'Порт SMTP',
+'First daily run hour (0-23)':'Час первого запуска (0–23)',
+'Random delay in seconds':'Случайная задержка в секундах',
+'Save settings? No certificates will be issued or installed.':'Сохранить настройки? Сертификаты не будут выпущены или установлены.',
+'Discard unsaved changes?':'Отменить несохранённые изменения?',
+'Configuration saved. Run --plan and --verify before enabling the timer.':'Настройки сохранены. Перед включением таймера выполните --plan и --verify.',
+}
+
+def tr(text):
+    return RU.get(text,text) if LANGUAGE=='ru' else text
+
 class Cancel(Exception):
     pass
 
@@ -22,10 +68,10 @@ def dialog(kind, *args):
     # so the interface itself stays attached to the terminal.
     with tempfile.TemporaryFile() as output:
         p = subprocess.run(['whiptail', '--title', 'CGP Certificate Manager',
-                            '--output-fd', str(output.fileno()), kind, *map(str,args)],
+                            '--output-fd', str(output.fileno()), kind, *[tr(str(a)) if i==0 or (kind=='--menu' and i>=5 and i%2==1) else str(a) for i,a in enumerate(args)]],
                            pass_fds=(output.fileno(),))
         if p.returncode != 0:
-            raise Cancel()
+            raise Cancel(p.returncode)
         output.seek(0)
         return output.read().decode().strip()
 
@@ -39,12 +85,15 @@ def yes(text):
     try:
         dialog('--yesno', text, 10, 78)
         return True
-    except Cancel:
-        return False
+    except Cancel as exc:
+        if exc.args == (1,): return False
+        raise
 
 def secret(prompt):
     # getpass uses the controlling terminal, never the child process argv.
-    return getpass.getpass(prompt + ': ')
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', getpass.GetPassWarning)
+        return getpass.getpass(tr(prompt) + ': ')
 
 def number(value, lo, hi):
     n = int(value)
@@ -95,6 +144,40 @@ def write_token(path, value):
         if os.path.exists(tmp):
             os.unlink(tmp)
 
+def edit_tls(existing, domain=None):
+    if yes('Use automatic HTTPS/SNI checks on loopback port 443?'):
+        return []
+    old = existing[0] if existing else {}
+    host = ask('TLS host', old.get('host','127.0.0.1'))
+    port = number(ask('TLS port',str(old.get('port',443))),1,65535)
+    mode = ask('STARTTLS protocol (empty for direct TLS)',old.get('starttls',''))
+    if mode not in ('','smtp','imap','pop3','ldap','xmpp','xmpp-server'):
+        raise ValueError('Unsupported protocol')
+    ep = {'host':host,'port':port}
+    if domain:
+        sni = names(ask('SNI hostname',old.get('sni',domain)))
+        if len(sni)!=1 or sni[0].startswith('*.'):
+            raise ValueError('One concrete hostname required')
+        ep['sni']=sni[0]
+    if mode: ep['starttls']=mode
+    return [ep]
+
+def save_config(cfg, pending, active):
+    # Immutable credential paths: the old config never references a new token.
+    # The single atomic config replacement is the commit point.
+    from datetime import datetime, timezone
+    backup = core.STATE/'config-backups'/datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+    backup.mkdir(parents=True,mode=0o700)
+    if core.CONFIG.exists():
+        shutil.copy2(core.CONFIG,backup/'config.json')
+        (backup/'config.json').chmod(0o600)
+    for path, stage in pending.items():
+        if path not in active: continue
+        target=Path(path)
+        if target.exists(): raise ValueError('Credential path already exists')
+        write_token(target,core.token(stage))
+    core.atomic(core.CONFIG,cfg)
+
 def setup():
     if os.geteuid() != 0 or not sys.stdin.isatty() or not sys.stdout.isatty():
         print('TUI requires root and an interactive terminal', file=sys.stderr)
@@ -115,6 +198,8 @@ def setup():
 def edit():
     from .cli import migrate
     cfg = migrate(core.load(core.CONFIG, default_config()))
+    global LANGUAGE
+    LANGUAGE=cfg.get('tui_language','en')
     cfg.setdefault('auto_enable_new_domains', True)
     # Stage new tokens in a root-only temporary directory. No persistent
     # credential or configuration changes until explicit Save.
@@ -137,7 +222,8 @@ def edit():
                     '1','CommuniGate connection','2','Cloudflare accounts',
                     '3','Domain selection and SAN settings','4','ACME and DNS settings',
                     '5','TLS verification defaults','6','SMTP notifications',
-                    '7','Read-only connection diagnostics','8','Save and exit','9','Discard and exit')
+                    '7','Read-only connection diagnostics','8','Save and exit','9','Discard and exit',
+                    '10','Renewal schedule','11','Language / Язык')
             except Cancel:
                 return 1
             try:
@@ -168,17 +254,13 @@ def edit():
                         label = ask('Account identifier (letters, digits, hyphens)', 'main')
                         if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', label):
                             raise ValueError('Invalid account identifier')
-                        path = str(core.CONFIG.parent / ('cloudflare-'+label+'.ini'))
+                        path = str(core.CONFIG.parent / ('cloudflare-'+label+'-'+uuid.uuid4().hex+'.ini'))
                         value = secret('Cloudflare API token')
-                        stage = Path(tmp)/('cloudflare-'+label+'.ini')
+                        stage = Path(tmp)/Path(path).name
                         write_token(stage,value)
                         core.zones({'cloudflare_credentials':str(stage)})
                         pending[path] = stage
-                        cfg['cloudflare_accounts'] = [a for a in current if a['credentials'] != path and Path(a['credentials']).is_file()] + [{'credentials':path,'name':label}]
-                        # Keep other newly staged accounts too.
-                        for other in pending:
-                            if other != path and any(a['credentials']==other for a in current) and not any(a['credentials']==other for a in cfg['cloudflare_accounts']):
-                                cfg['cloudflare_accounts'].append({'credentials':other})
+                        cfg['cloudflare_accounts'] = [a for a in current if a.get('name') != label and (Path(a['credentials']).is_file() or a['credentials'] in pending)] + [{'credentials':path,'name':label}]
                         msg('Token accepted; zone read access verified. DNS edit access is tested by Certbot dry-run.')
                 elif choice == '3':
                     rows = discover()
@@ -186,12 +268,13 @@ def edit():
                         raise ValueError('No domains returned by CommuniGate')
                     chosen = dialog('--menu','Select domain',22,78,12,
                         *[v for d in rows for v in (d['cgp_domain'], ('ON' if d['enabled'] else 'OFF')+' | SAN '+str(len(d['names'])))])
-                    row = next(d for d in rows if d['cgp_domain']==chosen)
                     d = copy.deepcopy(next((d for d in cfg['domains'] if d['cgp_domain']==chosen),{'cgp_domain':chosen}))
                     d['enabled'] = yes('Manage '+chosen+' automatically?')
                     d['wildcard'] = yes('Include wildcard for '+chosen+'?')
                     d['extra_names'] = names(ask('Additional SANs (space separated)', ' '.join(d.get('extra_names',[]))))
                     d['exclude_names'] = names(ask('Excluded names (space separated)', ' '.join(d.get('exclude_names',[]))))
+                    if yes('Configure individual TLS verification for this domain?'):
+                        d['tls'] = edit_tls(d.get('tls',[]), chosen)
                     cfg['domains'] = [x for x in cfg['domains'] if x['cgp_domain']!=chosen]+[d]
                 elif choice == '4':
                     email = ask('ACME account email',cfg['email'])
@@ -200,20 +283,7 @@ def edit():
                     auto = yes('Automatically enable newly discovered domains?')
                     cfg.update(email=email,propagation_seconds=delay,dns_preflight=preflight,auto_enable_new_domains=auto)
                 elif choice == '5':
-                    if yes('Use automatic HTTPS/SNI checks on loopback port 443?'):
-                        cfg.pop('tls',None)
-                    else:
-                        host = ask('TLS host','127.0.0.1')
-                        port = number(ask('TLS port','443'),1,65535)
-                        sni = names(ask('SNI hostname'))
-                        if len(sni)!=1 or sni[0].startswith('*.'):
-                            raise ValueError('One concrete hostname required')
-                        mode = ask('STARTTLS protocol (empty for direct TLS)','')
-                        if mode not in ('','smtp','imap','pop3','ldap','xmpp','xmpp-server'):
-                            raise ValueError('Unsupported protocol')
-                        ep = {'host':host,'port':port,'sni':sni[0]}
-                        if mode: ep['starttls']=mode
-                        cfg['tls']=[ep]
+                    cfg['tls'] = edit_tls(cfg.get('tls',[]))
                 elif choice == '6':
                     if yes('Enable SMTP error notifications?'):
                         old = cfg.get('notifications',{})
@@ -227,24 +297,21 @@ def edit():
                 elif choice == '7':
                     rows=discover()
                     msg('CGP and Cloudflare read access OK.\n'+'\n'.join(d['cgp_domain']+': '+str(len(d['names']))+' SAN' for d in rows))
+                elif choice == '10':
+                    old=cfg.get('schedule',{})
+                    hour=number(ask('First daily run hour (0-23)',str(old.get('hour',3))),0,23)
+                    delay=number(ask('Random delay in seconds',str(old.get('random_delay',900))),0,3600)
+                    cfg['schedule']={'hour':hour,'random_delay':delay}
+                elif choice == '11':
+                    global LANGUAGE
+                    LANGUAGE=dialog('--menu','Language / Язык',12,60,3,'en','English','ru','Русский')
+                    cfg['tui_language']=LANGUAGE
                 elif choice == '8':
                     validate(cfg)
                     discover()
                     if not yes('Save settings? No certificates will be issued or installed.'):
                         continue
-                    # New credentials have distinct file names. Existing credentials
-                    # and config are backed up before any replacement.
-                    from datetime import datetime, timezone
-                    backup = core.STATE/'config-backups'/datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
-                    backup.mkdir(parents=True,mode=0o700)
-                    if core.CONFIG.exists(): shutil.copy2(core.CONFIG,backup/'config.json')
-                    active = {a['credentials'] for a in accounts()}
-                    for path, stage in pending.items():
-                        if path not in active: continue
-                        target=Path(path)
-                        if target.exists(): shutil.copy2(target,backup/target.name)
-                        write_token(target,core.token(stage))
-                    core.atomic(core.CONFIG,cfg)
+                    save_config(cfg,pending,{a['credentials'] for a in accounts()})
                     msg('Configuration saved. Run --plan and --verify before enabling the timer.')
                     return 0
                 elif choice == '9':

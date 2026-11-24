@@ -31,5 +31,6 @@ install -d -m 700 /var/lib/cgp-letsencrypt
 /usr/local/sbin/cgp-letsencrypt --migrate
 install -m 644 systemd/* /etc/systemd/system/
 systemctl daemon-reload
+/usr/local/sbin/cgp-letsencrypt --apply-schedule
 echo "Backup: $b"
 echo 'Timer left stopped. Run --doctor, --plan and --verify, then systemctl enable --now cgp-letsencrypt.timer'

@@ -25,3 +25,29 @@ class TUITests(unittest.TestCase):
         with patch.object(core,'cli',side_effect=['(example.com)','()']):
             result=core.discover({'auto_enable_new_domains':False},{'example.com':{}})
         self.assertFalse(result[0]['enabled'])
+
+    def test_cancel_is_not_no(self):
+        with patch.object(tui,'dialog',side_effect=tui.Cancel(255)):
+            with self.assertRaises(tui.Cancel): tui.yes('question')
+        with patch.object(tui,'dialog',side_effect=tui.Cancel(1)):
+            self.assertFalse(tui.yes('question'))
+    def test_schedule(self):
+        from cgp_cert_manager.schedule import render
+        self.assertIn('03,15:00:00',render({}))
+        self.assertIn('08,20:00:00',render({'hour':20}))
+        with self.assertRaises(ValueError): render({'hour':24})
+    def test_global_tls_template(self):
+        d={'names':['example.com','alias.net'],'tls':[{'host':'127.0.0.1','port':993}]}
+        self.assertEqual([e['sni'] for e in core.tls_endpoints(d)],['alias.net','example.com'])
+    def test_failed_save_preserves_old_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            conf=root/'config.json'
+            core.atomic(conf,{'old':True})
+            stage=root/'staged.ini'
+            tui.write_token(stage,'example_token')
+            target=root/'new.ini'
+            with patch.object(core,'CONFIG',conf), patch.object(core,'STATE',root/'state'), patch.object(core,'atomic',side_effect=OSError('test')):
+                with self.assertRaises(OSError):
+                    tui.save_config({'new':True},{str(target):stage},{str(target)})
+            self.assertEqual(core.load(conf),{'old':True})
