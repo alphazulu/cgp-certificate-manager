@@ -61,10 +61,11 @@ def main(argv=None):
         cfg = config.load(args.config)
         phase = 'operation_failed'
         if args.action == 'check-config':
+            # Project public flags to booleans; prepared configuration also holds secrets.
             result = {'schema': 1, 'action': args.action, 'status': 'valid',
-                      'enabled': cfg['enabled'], 'endpoints': len(cfg['endpoints']),
+                      'enabled': cfg['enabled'] is True, 'endpoints': len(cfg['endpoints']),
                       'channels': len(cfg['notifications']['channels']),
-                      'notifications_enabled': cfg['notifications']['enabled']}
+                      'notifications_enabled': cfg['notifications']['enabled'] is True}
         elif args.action == 'probe':
             result = monitor_runner.probe(cfg, args.endpoint)
         elif args.action == 'status':

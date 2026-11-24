@@ -95,11 +95,11 @@ Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; 
   guidance, changelog, local-monitor link and deferred acceptance plan accompany
   the implementation. Telegram/MQTT and actual observer/receiver/systemd
   acceptance are still unchecked roadmap items.
-- Both complete local dependency profiles independently passed **1138 tests /
+- Both complete local dependency profiles independently passed **1140 tests /
   5665 statements / 2094 branches / 100%**, zero missing statements, missing
   branches, partial branches or exclusions. `--fail-under=100` passed separately
   for manager and repository-tooling sources in each environment. Compat took
-  **32.395 seconds**, current **32.254 seconds**. There are **188 additional
+  **32.703 seconds**, current **32.475 seconds**. There are **190 additional
   tests**. Real networking was limited to synthetic loopback servers; tests
   also exercise actual files, flock, subprocess termination and durable-write
   failures. Full commands remain in CONTRIBUTING.md.
@@ -108,12 +108,32 @@ Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; 
   **135 relative links and 32 shell examples across 18 Markdown files**. The
   shipped monitor example passed the real configuration validator with the
   monitor, notification policy and both channels disabled.
-- Current implementation CI is **pending publication and observation** at this
-  commit. The local complete gates above are observed; native installer,
-  promtool, audit, CodeQL and packaging results must be read from the exact new
-  revision before being marked passed. Docker, native promtool and CodeQL are
-  unavailable locally. The CI still requires all eleven jobs with no weakened
-  thresholds, skipped source or changed audit policy.
+- Initial implementation
+  [`7d9271d`](https://github.com/alphazulu/cgp-certificate-manager/commit/7d9271d9eef142da5b4a6109f4e4d855e471986e)
+  was published with this handoff. Its
+  [CI 45421268959](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45421268959)
+  passed both complete profiles at **1138 / 5665 / 2094 / 100%**, both dependency
+  audits and native monitoring assets. It failed all four installer jobs and
+  the CodeQL result gate; packaging was correctly skipped. Native CodeQL analysis
+  itself completed and produced one finding, not an incomplete-analysis error.
+- The installer failure was reproduced locally by executing the exact harness
+  blocks in a fresh Python process: replacing `smtplib.SMTP`/`SMTP_SSL` with mocks
+  broke inheritance during the first monitor import. The harness now blocks
+  their constructors while preserving the real classes. A regression executes
+  the actual offline guard and installed-entrypoint block without preloading
+  monitor modules; network/state guards remain active.
+- The CodeQL SARIF traced secret-bearing notification dictionary values into
+  the public `notifications_enabled` field. Configuration validation already
+  requires this field to be a boolean, and actual private-credential tests did
+  not reproduce a disclosure. The CLI now explicitly projects both public flags
+  with `is True`. A new regression reads private SMTP/password and webhook/token
+  inputs and checks all four enabled-policy combinations, exact JSON/text,
+  boolean types, absence of credentials/routes and unchanged files. No finding
+  suppression or security-policy change was made.
+- The follow-up's **current-revision native CI remains pending observation**
+  until publication. Docker, native promtool and CodeQL are unavailable locally.
+  All eleven jobs remain required; native installer and CodeQL results must be
+  observed on the fixed revision before this checkpoint is marked complete.
 - Stable main remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / **2.1.0**.
   Existing production installation and timer settings have not been changed.
 

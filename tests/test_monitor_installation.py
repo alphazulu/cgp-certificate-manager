@@ -30,6 +30,53 @@ class MonitorInstallationTests(unittest.TestCase):
             self.assertEqual(sys.path[0], '/opt/cgp-certificate-manager')
             main.assert_called_once_with()
 
+    def test_container_entrypoint_fresh_import_preserves_smtp_classes(self):
+        source = (ROOT / 'tests/integration/installer.sh').read_text()
+        guard = source.split("<<'OFFLINE_GUARD'\n", 1)[1].split('\nOFFLINE_GUARD\n', 1)[0]
+        entrypoint = source.split("<<'MONITOR_ENTRYPOINT'\n", 1)[1].split('\nMONITOR_ENTRYPOINT\n', 1)[0]
+        program = '''
+from pathlib import Path
+import sys
+
+application, fixtures = (Path(value) for value in sys.argv[1:])
+sys.path.insert(0, str(application))
+guard = {'__name__': 'sitecustomize'}
+exec(compile((fixtures / 'guard.py').read_text(), 'guard.py', 'exec'), guard)
+guard['_attempt_marker'] = fixtures / 'network-attempted'
+from cgp_cert_manager import core
+core.STATE = fixtures / 'manager-state'
+assert {
+    'cgp_cert_manager.monitor_cli', 'cgp_cert_manager.monitor_runner',
+    'cgp_cert_manager.monitor_state', 'cgp_cert_manager.notify_transport',
+}.isdisjoint(sys.modules), 'The installed entrypoint must import the monitor afresh'
+sys.argv = [str(fixtures / 'entrypoint.py'), str(application),
+            str(application / 'monitor-launcher'), str(fixtures / 'monitor-state')]
+try:
+    exec(compile((fixtures / 'entrypoint.py').read_text(), 'entrypoint.py', 'exec'),
+         {'__name__': '__main__'})
+finally:
+    sys.setprofile(None)
+import smtplib
+from cgp_cert_manager import notify_transport
+assert issubclass(notify_transport._PlainClient, smtplib.SMTP)
+assert issubclass(notify_transport._TLSClient, smtplib.SMTP_SSL)
+assert not guard['_attempt_marker'].exists(), 'The entrypoint attempted network access'
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            fixtures = Path(directory)
+            (fixtures / 'guard.py').write_text(guard)
+            (fixtures / 'entrypoint.py').write_text(entrypoint)
+            for name in ('manager-state', 'monitor-state'):
+                state = fixtures / name
+                state.mkdir(mode=0o700)
+                evidence = state / 'observations.json'
+                evidence.write_text('{"synthetic": "preserve"}\n')
+                evidence.chmod(0o600)
+            result = subprocess.run([sys.executable, '-I', '-c', program, str(ROOT), str(fixtures)],
+                                    cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+
     def test_service_requires_explicit_notification_override_and_private_write_scope(self):
         unit = self.unit('cgp-monitor.service')
         service = unit['Service']

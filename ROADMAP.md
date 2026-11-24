@@ -36,10 +36,12 @@ reusing old destinations after configuration changes. No secrets enter public
 results or saved events. The optional timer invokes `--run` without `--send` and
 is not enabled by installation. Installer locking, preservation and handled
 rollback include the new wrapper/units and independent monitor state.
-Both complete local profiles passed **1138 tests / 5665 statements / 2094 branches
-/ 100%**, zero missing/partial/excluded, with **188 new tests**. Current-revision
-native CI remains pending publication/observation at this commit; all eleven
-jobs are still required. See DEVELOPMENT.md for observed evidence and
+Both complete local profiles passed **1140 tests / 5665 statements / 2094 branches
+/ 100%**, zero missing/partial/excluded, with **190 new tests**. Initial native CI
+found a fresh-import installer-fixture conflict and one public-output flow
+finding; fixes and regression tests are included. The fixed revision's native
+CI remains pending publication/observation; all eleven jobs are still required.
+See DEVELOPMENT.md for observed evidence and
 docs/EXTERNAL_MONITORING.md for the contract. Optional Telegram/MQTT channels are
 the next independent scope. Real VM/server/observer/receiver/systemd acceptance
 remains deferred; no schedule, destination, merge or release has been activated.

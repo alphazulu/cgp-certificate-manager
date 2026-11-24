@@ -152,6 +152,61 @@ class MonitorCLITests(unittest.TestCase):
         for path, expected in before.items():
             self.assertEqual((path.read_bytes(), path.stat().st_ino, path.stat().st_mtime_ns), expected)
 
+    def test_private_smtp_and_webhook_configuration_projects_only_public_booleans(self):
+        password = self.private / 'smtp-password'
+        token = self.private / 'webhook-token'
+        password.write_text('PRIVATE_CLI_SECRET_SMTP_PASSWORD\n', encoding='ascii')
+        token.write_text('PRIVATE_CLI_SECRET_WEBHOOK_TOKEN\n', encoding='ascii')
+        for path in (password, token):
+            path.chmod(0o600)
+        self.raw['endpoints'] = [endpoint()]
+        channels = [
+            {'id': 'mail', 'kind': 'smtp', 'host': 'smtp.example.test', 'security': 'tls',
+             'from': 'sender@example.test', 'to': ['recipient@example.test'],
+             'username': 'PRIVATE_CLI_SECRET_SMTP_USERNAME', 'password_file': str(password)},
+            {'id': 'hook', 'kind': 'webhook',
+             'url': 'https://hooks.example.test/PRIVATE_CLI_SECRET_WEBHOOK_PATH',
+             'token_file': str(token)},
+        ]
+        with patch.object(runner, 'run') as run, patch.object(runner, 'probe') as probe, \
+                patch.object(runner, 'status') as status:
+            for enabled in (False, True):
+                for policy in (False, True):
+                    with self.subTest(enabled=enabled, policy=policy):
+                        self.raw['enabled'] = enabled
+                        self.raw['notifications'] = {'enabled': policy, 'channels': channels}
+                        self.save()
+                        before = {path: (path.read_bytes(), path.stat().st_ino,
+                                         path.stat().st_mtime_ns, path.stat().st_mode)
+                                  for path in (self.path, password, token)}
+                        files = sorted(self.root.rglob('*'))
+                        self.assertEqual(self.invoke('--check-config', '--json'), 0)
+                        result = self.public_json()
+                        self.assertEqual(result, {'schema': 1, 'action': 'check-config', 'status': 'valid',
+                                                 'enabled': enabled, 'endpoints': 1, 'channels': 2,
+                                                 'notifications_enabled': policy})
+                        self.assertIs(type(result['enabled']), bool)
+                        self.assertIs(type(result['notifications_enabled']), bool)
+                        self.assertEqual(self.invoke('--check-config'), 0)
+                        self.assertEqual(self.err.getvalue(), '')
+                        self.assertEqual(self.out.getvalue(),
+                                         'CGP monitor: valid\n'
+                                         'Enabled: ' + str(enabled).lower() + '\n'
+                                         'Configured endpoints: 1\n'
+                                         'Configured notification channels: 2\n'
+                                         'Notification policy enabled: ' + str(policy).lower() + '\n')
+                        for private in ('PRIVATE_CLI_SECRET', str(self.private), 'password_file',
+                                        'token_file', 'smtp.example.test', 'hooks.example.test',
+                                        'sender@example.test', 'recipient@example.test'):
+                            self.assertNotIn(private, self.out.getvalue())
+                        for path, expected in before.items():
+                            self.assertEqual((path.read_bytes(), path.stat().st_ino,
+                                              path.stat().st_mtime_ns, path.stat().st_mode), expected)
+                        self.assertEqual(sorted(self.root.rglob('*')), files)
+            run.assert_not_called()
+            probe.assert_not_called()
+            status.assert_not_called()
+
     def test_real_disabled_actions_are_passive_even_when_send_is_explicit(self):
         before = self.path.read_bytes(), self.path.stat().st_ino, self.path.stat().st_mtime_ns
         for args in (('--status',), ('--probe',), ('--run',), ('--run', '--send')):

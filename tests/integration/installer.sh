@@ -147,9 +147,11 @@ def snapshot():
 
 before = snapshot()
 with ExitStack() as stack:
+    # Preserve the SMTP classes: the freshly imported transport subclasses them.
+    # Refuse client construction without breaking that import-time inheritance.
     forbidden = [stack.enter_context(patch.object(module, name, side_effect=AssertionError('Read-only entrypoint')))
-                 for module, name in ((socket, 'create_connection'), (smtplib, 'SMTP'),
-                                      (smtplib, 'SMTP_SSL'), (storage, 'operation_lock'),
+                 for module, name in ((socket, 'create_connection'), (smtplib.SMTP, '__init__'),
+                                      (smtplib.SMTP_SSL, '__init__'), (storage, 'operation_lock'),
                                       (storage, 'atomic_json'), (monitor_config, 'load'))]
     for action in ('--help', '--version'):
         output = io.StringIO()
