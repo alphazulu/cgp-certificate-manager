@@ -26,18 +26,27 @@
 - [x] Implement operator-assisted resolution: exact-preview confirmation, private authorization/completion evidence, incomplete-decision guard and explicit retry without claiming TLS success. See docs/RESOLUTION.md and checkpoint 5 evidence below.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 10 (`2.2.0.dev7`, local work complete; CI pending) adds Prometheus alert rules, a Grafana
+Checkpoint 10 (`2.2.0.dev7`) adds Prometheus alert rules, a Grafana
 dashboard and a Zabbix 7.0 HTTP template with executable synthetic tests. All
 three integrations distinguish source failure, missing data, stale/future
 snapshots and local certificate expiry. CI gains a required monitoring-assets
 job using pinned promtool; both Python jobs execute the JavaScript using pinned
-Node.js. Package creation depends on all eight jobs. Both complete local
+Node.js. Package creation depends on the seven preceding checks; the workflow
+has eight jobs. Both complete local
 dependency profiles passed **851 tests / 3936 statements / 1566 branches / 100%**,
 zero missing/partial, with 24 new Python tests and 105 executable JavaScript
 scenarios. Detailed V8 coverage passed for all three preprocessing scripts.
-Native Prometheus engine validation (25 alert cases and 17 dashboard cases /
-209 expressions) awaits the exact implementation CI. Real VM/server acceptance
-remains deferred; no import, schedule or notification is enabled.
+Implementation
+[`83ed7d9`](https://github.com/alphazulu/cgp-certificate-manager/commit/83ed7d9b5e2de568aaacd8cec8fc7ffdc68d2192)
+passed [CI 45398683411](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45398683411):
+both dependency profiles with the same counts, all four installer combinations,
+native Prometheus engine validation (25 alert cases and 17 dashboard cases /
+209 expressions), and package creation/checksum/upload. The template protects
+against cached values after observations disappear and documents Zabbix's
+whole-second native clock. This follow-up records the observed implementation
+run; inspect its own current-head checks on resume. Real VM/server acceptance
+remains deferred; no import, schedule or notification is enabled. The next
+independent scope is release automation and dependency/security scanning.
 
 Previous checkpoint 9 (`2.2.0.dev6`) implements the independent local monitoring foundation:
 JSON snapshots, Prometheus text/atomic textfile publication and Zabbix domain
@@ -134,7 +143,7 @@ This remains a development checkpoint, not a production release.
 
 ## 2.3 — Monitoring
 - [x] Read-only local monitoring snapshot, Prometheus textfile output and Zabbix domain discovery, with unit tests (checkpoint 9; observed validation above).
-- [ ] Zabbix template and Grafana dashboard with alerting based on explicit freshness and collection health (checkpoint 10 in progress).
+- [x] Zabbix template and Grafana dashboard with alerting based on explicit freshness and collection health, with actual preprocessing/rule/query tests (checkpoint 10; observed validation above).
 - [ ] Separately scheduled external TLS probes and notification delivery (SMTP/webhooks and optional Telegram/MQTT).
 - [ ] Real monitoring deployment acceptance on the later VM/server test session; local certificate observations must not be presented as live TLS verification.
 

@@ -73,16 +73,37 @@ Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 
   panels; and a Zabbix template with 16 items, 1 discovery rule, 9 item prototypes,
   14 global triggers, 6 trigger prototypes, 5 value maps and 7 macros. Native
   promtool fixtures contain 25 alert scenarios plus 17 dashboard scenarios /
-  209 dashboard expression evaluations. Their actual engine execution is still
-  pending the exact implementation CI below, not inferred from Python checks.
+  209 dashboard expression evaluations. Their actual engine execution passed
+  in the exact implementation CI below, independently of the Python contracts.
 - Python compilation, installer shell syntax, all 14 workflow run-block shell
   syntax checks and `git diff --check` passed. Documentation validation passed
   94 relative links and 25 shell blocks across 16 Markdown files. Local Node was
   24.22.3; both test environments use coverage 7.10.7 and PyYAML 6.0.3.
-- **Local implementation is complete; exact-revision CI is pending.** Record
-  the eight observed jobs and native promtool results after publication, then
-  mark this roadmap stage complete. Real VM/server/import acceptance remains
-  deferred and is not a prerequisite for the next independent repository work.
+- Implementation commit:
+  [`83ed7d9b5e2de568aaacd8cec8fc7ffdc68d2192`](https://github.com/alphazulu/cgp-certificate-manager/commit/83ed7d9b5e2de568aaacd8cec8fc7ffdc68d2192).
+  [CI 45398683411](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45398683411)
+  **passed all eight jobs**. Both dependency logs confirm **851 tests / 3936
+  statements / 1566 branches / 100%**, zero missing/partial, and successful
+  `--fail-under=100` (compat 17.029 seconds; current 16.957 seconds). The exact
+  embedded-JavaScript execution/coverage test passed in both profiles.
+- The monitoring-assets log confirms the archive SHA-256, promtool 3.16.0 at
+  revision `e2e28adeee2c5883d000fc82aca6008cfbf7e96d`, acceptance of all 19 rules,
+  and successful native evaluation of both the 25-case alert file and generated
+  17-case / 209-expression dashboard fixture. All four Ubuntu 24.04 / Debian 13
+  x baseline 2.0.1 / 2.1.0 installer jobs reached their final success marker,
+  including installed monitoring checks, preservation/handled rollback and
+  24 unsafe-path refusals each. Native Certbot was 2.9.0 on Ubuntu and 4.0.0 on
+  Debian. Package creation, SHA-256 verification and CI artifact upload passed.
+  No GitHub warning/error, deprecation or traceback markers were found in the
+  inspected job logs. The artifact is not a published release.
+- The workflow checked PR merge preview
+  `6f4d7f871898fbb2aac9390f650953ef16b8fd46` against unchanged stable main.
+  This documentation-only follow-up records the observed implementation result
+  and completes the monitoring integration roadmap checkbox. Inspect its own
+  current-head checks on resume; no claim of its future result is embedded here.
+- Stable main remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / **2.1.0**.
+  Real VM/server/import acceptance remains deferred. No merge, release,
+  production deployment, collection schedule or notification route was enabled.
 
 ### Resume from checkpoint 10
 
