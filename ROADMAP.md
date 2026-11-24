@@ -22,13 +22,16 @@
 - [x] Implement operator-assisted resolution: exact-preview confirmation, private authorization/completion evidence, incomplete-decision guard and explicit retry without claiming TLS success. See docs/RESOLUTION.md and checkpoint 5 evidence below.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 5 (`2.2.0.dev2`): the complete local suite passed **455 tests**, with
-**2073 statements / 844 branches / 100%**. Code and tests are in the same change,
-including 11 new process-death/restart cases and an actual expired-certificate
-acknowledgement test. CI is pending, including audit preservation and 24 unsafe
-path refusal cases on each installer baseline. See DEVELOPMENT.md for the
-contract, review findings and exact continuation steps. Next functional scope:
-safe bootstrap with incomplete previous fields.
+Checkpoint 5 (`2.2.0.dev2`): local and GitHub suites passed **455 tests**, with
+**2073 statements / 844 branches / 100%**, for implementation `4535444`.
+[CI 45370524719](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45370524719)
+passed tests, both installer baselines and package, including audit preservation
+and 24 unsafe-path refusal cases per baseline. Code and tests are in the same
+change, including 11 new process-death/restart cases and an actual expired-
+certificate acknowledgement test. This follow-up records that observed run;
+inspect current-head checks when resuming. See DEVELOPMENT.md for the contract,
+review findings and continuation steps. Next: safe bootstrap with incomplete
+previous fields.
 
 Previous checkpoint 4 (`2.2.0.dev1`): local and GitHub suites passed **386 tests**, with
 **1742 statements / 692 branches / 100%**. New private-storage code and tests are

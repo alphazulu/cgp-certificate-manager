@@ -12,7 +12,16 @@ Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 
   7.10.7; **2073 statements, 844 branches, zero missing or partial, 100%**.
   Includes 22 process-death/restart tests (11 for acknowledgement) and 9 real
   OpenSSL/loopback TLS tests. Python compile, all installer shell syntax and
-  `git diff --check` passed. New CI is pending; Docker is unavailable locally.
+  `git diff --check` passed. Docker is unavailable locally; container execution
+  evidence comes from the observed CI below.
+- Implementation commit: [`453544496fbd15b35711e5348a1a5b928c646317`](https://github.com/alphazulu/cgp-certificate-manager/commit/453544496fbd15b35711e5348a1a5b928c646317).
+  [CI 45370524719](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45370524719)
+  **passed all four jobs**: tests, installer (2.0.1), installer (2.1.0) and
+  package. Its test log confirms **455 tests / 2073 statements / 844 branches /
+  100%**. Both installer logs confirm successful scenarios, including byte/mode/
+  owner preservation of completed and incomplete audits and 24 unsafe-path
+  refusals per baseline. This follow-up changes only the handoff and roadmap
+  to record observed evidence; inspect its own current-head checks on resume.
 - Starting HEAD: `ddcd63cc2045b7341f8a0240fa18cdfb065944d4`, clean on resume;
   [CI 45367623871](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45367623871)
   passed tests, both installer baselines and package. Baseline: 386 tests,
@@ -74,8 +83,8 @@ Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 
    editing; historical CI never validates a later commit.
 2. Confirm the complete 100% statement/branch gate, process-death restart cases,
    both installer baselines with audit preservation/refusal, and package. Record
-   exact implementation SHA and observed CI below. Local counts are recorded
-   above; they do not substitute for the container upgrade jobs.
+   exact implementation SHA and observed CI for any new changes. The checkpoint
+   above passed all four jobs; a later commit still needs its own checks.
 3. Next functional scope after this checkpoint: safe bootstrap when previous
    certificate fields are missing. Establish actual CGP semantics before adding
    writes; preserve fail-closed behavior until those semantics are known.
