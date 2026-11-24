@@ -134,6 +134,9 @@ leaves an unsafe object unchanged for an administrator to investigate.
 Checkpoint 4 passed **386 tests**, with **1,742 measured statements and 692
 branches at 100% coverage**, plus Python compilation, shell syntax and diff
 checks. This includes filesystem refusal tests and unit tests for the inherited
-installer lock. The Docker installer CI result for this checkpoint is still
-pending; no production validation of 2.2.0.dev1 is claimed. See
+installer lock. [CI 45367278665](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45367278665)
+confirmed the same totals for implementation commit `d2bad6e`; tests, both Docker
+installer baselines and packaging passed. Each installer baseline also passed
+18 unsafe-path refusal cases. Production validation of 2.2.0.dev1 remains a
+separate step. See
 [DEVELOPMENT.md](../DEVELOPMENT.md) for subsequent runs and the current handoff.

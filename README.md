@@ -150,7 +150,7 @@ Both terminal interfaces use the saved UI language for common navigation and pro
 
 Stable 2.1.0 passed 188 unit tests. Development adds unit tests for every new transaction path, process-death/restart scenarios and real OpenSSL/loopback TLS checks. CI enforces `coverage report --fail-under=100` and tests clean installation, upgrades from both 2.0.1 and 2.1.0, rollback, lock handling and journal preservation in disposable Ubuntu containers with mocked systemd. See DEVELOPMENT.md for observed counts and CI results. Coverage does not establish correctness for every live CGP/ACME environment.
 
-The storage-hardening checkpoint passed 386 tests locally with 100% measured statement and branch coverage. Its Docker installer CI result is still pending; the local result is not a production validation.
+The storage-hardening checkpoint passed 386 tests locally and in [CI 45367278665](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45367278665), with 100% measured statement and branch coverage. Both Docker installer upgrade jobs and the package job passed for implementation commit `d2bad6e`. This is development validation; production validation remains a separate step.
 
     python3 -m coverage run --branch --source=cgp_cert_manager -m unittest discover -s tests -v
     python3 -m coverage report -m --fail-under=100

@@ -8,7 +8,7 @@
 - Run installer preflight before timer or application changes and retain the same validated lock descriptor through the shell payload and handled rollback.
 - Report unsafe console history and configuration access errors explicitly. Keep standard Certbot `live` symlinks outside the private-storage rules.
 - Document the exact policy and limits in [docs/STORAGE.md](docs/STORAGE.md), including metadata-only diagnostics and the absence of protection against concurrent root/same-UID modification or installer power loss.
-- Local checkpoint validation: 386 tests, 1,742 statements and 692 branches at 100% coverage; Python compilation, shell syntax and diff checks passed. Docker installer CI for this checkpoint is pending. Development artifacts identify themselves as `2.2.0.dev1`.
+- Local and [CI 45367278665](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45367278665) validation: 386 tests, 1,742 statements and 692 branches at 100% coverage; Python compilation, shell syntax and diff checks passed. Both Docker installer baselines, including 18 new refusal cases each, and packaging passed for implementation commit `d2bad6e`. Development artifacts identify themselves as `2.2.0.dev1`.
 
 ## 2.2.0.dev0 — unreleased
 

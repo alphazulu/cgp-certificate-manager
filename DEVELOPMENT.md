@@ -13,8 +13,15 @@ Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 
   100%**. Includes the existing 11 process-death/restart and 8 real OpenSSL/TLS
   tests. `compileall`, shell syntax for all three installer scripts and
   `git diff --check` passed.
-- CI for this permissions checkpoint is pending. Docker is unavailable locally;
-  do not claim the new container cases passed before observing their CI jobs.
+- Implementation commit: [`d2bad6e1f3f777bb177e6b007ac861fea927781e`](https://github.com/alphazulu/cgp-certificate-manager/commit/d2bad6e1f3f777bb177e6b007ac861fea927781e).
+  Observed [CI 45367278665](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45367278665)
+  **passed all four jobs**: tests, installer (2.0.1), installer (2.1.0) and
+  package. Logs confirm **386 tests / 1742 statements / 692 branches / 100%**,
+  and both installer logs confirm the unsafe-path refusal cases passed.
+  Docker is unavailable locally; container execution evidence comes from CI.
+- The follow-up commit records this observed result in documentation only.
+  Inspect that commit's own current checks on resume; the link above identifies
+  the exact tested implementation.
 - Previous HEAD `903c79369404bd724f3dc5fedddab89a4f5f99c1` passed
   [CI 45364065834](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45364065834):
   tests, installer (2.0.1), installer (2.1.0) and package. That run validates the
@@ -141,10 +148,10 @@ A single pending transaction per domain. Journal must be durable BEFORE any CGP 
 
 Recovery must use recorded TLS endpoints and the recorded certificate chain, independent of mutable Certbot lineage. Prior settings may be invalid/expired or empty: distinguish readback restoration from successful TLS, retain unresolved state when verification cannot succeed. Read-only commands must never trigger writes. Pending transactions prevent normal mutation until resolved. Installer and CLI share existing flock; do not change stable branch.
 
-## Session log
+## Original session log (historical)
 - Confirmed stable HEAD and read existing deployment, rollback, installer and CI code.
 - Created development branch, documented roadmap and design.
-- Next: implement and test durable journal primitives; then integrate with existing core.deploy and CLI. Do not mark integration complete before tests and CI.
+- Next at that time: implement and test journal primitives, then integrate deployment and CLI. Those tasks are complete in the checkpoints above.
 
 ## Checkpoint 1 — journal primitives
 - Added cgp_cert_manager/transactions.py: root-only per-domain JSON, atomic replacement, file and directory fsync, validated phase transitions, refusal to remove unresolved records, previous/intended/unknown classification.
