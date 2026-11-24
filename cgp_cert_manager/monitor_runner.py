@@ -135,6 +135,10 @@ def _notification(record, report, now, options):
     key = state.event_key(event)
     pending, last = record['pending'], record['last']
     if pending is not None:
+        # A provider cooldown applies to this channel even if a fresh probe
+        # changes the incident. The next permitted attempt uses fresh evidence.
+        if pending['code'] == 'telegram_rate_limited' and now < pending['retry_at']:
+            return pending, 'deferred'
         if pending['key'] == key:
             return pending, 'deferred' if now < pending['retry_at'] else 'send'
         record['superseded'] = _supersede(pending)
@@ -149,10 +153,14 @@ def _deliver(channel, event, timeout, descriptor):
         return {'outcome': 'uncertain', 'code': envelope['code']}
     result = envelope['value']
     try:
-        state.exact(result, {'outcome', 'code'})
+        config.keys(result, {'outcome', 'code', 'retry_after_seconds'}, {'outcome', 'code'})
         config.require((result['outcome'] == 'accepted' and result['code'] is None)
                        or (result['outcome'] in ('rejected', 'uncertain')
                            and result['code'] in state.DELIVERY_CODES))
+        if 'retry_after_seconds' in result:
+            config.require(channel['kind'] == 'telegram' and result['outcome'] == 'rejected'
+                           and result['code'] == 'telegram_rate_limited')
+            config.number(result['retry_after_seconds'], 1, 2**31 - 1, integer=True)
         return result
     except (ValueError, TypeError):
         return {'outcome': 'uncertain', 'code': 'worker_invalid_result'}
@@ -191,9 +199,11 @@ def _send(cfg, checkpoint, path, descriptor, config_path):
             record['pending'] = None
             record['incident'] = pending['event']['kind'] == 'alert'
         else:
-            pending.update(result, retry_at=finished + options['retry_seconds'])
+            retry = max(options['retry_seconds'], result.get('retry_after_seconds', 0))
+            pending.update(outcome=result['outcome'], code=result['code'], retry_at=finished + retry)
         _save(path, checkpoint)
-        results.append({'id': name, **result, 'event_id': pending['event']['id']})
+        results.append({'id': name, 'outcome': result['outcome'], 'code': result['code'],
+                        'event_id': pending['event']['id']})
     return results
 
 

@@ -2,7 +2,7 @@
 import ipaddress
 import re
 
-from . import monitor_config as config, notify_transport, tlsprobe
+from . import monitor_config as config, notify_mqtt, notify_telegram, notify_transport, tlsprobe
 
 
 MAX_STATE = 2 * 1024 * 1024
@@ -12,7 +12,8 @@ PROBE_CODES = frozenset({'invalid_endpoint', 'ca_unavailable', 'dns_failed', 'co
                          'timeout', 'protocol_error', 'starttls_unavailable', 'starttls_rejected',
                          'tls_expired', 'tls_not_yet_valid', 'tls_hostname_mismatch', 'tls_untrusted',
                          'tls_verification_failed', 'tls_handshake_failed', 'certificate_unreadable'}) | WORKER_CODES
-DELIVERY_CODES = notify_transport.CODES | WORKER_CODES | {'not_confirmed'}
+DELIVERY_CODES = (notify_transport.CODES | notify_mqtt.CODES | notify_telegram.CODES
+                  | WORKER_CODES | {'not_confirmed'})
 LEVELS = ('ok', 'warning', 'critical')
 ROW_KEYS = {'id', 'host', 'port', 'server_name', 'protocol', 'status', 'code', 'verified',
             'checked_at', 'not_after', 'fingerprint_sha256', 'peer_address', 'tls_version',

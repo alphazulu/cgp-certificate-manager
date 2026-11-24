@@ -243,10 +243,23 @@ Python/OpenSSL, trust roots and synthetic endpoint labels:
    rollback on handled failure, restoration of previous active timers after
    failure, and both timers stopped after success. Re-enable only the schedules
    explicitly accepted in this lab; keep private backup/evidence files private.
+8. For Telegram, use an explicitly approved disposable bot/chat and optional
+   forum topic. Confirm actual plaintext, stable event ID, expected chat/topic,
+   private token handling, custom API origin/trust if configured, and 429
+   cooldown across changed conditions and recovery. Observe server errors and
+   lost acknowledgements without assuming deduplication or final reading.
+9. For MQTT, use an approved isolated TLS broker and subscriber. Inspect the
+   actual event JSON, topic ACLs, QoS-1 acknowledgement, non-retained publication,
+   fresh client IDs, reconnect/lost-PUBACK behavior and subscriber deduplication
+   by event ID. Check subscriber receipt separately from broker acceptance;
+   MQTT 3.1.1 can acknowledge a publication that its authorization policy drops.
+   Neither case has been executed against a real bot or broker in this checkpoint.
 
 Prometheus/Grafana/Zabbix deployment acceptance remains a separate pending
 track: the current local-exporter assets do not ingest these external
-observations automatically. Telegram/MQTT are not implemented in this checkpoint.
+observations automatically. Telegram/MQTT implementation and synthetic loopback
+tests are described in [NOTIFICATION_CHANNELS.md](NOTIFICATION_CHANNELS.md);
+their real recipient/broker acceptance remains pending with this plan.
 
 ## Evidence and release decision
 

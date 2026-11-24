@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.0.dev10 — unreleased
+
+- Add optional Telegram Bot API and MQTT 3.1.1 channels to the independent monitor, with private credential snapshots and no new runtime dependencies. Explicit enabled policy, enabled channel and `--run --send` remain required.
+- Send one plaintext Telegram message with the stable event ID and all endpoint summaries; validate a bounded, completely framed JSON acknowledgement. Preserve explicit refusal, rate limits, malformed replies and uncertain submission without exposing tokens or raw API errors.
+- Honor valid Telegram retry hints using the existing persisted retry deadline. The channel cooldown survives restart and changed observations, including recovery; other channels proceed independently. Public output and schema-1 checkpoint fields remain unchanged.
+- Publish MQTT event JSON once at QoS 1 without retention, over verified TLS by default. Require valid CONNACK and matching PUBACK, bound protocol I/O and retain uncertainty after possible submission. Use a fresh client ID and CleanSession; subscriber deduplication is based on event ID, and broker acknowledgement does not prove authorization or recipient delivery.
+- Add protocol and cross-channel unit tests together with the implementation, disabled examples and operational documentation. Exact local and native-CI results are recorded in DEVELOPMENT.md. Real Telegram/MQTT, VM/server and production acceptance remains deferred.
+
 ## 2.2.0.dev9 — unreleased
 
 - Add an independent `cgp-monitor` command with separate private configuration, state and operation lock. Validate settings, perform read-only probes, inspect saved freshness or explicitly record observations without using CGP, Certbot lineages or provider credentials.

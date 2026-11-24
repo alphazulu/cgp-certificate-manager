@@ -26,7 +26,23 @@
 - [x] Implement operator-assisted resolution: exact-preview confirmation, private authorization/completion evidence, incomplete-decision guard and explicit retry without claiming TLS success. See docs/RESOLUTION.md and checkpoint 5 evidence below.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 12 (`2.2.0.dev9`) implements the independent external TLS monitor and
+Checkpoint 13 (`2.2.0.dev10`) implements optional Telegram and MQTT
+notification channels in the existing explicit, durable lifecycle. The scope
+includes private credential snapshots, bounded protocol acknowledgements,
+per-channel outcomes, Telegram rate-limit persistence and MQTT QoS-1
+non-retained event JSON. Code, unit/loopback tests and the
+[channel guide](docs/NOTIFICATION_CHANNELS.md) are developed together without
+new runtime dependencies. Both complete local profiles passed **1199 tests /
+5979 statements / 2236 branches / 100%**, zero missing/partial/excluded, with
+**59 new tests**. Review fixed an HTTP 2xx/API 429 response that initially lost
+the provider retry interval. Implementation CI is pending publication; see the
+active handoff in DEVELOPMENT.md for exact evidence and resume steps. Both
+independent 100% coverage gates and all eleven CI jobs remain required. All
+real VM/server/recipient/broker acceptance remains deferred. The next
+independent scope after this checkpoint is authenticated, explicitly approved
+updates; no update, schedule, destination, merge or release is activated here.
+
+Previous checkpoint 12 (`2.2.0.dev9`) implements the independent external TLS monitor and
 explicit SMTP/HTTPS webhook delivery. `cgp-monitor` has separate private config,
 state and locking; it supports direct TLS and SMTP/IMAP/POP3 STARTTLS with trust,
 SAN/name validation and bounded workers, including system DNS deadlines.
@@ -192,14 +208,14 @@ passed tests, both installer baselines and package. Each installer job passed
 18 new unsafe-path refusal cases and preserved pending journals. This follow-up
 documentation commit records the observed result; inspect current-head checks
 when resuming. See DEVELOPMENT.md for exact next steps and remaining limits.
-Operator-assisted resolution was completed in checkpoint 5; checkpoint 12 is active above.
+Operator-assisted resolution was completed in checkpoint 5; checkpoint 13 is active above.
 This remains a development checkpoint, not a production release.
 
 ## 2.3 — Monitoring
 - [x] Read-only local monitoring snapshot, Prometheus textfile output and Zabbix domain discovery, with unit tests (checkpoint 9; observed validation above).
 - [x] Zabbix template and Grafana dashboard with alerting based on explicit freshness and collection health, with actual preprocessing/rule/query tests (checkpoint 10; observed validation above).
 - [x] Separately scheduled external TLS probes and explicit SMTP/HTTPS webhook delivery, with independent state, bounded workers and unit/loopback tests (checkpoint 12; current-revision CI evidence tracked above).
-- [ ] Optional Telegram/MQTT channels using the same explicit, durable notification lifecycle, with protocol-specific acknowledgement/uncertainty tests.
+- [x] Optional Telegram/MQTT channels using the same explicit, durable notification lifecycle, with protocol-specific acknowledgement/uncertainty tests (checkpoint 13; exact-revision CI evidence tracked above).
 - [ ] Real monitoring deployment acceptance on the later VM/server test session; local certificate observations must not be presented as live TLS verification.
 
 ## 2.4 — Updates

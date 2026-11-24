@@ -91,6 +91,18 @@ its own idempotency. Exactly-once delivery is not promised.
 Complete protocol framing is required before an acknowledgement is accepted;
 truncated SMTP lines or HTTP headers remain uncertain after submission.
 
+Telegram sends through verified HTTPS without proxy inheritance or redirects.
+A bounded, completely framed JSON response must confirm the expected message
+before acceptance. Bot tokens stay in private snapshots; raw API descriptions
+and token-bearing URLs are not included in output. Valid provider rate limits
+extend the saved channel cooldown, including across incident changes.
+MQTT uses verified TLS by default; its unauthenticated `plain_local` option is
+restricted to literal loopback. A matching QoS-1 PUBACK acknowledges the broker
+protocol exchange, not subscriber delivery or authorization: MQTT 3.1.1 allows
+a broker to acknowledge an unauthorized publication. No retained message,
+persistent MQTT session or exactly-once consumer processing is promised. See
+the [channel contract and protocol references](docs/NOTIFICATION_CHANNELS.md).
+
 Workers receive secrets through bounded stdin, not command-line arguments or
 inherited environment variables. The parent supervises a process group; each
 worker also arms its own deadline and retains the monitor lock when applicable.

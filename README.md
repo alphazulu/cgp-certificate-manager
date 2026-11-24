@@ -6,7 +6,7 @@ Automatic Let's Encrypt certificate management for CommuniGate Pro on Linux usin
 
 [Русская документация](README.ru.md)
 
-This branch develops **2.2.0.dev9**. The stable production release is **2.1.0**.
+This branch develops **2.2.0.dev10**. The stable production release is **2.1.0**.
 See [ROADMAP.md](ROADMAP.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for completed work,
 test evidence and the next checkpoint. The development branch is not a release.
 Contributor commands and test boundaries are in [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -21,9 +21,10 @@ tests. Their import, collection schedule and notification routing remain
 explicit deployment steps.
 The separate [external TLS monitor](docs/EXTERNAL_MONITORING.md), `cgp-monitor`,
 checks configured TLS and mail STARTTLS endpoints independently of renewal.
-It has its own configuration, state and optional timer. SMTP and HTTPS webhook
-delivery require explicit notification settings and `--run --send`; the shipped
-service does not send, and installation does not enable its timer.
+It has its own configuration, state and optional timer. SMTP, HTTPS webhook,
+[Telegram and MQTT](docs/NOTIFICATION_CHANNELS.md) delivery require explicit
+notification settings and `--run --send`; the shipped service does not send,
+and installation does not enable its timer.
 Repository [release and security checks](docs/RELEASING.md) prepare reproducible
 source artifacts, audit resolved dependencies and analyze Python with CodeQL.
 The manual release workflow prepares an unpublished draft only after the full

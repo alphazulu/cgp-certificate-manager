@@ -1,6 +1,6 @@
 # Independent external TLS monitoring
 
-This describes the unreleased `2.2.0.dev9` development checkpoint. `cgp-monitor`
+This describes the unreleased `2.2.0.dev10` development checkpoint. `cgp-monitor`
 observes explicitly configured network endpoints and can send explicitly enabled
 notifications. It has its own configuration, state and lock. It does not discover
 CGP domains, contact Cloudflare or ACME, issue or install certificates, or recover
@@ -273,7 +273,7 @@ the channel enabled, and the explicit `--run --send` action. There is no separat
 | `repeat_seconds` | `86400` | Integer `60..604800`, suppression period after an accepted equivalent event |
 | `retry_seconds` | `300` | Integer `10..86400`, earliest next attempt for an unconfirmed event |
 
-Each channel has `id`, `kind` (`smtp` or `webhook`) and optional `enabled`
+Each channel has `id`, `kind` (`smtp`, `webhook`, `telegram` or `mqtt`) and optional `enabled`
 (default `true`). An individually disabled channel does not load its credential
 files or send. The following is a **configuration fragment**, not a replacement
 for the complete configuration. Both channels remain disabled until a future
@@ -327,7 +327,7 @@ followed and response bodies are not used. A complete 2xx acknowledgement is
 accepted; complete non-2xx responses are rejected. Truncated or ambiguous
 submission responses remain uncertain rather than becoming accepted.
 
-Both channel kinds support an optional private `ca_file`. Notification
+All four channel kinds support an optional private `ca_file`. Notification
 credential and CA files are limited to 16 KiB each. Their TLS connections require
 at least TLS 1.2 and normal Python hostname verification; unlike endpoint probes,
 the notification context does not explicitly disable common-name fallback.
@@ -341,6 +341,13 @@ submission begins remains uncertain. SMTP multiline replies and HTTP response
 headers are bounded; incomplete acknowledgement framing is not accepted.
 See [notify_transport.py](../cgp_cert_manager/notify_transport.py).
 
+The [Telegram and MQTT guide](NOTIFICATION_CHANNELS.md) describes their fields,
+protocol acknowledgements, fixed failure reasons, message limits and disabled
+examples. Telegram sends one plaintext Bot API message; MQTT publishes the
+event JSON once at QoS 1 without retaining it. Neither adds a dependency or
+permits implicit delivery. The complete shipped example has all four channels
+disabled.
+
 ## Durable intent, retries and recovery notifications
 
 For each channel, an authorized send saves a durable intent **before** starting
@@ -353,7 +360,8 @@ before the local confirmation was saved leaves uncertainty intact.
 The next `--run --send` first obtains a new observation. An equivalent pending
 event waits until `retry_at`, then retries with its original ID, payload and
 observation time. SMTP uses the stable ID in `Message-ID`; the webhook uses it
-in `Idempotency-Key`. Receivers may use these identifiers to deduplicate, but the
+in `Idempotency-Key`. Telegram includes it in plaintext and MQTT in the JSON
+payload. Receivers may use these identifiers to deduplicate, but the
 monitor does not promise exactly-once delivery. A retry can duplicate a remotely
 accepted submission whose acknowledgement was lost.
 
@@ -363,6 +371,14 @@ Changes in fingerprint or remaining days alone do not defeat this suppression
 while the health classification is unchanged. A changed condition supersedes
 the prior pending event, retaining its most recent summary, and creates a new
 event ID. The checkpoint is bounded state, not an unlimited event archive.
+
+A valid Telegram rate-limit response can extend the retry deadline by its
+`retry_after` interval. The saved deadline is measured from the end of the
+attempt using the greater of that interval and `retry_seconds`. It applies to
+the entire channel, including changed conditions and recovery, until that
+deadline; the next permitted run considers the latest observation. This does
+not delay another channel. Only the calculated `retry_at` is stored; the
+worker's retry hint is not added to public output or the schema-1 checkpoint.
 
 A channel with a previously attempted alert has an incident until an accepted
 recovery event. When observations return to `ok`, an explicit sending run can
@@ -375,7 +391,7 @@ TLS health; it never starts CGP certificate recovery.
 | `accepted` | Protocol acknowledgement observed; final recipient delivery is not established |
 | `rejected` | A known refusal or pre-submission failure; intent remains available for a later authorized attempt |
 | `uncertain` | Submission may have occurred, or the worker could not establish its result |
-| `deferred` | Equivalent pending event exists, but its retry time has not arrived |
+| `deferred` | An equivalent pending event or Telegram channel cooldown has not reached its retry time |
 | `suppressed` | No incident needs a message, or equivalent accepted notification is still within its repeat interval |
 | `disabled` | Policy or channel does not authorize sending |
 
@@ -530,7 +546,7 @@ Apply the unit change with `systemctl daemon-reload` in that acceptance session.
 The override is an intentional authorization for subsequent scheduled sends;
 it is not installed or enabled by this project update. Installer CI uses a
 `systemctl` stub and cannot establish that a real host's timer, trust store,
-SMTP relay or webhook behaves as expected.
+SMTP relay, webhook, Telegram bot or MQTT broker behaves as expected.
 
 ### Separate monitoring host from a source checkout
 

@@ -164,6 +164,11 @@ def prepare(channel):
     if not isinstance(channel, dict):
         _invalid()
     kind = channel.get("kind")
+    if kind in ("telegram", "mqtt"):
+        # Extensions reuse the private-file and TLS helpers in this module.
+        # Import after initialization so direct extension imports also work.
+        from . import notify_mqtt, notify_telegram
+        return {"telegram": notify_telegram.prepare, "mqtt": notify_mqtt.prepare}[kind](channel)
     allowed = _SMTP if kind == "smtp" else _WEBHOOK
     if (kind not in ("smtp", "webhook") or set(channel) - _COMMON - allowed
             or not _text(channel.get("id"), 64)
@@ -364,7 +369,7 @@ def _webhook(channel, event, body, timeout):
 
 def deliver(prepared, event, timeout_seconds=15):
     """Attempt once; accepted means protocol acknowledgement, not final delivery."""
-    if not isinstance(prepared, dict) or prepared.get("kind") not in ("smtp", "webhook"):
+    if not isinstance(prepared, dict) or prepared.get("kind") not in ("smtp", "webhook", "telegram", "mqtt"):
         return _result("rejected", "invalid_channel")
     if prepared.get("enabled") is not True:
         return _result("rejected", "channel_disabled")
@@ -374,5 +379,9 @@ def deliver(prepared, event, timeout_seconds=15):
         body = _event_body(event)
     except (ValueError, TypeError, RecursionError, OverflowError):
         return _result("rejected", "invalid_event")
-    operation = _smtp if prepared["kind"] == "smtp" else _webhook
+    if prepared["kind"] in ("telegram", "mqtt"):
+        from . import notify_mqtt, notify_telegram
+        operation = {"telegram": notify_telegram.deliver, "mqtt": notify_mqtt.deliver}[prepared["kind"]]
+    else:
+        operation = _smtp if prepared["kind"] == "smtp" else _webhook
     return operation(prepared, event, body, timeout_seconds)

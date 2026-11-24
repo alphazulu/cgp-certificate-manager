@@ -47,6 +47,24 @@
         "enabled": false,
         "url": "https://alerts.example.com/events",
         "token_file": "/etc/cgp-monitor/webhook-token"
+      },
+      {
+        "id": "telegram",
+        "kind": "telegram",
+        "enabled": false,
+        "chat_id": "-1001234567890",
+        "token_file": "/etc/cgp-monitor/telegram-token"
+      },
+      {
+        "id": "mqtt",
+        "kind": "mqtt",
+        "enabled": false,
+        "host": "broker.example.com",
+        "port": 8883,
+        "security": "tls",
+        "topic": "cgp/monitor/events",
+        "username": "monitor",
+        "password_file": "/etc/cgp-monitor/mqtt-password"
       }
     ]
   }

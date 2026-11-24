@@ -2,7 +2,91 @@
 
 Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 12
+## Current handoff — checkpoint 13
+
+- Development version: **`2.2.0.dev10`**, in draft PR
+  [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
+- Starting HEAD: `04e897623f2525709b58f67b731a2c512691ba90`, clean on resume.
+  Its [PR CI 45423540193](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45423540193)
+  passed all eleven jobs; push CI 45423518606 also passed. Both complete profiles
+  reported **1140 tests / 5665 statements / 2094 branches / 100%**. Those counts
+  validate checkpoint 12, not the new code below.
+- Authorized independent scope: optional Telegram and MQTT notification
+  transports in the existing external monitor. Every new behavior receives unit
+  tests; no new runtime dependency is introduced. Real VM/server/provider,
+  recipient/broker and systemd acceptance remains deferred. No merge, tag,
+  release, privileged workflow dispatch, real send or deployment is included.
+- Telegram uses verified HTTPS and one plaintext `sendMessage` request with a
+  stable event ID and endpoint summaries. Private token/CA snapshots, bounded
+  complete response framing and strict JSON/message acknowledgement distinguish
+  explicit rejection from ambiguous submission. A valid rate-limit hint extends
+  `retry_at` using the greater of configured retry and provider interval, from
+  attempt completion. The cooldown applies across changed conditions/recovery
+  and survives restart without adding fields to schema 1 or public output.
+  Review reproduced a well-formed API `error_code: 429` inside HTTP 2xx that
+  initially lost its retry hint. Both HTTP 429 and successful HTTP envelopes
+  carrying that API refusal now preserve the interval, with regression tests.
+  JSON is also bounded to depth 32 and 4096 value nodes, independently of bytes.
+- MQTT uses a narrow standard-library 3.1.1 publisher: verified TLS by default,
+  new short client ID, CleanSession, one QoS-1 non-retained event JSON, matching
+  PUBACK required. Literal loopback is the only unauthenticated plain transport.
+  It uses the existing bounded TCP dialer and worker supervision. PUBACK does
+  not prove authorization, subscriber receipt or processing; downstream
+  deduplication uses the stable event ID.
+- Each channel retains independent durable intent, outcome and retry identity.
+  Existing opt-in and credential/configuration rotation rules apply to all four
+  transports. The supplied example keeps the monitor, policy and every channel
+  disabled. No credentials, receiver routes or raw peer replies enter saved
+  events or public results.
+- Implemented files: `notify_telegram.py`, `notify_mqtt.py`, common
+  dispatch/state/runner integration and three focused test modules. The
+  [channel guide](docs/NOTIFICATION_CHANNELS.md), existing monitor/staging/security
+  guidance, version metadata and English/Russian READMEs accompany the code.
+- Both full local dependency profiles independently passed **1199 tests /
+  5979 statements / 2236 branches / 100%**, zero missing statements, missing
+  branches, partial branches or exclusions. `--fail-under=100` passed separately
+  over `cgp_cert_manager,repo_tools`. Compat took **31.818 seconds**, current
+  **31.684 seconds**. All **59 new tests** accompany the implementation: 25
+  Telegram, 20 MQTT and 14 cross-channel/configuration/state/CLI cases.
+- Protocol tests use real stdlib parsers and synthetic TLS loopback peers.
+  They cover private snapshots, verified connections, malformed/truncated
+  acknowledgement framing, body/packet bounds, wrong IDs/text/chat/topic,
+  explicit refusals and uncertainty after submission. Cross-channel tests
+  cover four mixed outcomes, independent retries, exact cooldown boundaries,
+  changed-condition/recovery deferral, restart persistence, schema-1 continuity,
+  secret-free output and configuration changes between destinations.
+- Python compilation, three installer shell scripts, all **21 workflow run
+  blocks** and `git diff --check` passed. Documentation validation passed **152
+  relative links and 34 shell examples across 19 Markdown files**. The real
+  configuration validator accepts the supplied example with monitor, sending
+  policy and all four channels disabled. Application and plugin metadata both
+  report `2.2.0.dev10`.
+- Implementation CI is pending publication of this commit. All eleven gates
+  remain required; native Docker installer, promtool and CodeQL validation are
+  not available locally and will be checked on the exact CI revision. Update
+  the handoff and draft PR with observed results rather than forecasting them.
+- Stable main remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / **2.1.0**.
+  No destination, schedule, real server, merge, tag or release was activated.
+
+### Resume from checkpoint 13
+
+1. Inspect current HEAD, worktree and draft PR. Preserve in-progress files and
+   read this handoff, ROADMAP.md, EXTERNAL_MONITORING.md and NOTIFICATION_CHANNELS.md.
+2. The implementation, protocol/cross-channel review and both complete local
+   100% suites are complete. Inspect all eleven native CI jobs for the exact
+   published revision, investigate any failure without relaxing gates, and
+   update this handoff and the draft PR with observed evidence.
+3. Preserve explicit send opt-in, per-channel durable intent and event IDs,
+   Telegram channel cooldown, strict acknowledgement parsing, secret projection
+   and unchanged schema-1 compatibility in subsequent work. Existing SMTP and
+   webhook transport semantics and the default observation-only service remain.
+4. After this scope passes, the next independent roadmap area is administrator-
+   approved authenticated updates. Begin with a concrete trust/rollback design
+   and tests; do not execute a real update or choose a signing trust root for
+   the owner. Real acceptance, bootstrap write enablement, license decision,
+   merge and release remain pending for their separately authorized sessions.
+
+## Checkpoint 12 — external monitoring (historical)
 
 - Development version: **`2.2.0.dev9`**, continuing in draft PR
   [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
