@@ -1,5 +1,5 @@
 [Unit]
-Description=CGP Certificate Manager 2.0.1
+Description=CGP Certificate Manager
 After=network-online.target
 Wants=network-online.target
 [Service]
