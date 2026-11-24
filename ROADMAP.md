@@ -17,13 +17,25 @@
 - [x] Real OpenSSL fixtures and loopback TLS integration tests.
 - [x] Add strict explicit/effective readiness diagnostics, bounded full-response parsing and refusal before issuance; repeat provenance checks around new deployment and in-process rollback writes. See docs/BOOTSTRAP.md.
 - [ ] Enable safe bootstrap when previous fields are missing/inherited/empty only after field-specific deletion/cascade, restoration and TLS semantics are verified on a disposable CGP instance. Current diagnostics do not enable bootstrap writes.
-- [ ] DNS CAA/DNSSEC/delegation checks and dynamic propagation wait.
+- [x] Implement CAA/DNSSEC-evidence/delegation checks, read-only DNS diagnostics and opt-in adaptive propagation with a proper Certbot authenticator, server-bound TXT ownership receipts and supervised cleanup. See docs/DNS.md.
+- [ ] Validate the new DNS path against disposable Cloudflare/ACME staging accounts and lab domains, including renewal migration, before RC/production use.
 - [x] Detect unknown/manual certificate changes, block all subsequent domain mutations while any transaction remains pending, and keep pending snapshots outside backup pruning.
 - [x] Complete ownership/permission validation for private state, lock, configuration, credentials, history, journals and existing backups. Reject unsafe paths before normal CLI/TUI/installer side effects; no automatic permission repair. See docs/STORAGE.md.
 - [x] Implement operator-assisted resolution: exact-preview confirmation, private authorization/completion evidence, incomplete-decision guard and explicit retry without claiming TLS success. See docs/RESOLUTION.md and checkpoint 5 evidence below.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 6 (`2.2.0.dev3`): the complete local suite passed **542 tests**, with
+Checkpoint 7 (`2.2.0.dev4`): **726 tests passed in each of two local dependency
+profiles**, with **3511 statements / 1422 branches / 100%**, zero missing/partial.
+There are **184 additional tests**. Read-only DNS diagnostics, two HTTPS
+validators, actual parent referrals, CAA wildcard/account rules, opt-in adaptive
+propagation, durable cleanup, real Certbot contracts and process-death tests are
+implemented. Existing fixed-mode settings are preserved. Python compilation,
+installer shell syntax and diff checks passed. Implementation CI is pending for
+this source revision; record its exact commit/run after all five jobs pass.
+See DEVELOPMENT.md for the contract and continuation. No production DNS/ACME/CGP
+probe, merge, release or deployment has been performed. Automatic bootstrap remains blocked.
+
+Previous checkpoint 6 (`2.2.0.dev3`): the complete local suite passed **542 tests**, with
 **2434 statements / 1012 branches / 100%**, zero missing or partial. New code and
 87 additional tests are part of this checkpoint, including secret-safe pure
 diagnostics, strict input parsing, explicit/effective races around forward and
@@ -59,7 +71,7 @@ passed tests, both installer baselines and package. Each installer job passed
 18 new unsafe-path refusal cases and preserved pending journals. This follow-up
 documentation commit records the observed result; inspect current-head checks
 when resuming. See DEVELOPMENT.md for exact next steps and remaining limits.
-Operator-assisted resolution was completed in checkpoint 5; checkpoint 6 is active above.
+Operator-assisted resolution was completed in checkpoint 5; checkpoint 7 is active above.
 This remains a development checkpoint, not a production release.
 
 ## 2.3 — Monitoring

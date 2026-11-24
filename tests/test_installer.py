@@ -44,6 +44,28 @@ class InstallerGuardTests(unittest.TestCase):
         installer.preflight()
         self.payload.assert_not_called()
 
+    def test_fixed_dependencies_do_not_require_native_certbot(self):
+        with patch.dict(sys.modules, {'certbot.main': None}):
+            installer.preflight()
+        self.payload.assert_not_called()
+
+    def test_missing_dns_dependency_refuses_before_payload(self):
+        with patch.dict(sys.modules, {'dns.message': None}), patch.object(core, 'token') as token:
+            self.assertEqual(installer.main([]), 1)
+        self.assertIn('DNS runtime dependencies unavailable', self.errors.getvalue())
+        token.assert_not_called()
+        self.payload.assert_not_called()
+
+    def test_adaptive_requires_discoverable_native_authenticator(self):
+        from certbot._internal.plugins.disco import PluginsRegistry
+        self.cfg['dns_propagation'] = {'mode': 'adaptive'}
+        core.atomic(self.config, self.cfg)
+        installer.preflight()
+        with patch.object(PluginsRegistry, 'find_all', return_value={}):
+            self.assertEqual(installer.main([]), 1)
+        self.assertIn('native Certbot and the CGP plugin', self.errors.getvalue())
+        self.payload.assert_not_called()
+
     def test_run_holds_and_passes_lock_until_child_finishes(self):
         def child(command, cwd, pass_fds):
             fd = pass_fds[0]
@@ -98,6 +120,15 @@ class InstallerGuardTests(unittest.TestCase):
         with storage.operation_lock(self.state):
             self.assertEqual(installer.main([]), 1)
         self.assertIn("busy", self.errors.getvalue())
+        self.payload.assert_not_called()
+
+    def test_invalid_dns_options_refuse_before_tokens_or_shell_payload(self):
+        self.cfg.update(dns_propagation={'mode': 'adaptive'}, dns_preflight=False)
+        core.atomic(self.config, self.cfg)
+        with patch.object(core, 'token') as token:
+            self.assertEqual(installer.main([]), 1)
+        self.assertIn('requires preflight', self.errors.getvalue())
+        token.assert_not_called()
         self.payload.assert_not_called()
 
     def test_unsafe_config_is_not_repaired(self):

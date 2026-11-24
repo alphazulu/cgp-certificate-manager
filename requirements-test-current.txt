@@ -1,0 +1,5 @@
+# Independently test the current Certbot/dnspython plugin and wire APIs.
+coverage==7.10.7
+dnspython==2.9.2
+certbot==5.10.0
+acme==5.10.0

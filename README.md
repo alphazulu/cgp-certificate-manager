@@ -6,7 +6,7 @@ Automatic Let's Encrypt certificate management for CommuniGate Pro on Linux usin
 
 [Русская документация](README.ru.md)
 
-This branch develops **2.2.0.dev3**. The stable production release is **2.1.0**.
+This branch develops **2.2.0.dev4**. The stable production release is **2.1.0**.
 See [ROADMAP.md](ROADMAP.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for completed work,
 test evidence and the next checkpoint. The development branch is not a release.
 
@@ -29,10 +29,10 @@ A mail server can host many domains and aliases. Renewing certificates manually 
 
 ## Requirements
 
-Ubuntu 24.04 LTS is the tested deployment environment. Python 3, Certbot, Cloudflare DNS plugin, OpenSSL, dig, iproute2, systemd. A running CommuniGate Pro instance with an accessible local HTTP CLI and authorized account. Cloudflare API tokens need Zone:Read and DNS:Edit for the managed zones. Other CommuniGate versions and distributions should be tested before production use.
+Ubuntu 24.04 LTS is the tested deployment environment. Python 3, dnspython, Certbot, Cloudflare DNS plugin, OpenSSL, iproute2 and systemd are required. Adaptive mode requires native Certbot in the launcher's Python environment; snap Certbot is not supported for that mode. A running CommuniGate Pro instance with an accessible local HTTP CLI and authorized account is required. Cloudflare API tokens need Zone:Read and DNS:Edit for the managed zones. Other CommuniGate versions and distributions should be tested before production use.
 
     sudo apt update
-    sudo apt install certbot python3-certbot-dns-cloudflare python3 openssl ca-certificates dnsutils iproute2
+    sudo apt install certbot python3-certbot-dns-cloudflare python3-dnspython python3 openssl ca-certificates dnsutils iproute2
     git clone https://github.com/alphazulu/cgp-certificate-manager.git
     cd cgp-certificate-manager
 
@@ -114,11 +114,13 @@ See [bootstrap contract and remaining experiments](docs/BOOTSTRAP.md).
 
 - /opt/cgp-certificate-manager/: application
 - /usr/local/sbin/cgp-letsencrypt: CLI launcher
+- /usr/local/sbin/cgp-certbot: supervised wrapper for adaptive Certbot operations
 - /etc/cgp-letsencrypt/: private configuration and credentials
 - /etc/letsencrypt/: Certbot lineages (not replaced by installer)
 - /var/lib/cgp-letsencrypt/: discovered domains, state, history, backups and lock
 - /var/lib/cgp-letsencrypt/transactions/: pending journals containing private certificate snapshots (directory 0700, files 0600)
 - /var/lib/cgp-letsencrypt/resolutions/: private operator authorization and completion evidence, including original transaction snapshots
+- /var/lib/cgp-letsencrypt/dns-challenges/: private adaptive TXT ownership and cleanup receipts
 
 ### Private-file permissions
 
@@ -153,9 +155,40 @@ sudo cgp-letsencrypt --acknowledge-restored --domain example.com \
 
 The first command only previews the decision. The second requires the exact token and a reason, preserves the full journal in private audit storage, and returns `acknowledged_unverified`. It makes no CGP changes and does not claim TLS success. Unknown/foreign states and stale confirmations are refused. An interrupted authorization continues blocking normal recovery and mutations even if its original journal has already been removed; only an explicit retry can finish it. The console exposes the same procedure through domain actions and F9. Read [the full procedure and interruption semantics](docs/RESOLUTION.md) first.
 
+## DNS diagnostics and adaptive propagation
+
+```sh
+sudo cgp-letsencrypt --dns-check --json
+sudo cgp-letsencrypt --dns-check --domain example.com
+sudo cgp-letsencrypt --dns-transactions --json
+sudo cgp-letsencrypt --dns-cleanup
+```
+
+DNS diagnostics read configuration, discovery and public DNS without creating
+state or changing DNS/CGP. Checks cover Let's Encrypt CAA policy, DNSSEC evidence
+from Cloudflare/Google over verified HTTPS, actual parent referrals and child
+zone/challenge delegation. They do not claim local DNSSEC validation or global
+propagation. Unknown account-bound CAA policy, conflicting data and unsupported
+challenge aliases/delegations are refused conservatively.
+
+Existing configurations retain fixed waiting. To opt into adaptive mode, add
+`"dns_propagation": {"mode": "adaptive", "timeout_seconds": 300,
+"poll_interval_seconds": 5}` and keep `dns_preflight` enabled. The authenticator
+requires the actual TXT batch at all assigned authoritative NS and both
+recursive views for two fresh passes. Timeout stops before ACME challenge
+answer. Private receipts preserve exact ownership across interruption; cleanup
+does not delete borrowed or manually changed records. The installed
+`cgp-certbot` wrapper is required for standalone adaptive renewal.
+
+The update preserves renewal files and does not force issuance or switch the
+saved authenticator automatically. Read [the complete configuration, commands,
+trust model and recovery limits](docs/DNS.md) before opting in. `--dns-cleanup`
+retries cleanup under the manager lock; its two inspection counterparts are
+read-only. No production DNS/ACME validation is claimed by the unit suite.
+
 ## Safety and limitations
 
-Backups contain private keys; restrict them to root. Rollback is a best-effort API restoration, not a server-side atomic transaction. A verified readback does not guarantee an old broken certificate will become usable. TLS checks require the configured listener to select the domain certificate via SNI; diagnostic checks of other ports can fail by design. DNS preflight does not perform full DNSSEC or CAA validation. Renewal still depends on DNS and ACME availability. Inspect journals and test changes before enabling unattended operation.
+Backups contain private keys; restrict them to root. Rollback is a best-effort API restoration, not a server-side atomic transaction. A verified readback does not guarantee an old broken certificate will become usable. TLS checks require the configured listener to select the domain certificate via SNI; diagnostic checks of other ports can fail by design. CAA preflight is conservative and DNSSEC evidence relies on the selected HTTPS validators; neither replaces the CA's validation. Renewal still depends on DNS and ACME availability. Inspect journals and test changes before enabling unattended operation.
 
     journalctl -u cgp-letsencrypt.service -n 100 --no-pager
     python3 -m unittest discover -s tests -v
@@ -188,8 +221,15 @@ Both terminal interfaces use the saved UI language for common navigation and pro
 
 Stable 2.1.0 passed 188 unit tests. Development adds unit tests for every new transaction path, process-death/restart scenarios and real OpenSSL/loopback TLS checks. CI enforces `coverage report --fail-under=100` and tests clean installation, upgrades from both 2.0.1 and 2.1.0, rollback, lock handling and journal preservation in disposable Ubuntu containers with mocked systemd. See DEVELOPMENT.md for observed counts and CI results. Coverage does not establish correctness for every live CGP/ACME environment.
 
-The current acknowledgement checkpoint passed **455 tests locally**, with **2073 measured statements / 844 branches / 100%**. The suite includes 22 process-death/restart tests and 9 real OpenSSL/loopback TLS tests. Installer scenarios also check operator-audit preservation and 24 unsafe-path refusals per baseline; see [DEVELOPMENT.md](DEVELOPMENT.md) for exact observed CI evidence. Production validation remains a separate step.
+The DNS checkpoint adds actual Certbot plugin/authorization tests, DNS wire and
+loopback HTTPS tests, process-group supervision and DNS receipt restart cases.
+CI tests compatibility and current dependency profiles separately, plus both
+installer baselines with certificate/DNS journal and audit preservation.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for exact observed counts and CI evidence.
+Production validation remains a separate step. Development test requirements
+are isolated compatibility fixtures, not production dependency pins.
 
+    python3 -m pip install -r requirements-test-current.txt
     python3 -m coverage run --branch --source=cgp_cert_manager -m unittest discover -s tests -v
     python3 -m coverage report -m --fail-under=100
 

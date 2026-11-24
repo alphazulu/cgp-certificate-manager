@@ -13,7 +13,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import core, storage
+from . import core, dnsconfig, storage
 from .localization import translate
 
 LANGUAGE='en'
@@ -136,7 +136,7 @@ def validate(cfg):
         raise ValueError('CommuniGate credentials required')
     if not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', cfg['email']):
         raise ValueError('Valid ACME email required')
-    number(cfg['propagation_seconds'], 10, 3600)
+    dnsconfig.validate(cfg)
     for d in cfg.get('domains', []):
         core.identifier(d['cgp_domain'])
         for field in ('extra_names','exclude_names'):

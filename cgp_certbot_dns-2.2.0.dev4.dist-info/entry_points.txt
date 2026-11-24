@@ -1,0 +1,2 @@
+[certbot.plugins]
+cgp-dns = cgp_cert_manager.certbot_dns:Authenticator

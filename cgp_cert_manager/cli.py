@@ -1,7 +1,7 @@
 import argparse, shutil, sys, smtplib, socket
 from email.message import EmailMessage
 from .core import *
-from . import __version__, bootstrap, deployment, storage
+from . import __version__, bootstrap, deployment, dnsconfig, storage
 
 def hook(cfg,cleanup):
     if cleanup:
@@ -10,6 +10,7 @@ def hook(cfg,cleanup):
         allowed={a['credentials'] for a in cfg.get('cloudflare_accounts',[])}|{cfg.get('cloudflare_credentials')}
         if path not in allowed or not all(re.fullmatch(r'[a-f0-9]{32}',r[k]) for k in ('zone','record')): raise Error('Invalid cleanup metadata')
         cf(path,'zones/'+r['zone']+'/dns_records/'+r['record'],method='DELETE'); return
+    options=dnsconfig.validate(cfg)
     name=os.environ.get('CERTBOT_IDENTIFIER') or os.environ['CERTBOT_DOMAIN']; n,e=dns_name(name)
     if not n: raise Error('Invalid challenge domain')
     z=zones(cfg); zone=zone_for(n,z)
@@ -17,7 +18,7 @@ def hook(cfg,cleanup):
     a=z[zone]; record='_acme-challenge.'+n.removeprefix('*.'); value=os.environ['CERTBOT_VALIDATION']
     r=cf(a['credentials'],'zones/'+a['id']+'/dns_records',method='POST',data={'type':'TXT','name':record,'content':value,'ttl':120})['result']
     print(json.dumps({'credentials':a['credentials'],'zone':a['id'],'record':r['id']}),flush=True)
-    time.sleep(int(cfg.get('propagation_seconds',60)))
+    time.sleep(options['propagation_seconds'])
 
 def notify(cfg,state,name,message):
     LOG.error('%s: %s',name,message)
@@ -47,10 +48,12 @@ def main():
     p=argparse.ArgumentParser(); p.add_argument('--version',action='version',version=__version__); p.add_argument('--domain'); p.add_argument('--backup-file'); p.add_argument('--json',action='store_true'); p.add_argument('--allow-shrink',action='store_true'); p.add_argument('--force-renew',action='store_true'); p.add_argument('--retry-now',action='store_true')
     p.add_argument('--confirm-transaction'); p.add_argument('--reason')
     g=p.add_mutually_exclusive_group()
-    for x in ('sync','list','show-domains','status','plan','verify','doctor','dry-run','install-only','history','hook-auth','hook-cleanup','reset-backoff','discover-listeners','verify-listeners','repair-chain','tui','apply-schedule','console','transactions','recover','acknowledge-restored','bootstrap-check'): g.add_argument('--'+x,action='store_true')
+    for x in ('sync','list','show-domains','status','plan','verify','doctor','dry-run','install-only','history','hook-auth','hook-cleanup','reset-backoff','discover-listeners','verify-listeners','repair-chain','tui','apply-schedule','console','transactions','recover','acknowledge-restored','bootstrap-check','dns-check','dns-transactions','dns-cleanup'): g.add_argument('--'+x,action='store_true')
     g.add_argument('--backups',metavar='DOMAIN'); g.add_argument('--rollback',metavar='DOMAIN'); g.add_argument('--migrate',action='store_true')
     a=p.parse_args()
     if a.backup_file and not a.rollback: p.error('--backup-file requires --rollback')
+    if (a.dns_transactions or a.dns_cleanup) and a.domain is not None:
+        p.error('--dns-transactions and --dns-cleanup are global operations; omit --domain')
     if a.acknowledge_restored:
         if not a.domain: p.error('--acknowledge-restored requires --domain')
         try: identifier(a.domain)
@@ -64,6 +67,26 @@ def main():
         if not a.reason.isprintable() or not 1<=len(a.reason.strip())<=500:
             p.error('Reason must contain 1 to 500 printable characters without controls')
         a.reason=a.reason.strip()
+    if a.dns_transactions:
+        from . import dnsauth
+        rows=dnsauth.status(load(CONFIG))
+        if a.json: print(json.dumps(rows,indent=2,ensure_ascii=False))
+        elif not rows: print('No pending DNS challenges')
+        else:
+            for row in rows: print(row['id']+' '+row['name']+': '+row['phase'])
+        return 0
+    if a.dns_check:
+        if a.domain is not None:
+            try: identifier(a.domain)
+            except Error: p.error('Invalid DNS diagnostic domain')
+        from . import dnschecks
+        rows=dnschecks.reports(load(CONFIG),a.domain)
+        if a.json: print(json.dumps(rows,indent=2,ensure_ascii=False))
+        elif not rows: print('No CGP domains')
+        else:
+            for row in rows:
+                print(row['domain']+': DNS ready='+('yes' if row['ready'] else 'no')+'; reason='+(row['reason'] or 'none'))
+        return int(any(not row['ready'] for row in rows))
     if a.bootstrap_check:
         if a.domain is not None:
             try: identifier(a.domain)
@@ -94,11 +117,17 @@ def main():
         storage.ensure_private_directory(STATE)
         storage.validate_tree(STATE)
         hook(migrate(load(CONFIG)),a.hook_cleanup); return 0
-    with storage.operation_lock(STATE):
+    with storage.operation_lock(STATE) as lock:
         storage.validate_tree(STATE)
+        a.operation_lock_fd=lock.fileno()
         return locked_main(a,migrate(load(CONFIG)))
 
 def locked_main(a,cfg):
+    if a.dns_cleanup:
+        from . import dnsauth
+        dnsauth.cleanup_pending(cfg)
+        print(json.dumps({'result':'cleaned'}) if a.json else 'DNS challenge cleanup complete')
+        return 0
     if a.acknowledge_restored:
         from . import resolution
         if a.confirm_transaction is None:

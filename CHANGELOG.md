@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.2.0.dev4 — unreleased
+
+- Add read-only `--dns-check`, including Let's Encrypt CAA parent/alias/wildcard policy, explicit DNSSEC evidence from two HTTPS validators and actual parent/child/challenge delegation checks. Refuse ambiguous, unavailable or conflicting identifiers before Certbot.
+- Parse bounded DNS wire messages with protected HTTPS, absolute request deadlines, public authoritative TCP endpoints and strict identity/flag/class/singleton checks. Keep AD assertions separate from local validation and do not label every SERVFAIL as DNSSEC-bogus.
+- Add opt-in adaptive propagation with a proper `cgp-dns` Certbot authenticator: create the current batch, require all expected TXT values in two fresh complete observer passes, and abort before ACME answer on failure. Preserve legacy fixed delay and renewal settings.
+- Record durable, server-bound TXT ownership before creation; borrow pre-existing records without deleting them, recover uncertain responses by exact markers, recheck identity before deletion, and retain unresolved/changed/foreign evidence. Add `--dns-transactions` and locked `--dns-cleanup`.
+- Supervise adaptive Certbot under a verified inherited operation lock and separate process group, with closed stdin and bounded TERM/KILL handling. Perform final cleanup only after group quiescence. Install an app-local plugin and `cgp-certbot` standalone wrapper with installer rollback.
+- Add unit tests with all implementation changes, actual Certbot authorization/entry-point regressions, wire/loopback HTTPS tests, subprocess crash fixtures and installer receipt preservation. Test compatibility/current dependencies independently while retaining the strict 100% statements/branches gate. Exact observed counts and CI are recorded in DEVELOPMENT.md.
+- Document trust assumptions, configuration, dependency requirements, renewal compatibility and remaining operational limits in [docs/DNS.md](docs/DNS.md), with English/Russian README guidance. No merge, release, production deployment or automatic bootstrap is enabled by this checkpoint.
+- Complete local validation: 726 tests in both compatibility/current dependency profiles, 3511 measured statements and 1422 branches at 100%, with zero missing/partial. Python compile, shell syntax and diff checks passed. Exact implementation CI evidence is tracked separately in DEVELOPMENT.md.
+
 ## 2.2.0.dev3 — unreleased
 
 - Add `--bootstrap-check [--domain DOMAIN] [--json]` with private-key-free field provenance, completeness and refusal reports. It reads only configuration and CGP, with no state/lock creation, fsync, Cloudflare, Certbot, recovery or notification.

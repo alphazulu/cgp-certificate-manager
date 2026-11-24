@@ -59,7 +59,7 @@ class AuditTests(unittest.TestCase):
 
     def test_diagnostic_failure_does_not_notify_or_write(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(cli,'STATE',Path(tmp)), patch.object(cli,'zones',side_effect=OSError()), patch.object(cli,'notify') as notify, patch.object(cli,'atomic') as atomic:
-            args=argparse.Namespace(dry_run=False,status=True,plan=False,doctor=False,verify=False,verify_listeners=False,migrate=False,apply_schedule=False,discover_listeners=False,reset_backoff=False,repair_chain=False,list=False,history=False,backups=None,rollback=None,show_domains=False,transactions=False,recover=False,acknowledge_restored=False)
+            args=argparse.Namespace(dry_run=False,status=True,plan=False,doctor=False,verify=False,verify_listeners=False,migrate=False,apply_schedule=False,discover_listeners=False,reset_backoff=False,repair_chain=False,list=False,history=False,backups=None,rollback=None,show_domains=False,transactions=False,recover=False,acknowledge_restored=False,dns_cleanup=False)
             self.assertEqual(cli.locked_main(args,{}),1)
             notify.assert_not_called()
             atomic.assert_not_called()
@@ -98,7 +98,8 @@ class AuditTests(unittest.TestCase):
         self.assertIn('--dry-run',cmd)
 
     def test_dns_preflight_conflict(self):
+        from cgp_cert_manager import dnschecks
         d={'names':['example.com']}
         z={'example.com':{'ns':['ns.example.net']}}
-        with patch.object(core,'run',side_effect=[b'ns.example.net.\n',b'challenge.example.net.\n']):
+        with patch.object(dnschecks,'require_ready',side_effect=core.Error('ACME CNAME requires manual configuration')):
             with self.assertRaisesRegex(core.Error,'CNAME'): core.dns_preflight(d,z)

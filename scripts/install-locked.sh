@@ -10,13 +10,15 @@ umask 077
 app=/opt/cgp-certificate-manager
 conf=/etc/cgp-letsencrypt/config.json
 bin=/usr/local/sbin/cgp-letsencrypt
+certbot_bin=/usr/local/sbin/cgp-certbot
 units=/etc/systemd/system
 dropin=$units/cgp-letsencrypt.timer.d/90-cgp-manager.conf
 if systemctl is-active --quiet cgp-letsencrypt.service; then echo 'Service running; retry after completion'; exit 1; fi
 # Validate migration and schedule before stopping the timer or modifying files.
 python3 -c 'from cgp_cert_manager.core import CONFIG,load; from cgp_cert_manager.cli import migrate; from cgp_cert_manager.schedule import render; cfg=migrate(load(CONFIG)); render(cfg.get("schedule",{}))'
+# The inherited-lock checker has validated DNS options and native dependencies.
 b=$(mktemp -d /root/cgp-manager-backup-XXXXXXXX)
-for f in "$bin" "$conf" "$units/cgp-letsencrypt.service" "$units/cgp-letsencrypt.timer" "$dropin"; do
+for f in "$bin" "$certbot_bin" "$conf" "$units/cgp-letsencrypt.service" "$units/cgp-letsencrypt.timer" "$dropin"; do
     if [[ -e $f ]]; then cp -a "$f" "$b/"; fi
 done
 if [[ -d $app ]]; then cp -a "$app" "$b/opt"; fi
@@ -40,7 +42,7 @@ recover() {
     if [[ $changed == 1 ]]; then
         rm -rf "$app" || failed=1
         if [[ -d $b/opt ]]; then cp -a "$b/opt" "$app" || failed=1; fi
-        for f in "$bin" "$conf" "$units/cgp-letsencrypt.service" "$units/cgp-letsencrypt.timer" "$dropin"; do
+        for f in "$bin" "$certbot_bin" "$conf" "$units/cgp-letsencrypt.service" "$units/cgp-letsencrypt.timer" "$dropin"; do
             restore_file "$f" || failed=1
         done
         systemctl daemon-reload || failed=1
@@ -68,8 +70,11 @@ changed=1
 install -d -m 755 "$app"
 # Replace the package so stale files from older releases cannot be imported.
 rm -rf "$app/cgp_cert_manager"
+rm -rf "$app"/cgp_certbot_dns-*.dist-info
 cp -a cgp_cert_manager "$app/"
+cp -a cgp_certbot_dns-*.dist-info "$app/"
 install -m 750 launcher "$bin"
+install -m 750 certbot-launcher "$certbot_bin"
 install -m 644 systemd/* "$units/"
 # Run under the existing lock, avoiding nested CLI flock acquisition.
 (cd "$app" && /usr/bin/python3 -c 'from cgp_cert_manager.core import CONFIG,load,atomic; from cgp_cert_manager.cli import migrate; atomic(CONFIG,migrate(load(CONFIG)))')

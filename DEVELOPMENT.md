@@ -2,7 +2,126 @@
 
 Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 6
+## Current handoff — checkpoint 7
+
+- Development version: **`2.2.0.dev4`**, draft PR [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
+- Starting HEAD: `f7c50dccf94aa4a8f00fa39ce5dbb47276a5188a`, clean on resume;
+  starting current-head [CI 45374813140](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45374813140)
+  passed all four previous jobs. That historical run does not validate this change.
+- DNS implementation and accompanying tests are complete. Both complete local
+  dependency profiles passed **726 tests**, with **3511 statements / 1422 branches /
+  100%**, zero missing statements and zero partial branches. The compatibility
+  profile (Certbot/ACME 2.9.0, dnspython 2.6.1) took 19.046 seconds; the isolated
+  current profile (Certbot/ACME 5.10.0, dnspython 2.9.2) took 18.161 seconds.
+  Both used Python 3.12 / coverage 7.10.7 and passed `--fail-under=100`.
+  **184 additional tests** accompany the changes. Python compilation, installer
+  shell syntax and `git diff --check` also passed. No exclusions or lowered gates.
+- Implementation CI is pending for this source revision. Record the exact
+  implementation commit/run after all five GitHub jobs finish; historical green
+  runs do not validate this code. Docker is unavailable locally, so execution
+  of both disposable installer matrices must be verified from CI.
+- Stable `main` remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / **2.1.0**.
+  This is development only: no merge, release, production DNS/CGP/ACME probe or
+  deployment. Automatic CGP bootstrap remains disabled pending a disposable lab.
+
+### Checkpoint 7 contract and completed work
+
+1. `--dns-check [--domain DOMAIN] [--json]` is independent of CGP bootstrap
+   readiness and performs no state/lock creation or mutation. It includes all
+   unavailable SAN evidence, safe reason codes and explicit preflight setting.
+2. Pure DNS configuration validation is shared by CLI issuance/auth hooks,
+   wizard Save and installer preflight. Old configurations retain fixed waiting;
+   adaptive mode is explicit and requires preflight. Cleanup does not depend on
+   valid new waiting options. Force/retry/staging do not bypass an enabled gate.
+3. DNS wire transport checks query/response identity, RCODE/flags/class/size and
+   duplicate singleton records. Two named HTTPS validators retain normal TLS
+   hostname trust while direct IPv4 endpoints avoid local DNS bootstrap. The
+   standard HTTP parser uses deadline-aware socket I/O, including header reads.
+4. CAA follows original-parent walking and CNAME/DNAME chains, with wildcard
+   policy, critical-property handling, method restrictions and conservative
+   account/parameter uncertainty. Empty negative responses require ancestral
+   SOA evidence. Bounded queries/aliases/records and safe output are tested.
+5. Delegation requires actual non-AA parent referrals, child authoritative
+   apex NS/SOA and the actual challenge zone cut. A child apex answer cannot
+   substitute for a parent referral. Child-side DS denial cannot establish an
+   unsigned parent delegation. DNSSEC reports resolver assertions, not local
+   validation; unsigned/unknown/bogus/error meanings remain distinct.
+6. The proper `cgp-dns` authenticator processes the actual challenge batch, with
+   preserved original wildcard CAA intent. Two fresh complete TXT passes cover
+   all assigned authoritative NS and both recursive views under one deadline.
+   Raising from perform stops before ACME answer; manual-hook exit does not
+   establish that guarantee. Legacy fixed hooks remain compatible and separate.
+7. Private server-bound receipts precede POST, retain uncertain effects, borrow
+   existing TXT without deleting it and revalidate exact record ownership before
+   DELETE. A generic GET404 requires confirmed zone access plus complete listing.
+   Only a validated definite provider rejection can retire an unused intent.
+   Changed/unknown/foreign state stays pending; there is no blind second POST.
+8. `--dns-transactions` is read-only; `--dns-cleanup` is global and locked. Fixed
+   mode cannot bypass adaptive receipts. Adaptive initialization retries safe
+   recovery. The `cgp-certbot` wrapper verifies lock descriptors, supervises the
+   process group and closes stdin; final cleanup requires confirmed quiescence.
+   Exact help/version calls remain read-only.
+9. The installer copies app-local entry-point metadata and the new wrapper,
+   backs up/restores both launchers, preserves DNS receipts and rejects invalid
+   settings/dependencies before application/timer changes. It does not rewrite
+   Certbot renewal configuration, install global Python packages or force issuance.
+10. Unit tests accompany every new module. Real Certbot authorization/entry-point
+    contracts, real loopback HTTPS framing and process-group behavior supplement
+    synthetic DNS/provider fixtures. Four fresh-process DNS restart scenarios
+    cover POST/ID-save and DELETE/completion gaps, uncertain absence and manual
+    changes. CI tests compatibility/current APIs separately and keeps 100% gates.
+
+### Review issues addressed in checkpoint 7
+
+- Nonzero manual auth-hook exit can still lead to ACME answer: use the plugin's
+  batch perform boundary and test the real Certbot AuthHandler.
+- Certbot represents wildcard authorization with its base name: retain original
+  requested identifiers for CAA and test a wildcard-only issuewild permission.
+- Default DNS RRset grouping hides conflicting singleton records: preserve wire
+  records before validation and combine only safe non-singletons.
+- A socket idle timeout is not a batch deadline: bound each underlying read/send,
+  including trickling HTTP headers, and avoid OS hostname lookup for DoH bootstrap.
+- Parent/child shared servers, negative apex answers and child DS denial cannot
+  serve as positive delegation evidence.
+- Bare HTTP404 and any POST error are insufficient evidence of no side effect:
+  confirm absence and distinguish validated provider rejection from uncertainty.
+- Cloudflare normalizes TXT content to quoted character strings: send canonical
+  quoted values and test exact quoted/legacy matching and consistent empty pages.
+- Waiting for only the Certbot leader leaves descendant races: confirm the full
+  process group is gone before parent cleanup, including normal leader exit.
+- Changing modes, credentials or servers must not silently abandon receipts;
+  retain server identity and allowed credential binding with explicit inspection.
+
+### Resume from checkpoint 7
+
+1. Fetch actual branch HEAD, draft PR and checks before editing. Expect five jobs:
+   tests (compat), tests (current), installer (2.0.1), installer (2.1.0), package.
+   Record the exact tested commit and run, not just a historical green status.
+2. Read [docs/DNS.md](docs/DNS.md) for the configuration/trust/ownership contract.
+   Preserve all new unit tests and strict 100% statement/branch coverage. Use
+   separate environments and coverage data for the two dependency profiles.
+3. Remaining validation before RC: disposable real Cloudflare/ACME staging
+   exercises for CAA/DNSSEC/delegation, one/multiple accounts, timeout/cleanup,
+   renewal reconfiguration and wrapper scheduling. Use synthetic lab domains
+   only; no production probe or rollout is authorized by this checkpoint.
+4. An uncertain POST with no identifiable record intentionally remains blocked.
+   Retain evidence and inspect provider audit history; do not fabricate ownership
+   or delete receipts to make automation continue. A future explicit abandonment
+   protocol needs its own reviewed evidence/authorization contract.
+5. Automatic CGP bootstrap is still separate: obtain a disposable CGP instance,
+   establish field removal/cascade/restore semantics and then design a new snapshot
+   kind. Existing schema-2 certificate journals keep their effective-value meaning.
+6. Complete final review, upgrade/staging evidence and release-candidate notes.
+   Merge/release and a production validation window need explicit maintainer
+   approval. Stable main and the running server remain on 2.1.0.
+
+The DNS observer set is not global propagation proof, AD is not local signature
+validation, and GET-then-DELETE is not provider-side compare-and-swap. Process
+death is tested, hardware power loss is not. The legacy fixed authenticator path
+does not acquire the new adaptive ownership guarantees. See DNS.md for detailed
+limits rather than inferring operational readiness solely from 100% coverage.
+
+## Checkpoint 6 — bootstrap diagnostics (historical)
 
 - Development version: **`2.2.0.dev3`**; draft PR [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
 - Completed strict CGP response parsing, explicit/effective readiness diagnostics,
@@ -123,7 +242,7 @@ separate handled-error rollback boundary.
 
 ## Checkpoint 5 — operator resolution (historical)
 
-For current work and continuation use checkpoint 6 above.
+For current work and continuation use checkpoint 7 above.
 
 - Development version: **`2.2.0.dev2`**; draft PR [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
 - Completed explicit, audited operator acknowledgement of exact previous
@@ -223,7 +342,7 @@ handled-error rollback boundary.
 
 ## Checkpoint 4 — private storage (historical)
 
-For current work and resume steps use checkpoint 6 above.
+For current work and resume steps use checkpoint 7 above.
 
 - Development version: **`2.2.0.dev1`**; draft PR [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
 - Completed ownership, permissions and path checks for private state, config,
@@ -321,7 +440,7 @@ remote-concurrency and power-loss limits below still apply.
 ## Checkpoint 3 — integration (historical)
 
 The following records the preceding implementation. For current results and
-next actions use checkpoint 6 above.
+next actions use checkpoint 7 above.
 
 - Development version: `2.2.0.dev0`; draft PR [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2). Stable `main` and release 2.1.0 remain the production baseline.
 - Deployment and manual rollback now use the journal/recovery engine. New code was implemented with unit tests in the same working change; no coverage exclusions or weakened thresholds were introduced.

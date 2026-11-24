@@ -6,15 +6,30 @@ from pathlib import Path
 import subprocess
 import sys
 
-from . import core, storage
+from . import core, dnsconfig, storage
 from .cli import migrate
 from .schedule import render
+
+
+def runtime_dependencies(options):
+    """Check the candidate interpreter before changing application or timer."""
+    try:
+        import dns.message
+        if options['mode'] == 'adaptive':
+            from certbot.main import main as certbot_main
+            from certbot._internal.plugins.disco import PluginsRegistry
+            if 'cgp-dns' not in PluginsRegistry.find_all():
+                raise ImportError('CGP DNS authenticator missing')
+    except Exception:
+        raise core.Error('DNS runtime dependencies unavailable: install python3-dnspython; '
+                         'adaptive mode also requires native Certbot and the CGP plugin') from None
 
 
 def preflight():
     """Validate existing secrets and recovery data without changing permissions."""
     storage.validate_tree(core.STATE)
     cfg = migrate(core.load(core.CONFIG))
+    runtime_dependencies(dnsconfig.validate(cfg))
     render(cfg.get("schedule", {}))
     accounts = cfg.get("cloudflare_accounts") or [{"credentials": cfg["cloudflare_credentials"]}]
     for account in accounts:

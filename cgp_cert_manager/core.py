@@ -1,14 +1,19 @@
 import base64, csv, hashlib, ipaddress, json, logging, os, re, subprocess, tempfile, urllib.request, urllib.parse, time
 from pathlib import Path
 from datetime import datetime, timezone
+from urllib.error import HTTPError
 
 CONFIG = Path('/etc/cgp-letsencrypt/config.json')
 STATE = Path('/var/lib/cgp-letsencrypt')
 LIVE = Path('/etc/letsencrypt/live')
 LOG = logging.getLogger('cgp')
 FIELDS = ('PrivateSecureKey', 'SecureCertificate', 'CAChain', 'CertificateType')
+MAX_CF_RESPONSE = 1024 * 1024
 
 class Error(Exception): pass
+class CloudflareRejected(Error):
+    """The provider explicitly rejected a request without a result."""
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs): return None
 
@@ -61,12 +66,56 @@ def token(path):
         if k.strip()=='dns_cloudflare_api_token' and v.strip(): return v.strip()
     raise Error('Cloudflare token missing')
 
+def _cf_pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('Duplicate JSON property')
+        result[key] = value
+    return result
+
+def _cf_constant(value):
+    raise ValueError('Non-finite JSON value')
+
+def _cf_payload(response):
+    try:
+        data = response.read(MAX_CF_RESPONSE + 1)
+        if len(data) > MAX_CF_RESPONSE:
+            raise Error('Cloudflare response exceeds size limit')
+        result = json.loads(data.decode('utf-8'), object_pairs_hook=_cf_pairs,
+                            parse_constant=_cf_constant)
+    except (OSError, ValueError, RecursionError):
+        raise Error('Invalid Cloudflare response') from None
+    if not isinstance(result, dict):
+        raise Error('Invalid Cloudflare response')
+    return result
+
+def _cf_rejected(response):
+    errors = response.get('errors')
+    return (response.get('success') is False and response.get('result') is None
+            and isinstance(errors, list) and bool(errors)
+            and all(isinstance(item, dict) and type(item.get('code')) is int
+                    and isinstance(item.get('message'), str) for item in errors))
+
 def cf(path, endpoint, method='GET', params=None, data=None):
     url='https://api.cloudflare.com/client/v4/'+endpoint
     if params: url+='?'+urllib.parse.urlencode(params)
     req=urllib.request.Request(url, data=json.dumps(data).encode() if data is not None else None, method=method, headers={'Authorization':'Bearer '+token(path),'Content-Type':'application/json'})
-    with opener().open(req,timeout=40) as r: p=json.load(r)
-    if not p.get('success'): raise Error('Cloudflare API rejected request')
+    try:
+        with opener().open(req,timeout=40) as r: p=_cf_payload(r)
+    except HTTPError as error:
+        if error.code not in (400, 401, 403, 422):
+            raise
+        try:
+            p = _cf_payload(error)
+        finally:
+            error.close()
+        if _cf_rejected(p):
+            raise CloudflareRejected('Cloudflare API explicitly rejected request') from None
+        raise Error('Cloudflare API rejected request') from None
+    if _cf_rejected(p):
+        raise CloudflareRejected('Cloudflare API explicitly rejected request')
+    if p.get('success') is not True: raise Error('Cloudflare API rejected request')
     return p
 
 def zones(cfg):
@@ -209,34 +258,33 @@ def shrink_block(d,old,allow=False):
     missing=set(old['names'])-set(d['names']); unavailable=set(d['unavailable'])
     return sorted(n for n in missing if n in unavailable or any(covered(x,n) for x in unavailable) or any(covered(n,x) for x in unavailable))
 
-def dns_preflight(d,z):
-    # Compare public delegation against the Cloudflare zone metadata.
-    checked=set()
-    for n in d['names']:
-        zone=zone_for(n,z)
-        if zone not in checked:
-            expected={x.rstrip('.').lower() for x in z[zone]['ns']}
-            actual={x.rstrip('.').lower() for x in run('dig','+short','+time=4','+tries=2','NS',zone).decode().splitlines()}
-            if expected and actual!=expected: raise Error('DNS delegation mismatch: '+zone)
-            checked.add(zone)
-        challenge='_acme-challenge.'+n.removeprefix('*.')
-        if run('dig','+short','+time=4','+tries=2','CNAME',challenge).strip(): raise Error('ACME CNAME requires manual configuration: '+challenge)
+def dns_preflight(d,z,cfg=None):
+    from . import dnschecks
+    dnschecks.require_ready(d,z,cfg)
 
 def issue(cfg,d,z,args):
-    from . import storage
+    from . import dnsauth, dnsconfig, storage
+    options=dnsconfig.validate(cfg)
     paths={z[zone_for(n,z)]['credentials'] for n in d['names']}
     for path in paths: storage.check_private_file(path)
+    if options['mode']=='fixed': dnsauth.assert_clear(cfg)
     local=local_info(d); changed=local is not None and set(local['names'])!=set(d['names'])
-    if cfg.get('dns_preflight',True): dns_preflight(d,z)
+    if options['preflight']: dns_preflight(d,z,cfg)
     cmd=['certbot','certonly','--non-interactive','--agree-tos','--email',cfg['email'],'--cert-name',d['cert_name'],'--key-type','rsa','--rsa-key-size','2048']
-    if len(paths)==1:
-        cmd+=['--dns-cloudflare','--dns-cloudflare-credentials',next(iter(paths)),'--dns-cloudflare-propagation-seconds',str(cfg.get('propagation_seconds',60))]
+    if options['mode']=='adaptive':
+        cmd+=['--authenticator','cgp-dns']
+    elif len(paths)==1:
+        cmd+=['--dns-cloudflare','--dns-cloudflare-credentials',next(iter(paths)),'--dns-cloudflare-propagation-seconds',str(options['propagation_seconds'])]
     else:
         cmd+=['--manual','--preferred-challenges','dns','--manual-auth-hook','/usr/local/sbin/cgp-letsencrypt --hook-auth','--manual-cleanup-hook','/usr/local/sbin/cgp-letsencrypt --hook-cleanup']
     cmd+=['--force-renewal' if changed or args.force_renew else '--keep-until-expiring']
     for n in d['names']: cmd+=['-d',n]
     if args.dry_run: cmd+=['--dry-run']
-    subprocess.run(cmd,check=True,timeout=3600)
+    if options['mode']=='adaptive':
+        from . import certbot_runner
+        certbot_runner.run(cmd,cfg,lock_fd=getattr(args,'operation_lock_fd',None))
+    else:
+        subprocess.run(cmd,check=True,timeout=3600)
 
 def backup_files(name):
     from . import storage

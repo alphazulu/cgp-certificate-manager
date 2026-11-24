@@ -36,6 +36,7 @@ chmod 755 /mock-bin/systemctl
 config=/etc/cgp-letsencrypt/config.json
 app=/opt/cgp-certificate-manager
 launcher=/usr/local/sbin/cgp-letsencrypt
+certbot_launcher=/usr/local/sbin/cgp-certbot
 drop=/etc/systemd/system/cgp-letsencrypt.timer.d/90-cgp-manager.conf
 source_version() {
     python3 -c 'import runpy,sys; print(runpy.run_path(sys.argv[1])["__version__"])' "$1/cgp_cert_manager/__init__.py"
@@ -51,6 +52,9 @@ assert_pending_journal() {
     test "$(stat -c %a "$(dirname "$journal")")" = 700
     test "$(stat -c %u "$(dirname "$journal")")" = 0
     assert_audit_archives
+    cmp "$dns_receipt" /tmp/dns-receipt.expected
+    test "$(stat -c %a "$dns_receipt")" = 600
+    test "$(stat -c %a "$(dirname "$dns_receipt")")" = 700
 }
 assert_audit_archives() {
     python3 - /tmp/cgp-resolution-expected/manifest.json "${audit_unsafe_path:-}" <<'AUDIT_CHECK'
@@ -98,6 +102,13 @@ cat >"$journal" <<'JSON'
 {"schema":2,"domain":"example.com","phase":"applying","previous":{"PrivateSecureKey":"[b2xkLWtleQ==]","SecureCertificate":"[b2xkLWNlcnQ=]","CAChain":"[Y2E=]","CertificateType":"YES"},"intended":{"PrivateSecureKey":"[bmV3LWtleQ==]","SecureCertificate":"[bmV3LWNlcnQ=]","CAChain":"[Y2E=]","CertificateType":"YES"},"endpoints":[{"host":"127.0.0.1","port":443,"sni":"new.example.com"}],"previous_endpoints":[{"host":"127.0.0.1","port":443,"sni":"old.example.com"}],"config_identity":"installer-test-fixture"}
 JSON
 chmod 600 "$journal"
+dns_receipt=/var/lib/cgp-letsencrypt/dns-challenges/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.json
+install -d -m 700 "$(dirname "$dns_receipt")"
+cat >"$dns_receipt" <<'DNS_RECEIPT'
+{"schema":1,"identity":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","attempt":"dddddddddddddddddddddddddddddddd","owner":"cgp-certificate-manager:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","credentials":"/etc/cgp-letsencrypt/cloudflare.ini","zone":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"_acme-challenge.example.com","value":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","record":null,"phase":"intent"}
+DNS_RECEIPT
+chmod 600 "$dns_receipt"
+cp "$dns_receipt" /tmp/dns-receipt.expected
 cp "$journal" /tmp/pending.expected
 # Create real-format synthetic audit evidence with a fake local CGP readback.
 # Keep one incomplete authorization after pending was removed: the installer
@@ -147,6 +158,15 @@ AUDIT_FIXTURES
 echo '=== clean install ==='
 bash /tmp/candidate-writable/install.sh --non-interactive
 test -x "$launcher"
+test -x "$certbot_launcher"
+test "$(stat -c %a "$certbot_launcher")" = 750
+"$certbot_launcher" --version
+python3 - "$app" <<'PLUGIN_DISCOVERY'
+import sys
+sys.path.insert(0, sys.argv[1])
+from certbot._internal.plugins.disco import PluginsRegistry
+assert 'cgp-dns' in PluginsRegistry.find_all()
+PLUGIN_DISCOVERY
 test "$("$launcher" --version)" = "$candidate_version"
 python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == json.load(open(sys.argv[2]))' "$config" /tmp/config.expected
 grep -q '07,19:00:00' "$drop"
@@ -157,11 +177,12 @@ test ! -f /tmp/timer-active
 assert_pending_journal
 
 echo '=== clean installation failure restores absent application ==='
-rm -rf "$app" "$launcher" "$drop" /etc/systemd/system/cgp-letsencrypt.{service,timer}
+rm -rf "$app" "$launcher" "$certbot_launcher" "$drop" /etc/systemd/system/cgp-letsencrypt.{service,timer}
 touch /tmp/fail-reload-once
 must_fail bash /tmp/candidate-writable/install.sh --non-interactive
 test ! -e "$app"
 test ! -e "$launcher"
+test ! -e "$certbot_launcher"
 test ! -e "$drop"
 python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == json.load(open(sys.argv[2]))' "$config" /tmp/config.expected
 assert_pending_journal
@@ -169,6 +190,7 @@ assert_pending_journal
 echo "=== install actual baseline $baseline_version ==="
 bash /tmp/baseline-writable/install.sh
 test "$("$launcher" --version)" = "$baseline_version"
+test ! -e "$certbot_launcher"
 assert_pending_journal
 touch "$app/cgp_cert_manager/stale.py"
 echo 'persistent-state' >/var/lib/cgp-letsencrypt/sentinel
@@ -181,6 +203,7 @@ touch /tmp/fail-reload-once
 must_fail bash /tmp/candidate-writable/install.sh --upgrade
 test "$("$launcher" --version)" = "$baseline_version"
 test -f "$app/cgp_cert_manager/stale.py"
+test ! -e "$certbot_launcher"
 test -f /tmp/timer-active
 python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == json.load(open(sys.argv[2]))' "$config" /tmp/config.before-upgrade
 assert_pending_journal
@@ -202,6 +225,8 @@ assert_pending_journal
 echo '=== successful upgrade ==='
 bash /tmp/candidate-writable/install.sh --upgrade
 test "$("$launcher" --version)" = "$candidate_version"
+test -x "$certbot_launcher"
+"$certbot_launcher" --version
 test ! -e "$app/cgp_cert_manager/stale.py"
 test ! -f /tmp/timer-active
 python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == json.load(open(sys.argv[2]))' "$config" /tmp/config.before-upgrade
@@ -218,6 +243,19 @@ must_fail bash /tmp/candidate-writable/install.sh --upgrade
 test -f /tmp/timer-active
 test "$("$launcher" --version)" = "$candidate_version"
 cp /tmp/valid-config "$config"
+assert_pending_journal
+
+echo '=== invalid DNS options rejected before modifying files ==='
+cp "$config" /tmp/valid-dns-config
+python3 -c 'import json; p="/etc/cgp-letsencrypt/config.json"; c=json.load(open(p)); c["dns_propagation"]={"mode":"adaptive","timeout_seconds":False}; json.dump(c,open(p,"w"))'
+touch /tmp/timer-active
+before_dns_log=$(sha256sum /tmp/systemctl.log)
+before_dns_app=$(tar -C "$app" -cf - . | sha256sum)
+must_fail bash /tmp/candidate-writable/install.sh --upgrade
+test "$(sha256sum /tmp/systemctl.log)" = "$before_dns_log"
+test "$(tar -C "$app" -cf - . | sha256sum)" = "$before_dns_app"
+test -f /tmp/timer-active
+cp /tmp/valid-dns-config "$config"
 assert_pending_journal
 
 echo '=== unsafe private paths are refused before installer mutations ==='

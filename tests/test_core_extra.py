@@ -67,7 +67,7 @@ class CoreExtraTests(unittest.TestCase):
             for success in (True,False):
                 with patch.object(c,'opener') as opener:
                     response=opener.return_value.open.return_value.__enter__.return_value
-                    response.read.return_value=json.dumps({'success':success,'result':[]})
+                    response.read.return_value=json.dumps({'success':success,'result':[]}).encode('utf-8')
                     if success:
                         self.assertEqual(c.cf(path,'zones',method='POST',params={'page':1},data={'x':1})['result'],[])
                         req=opener.return_value.open.call_args.args[0]
@@ -129,12 +129,13 @@ class CoreExtraTests(unittest.TestCase):
             self.assertEqual(c.expected_chain(d),[hashlib.sha256(x).hexdigest() for x in (b'leaf',b'ca')])
 
     def test_dns_preflight(self):
+        from cgp_cert_manager import dnschecks
         d={'names':['example.com','*.example.com']}
         z={'example.com':{'ns':['ns.example.net']}}
-        with patch.object(c,'run',side_effect=[b'NS.EXAMPLE.NET.\n',b'',b'']) as run:
+        with patch.object(dnschecks,'require_ready') as check:
             c.dns_preflight(d,z)
-            self.assertEqual(run.call_count,3)
-        with patch.object(c,'run',return_value=b'wrong.example.net.\n'):
+            check.assert_called_once_with(d,z,None)
+        with patch.object(dnschecks,'require_ready',side_effect=c.Error('DNS delegation mismatch')):
             with self.assertRaisesRegex(c.Error,'delegation mismatch'): c.dns_preflight(d,z)
 
     def test_single_account_issue(self):
@@ -144,7 +145,7 @@ class CoreExtraTests(unittest.TestCase):
             credentials.write_text('dns_cloudflare_api_token = dummy\n'); credentials.chmod(0o600)
             z={'example.com':{'credentials':str(credentials)}}
             c.issue({'email':'a@example.com'},d,z,argparse.Namespace(force_renew=False,dry_run=False))
-        pre.assert_called_once_with(d,z)
+        pre.assert_called_once_with(d,z,{'email':'a@example.com'})
         cmd=run.call_args.args[0]
         self.assertIn('--dns-cloudflare',cmd)
         self.assertIn('--keep-until-expiring',cmd)
