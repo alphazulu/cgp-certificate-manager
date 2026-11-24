@@ -53,7 +53,7 @@ cp "$config" /tmp/config.expected
 echo '=== clean install ==='
 bash /tmp/candidate-writable/install.sh --non-interactive
 test -x "$launcher"
-test "$("$launcher" --version)" = 2.1.0rc1
+test "$("$launcher" --version)" = 2.1.0
 python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == json.load(open(sys.argv[2]))' "$config" /tmp/config.expected
 grep -q '07,19:00:00' "$drop"
 test "$(stat -c %a "$launcher")" = 750
@@ -100,7 +100,7 @@ test -f /tmp/timer-active
 
 echo '=== successful upgrade ==='
 bash /tmp/candidate-writable/install.sh --upgrade
-test "$("$launcher" --version)" = 2.1.0rc1
+test "$("$launcher" --version)" = 2.1.0
 test ! -e "$app/cgp_cert_manager/stale.py"
 test ! -f /tmp/timer-active
 python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == json.load(open(sys.argv[2]))' "$config" /tmp/config.before-upgrade
@@ -114,7 +114,7 @@ python3 -c 'import json; p="/etc/cgp-letsencrypt/config.json"; c=json.load(open(
 touch /tmp/timer-active
 must_fail bash /tmp/candidate-writable/install.sh --upgrade
 test -f /tmp/timer-active
-test "$("$launcher" --version)" = 2.1.0rc1
+test "$("$launcher" --version)" = 2.1.0
 cp /tmp/valid-config "$config"
 
 echo 'Installer integration scenarios passed.'
