@@ -29,16 +29,20 @@ Checkpoint 8 (`2.2.0.dev5`) addresses a reproduced incomplete-pagination recover
 defect, process/signal/descriptor review findings, and explicit staging selection
 for manager dry-run despite a custom Certbot server setting, with tests
 accompanying each change. The workflow now defines two dependency profiles, four
-installer
-combinations (Ubuntu 24.04 / Debian 13 × baseline 2.0.1 / 2.1.0), and package,
+installer combinations (Ubuntu 24.04 / Debian 13 × baseline 2.0.1 / 2.1.0), and package,
 using stable Node 24 Actions pinned by full commit SHA. CONTRIBUTING.md,
 SECURITY.md and docs/STAGING.md record test commands, boundaries and exact
 external acceptance cases. Both complete local profiles passed **740 tests /
 3544 statements / 1430 branches / 100%**, with **14 additional tests** and zero
-missing/partial. Python compile, shell syntax and diff checks passed. All seven
-implementation CI jobs are still pending for this revision; record the exact
-commit/run after observing their results. DNS-only staging needs no live CGP,
-but still requires allocated lab zones/credentials. Automatic bootstrap remains blocked.
+missing/partial. Python compile, shell syntax and diff checks passed. Implementation
+[`4db1f90`](https://github.com/alphazulu/cgp-certificate-manager/commit/4db1f90bea3ec70d860c0fc59b0c881fd4d8a83b)
+passed [CI 45385891519](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45385891519):
+both dependency profiles with the same counts, all four installer combinations
+and package. Every installer passed the installed metadata/procfs checks,
+preservation/rollback scenarios and 24 unsafe-path refusals. This follow-up
+records that observed run; check its own current-head CI when resuming.
+DNS-only staging needs no live CGP, but still requires allocated lab zones and
+credentials. Automatic bootstrap remains blocked.
 
 Previous checkpoint 7 (`2.2.0.dev4`): **726 tests passed in each of two local dependency
 profiles**, with **3511 statements / 1422 branches / 100%**, zero missing/partial.
@@ -113,5 +117,5 @@ Separate server identities, least privilege, centralized visibility, independent
 - [ ] License decision by owner; do not assume permission.
 - [x] SECURITY.md and CONTRIBUTING.md with actual reporting/trust boundaries and isolated test commands.
 - [ ] Release automation and dependency/security scanning.
-- [ ] Verify the expanded installer CI matrix on Ubuntu 24.04 and Debian 13; container checks do not establish full deployment support.
+- [x] Verify the expanded installer CI matrix on Ubuntu 24.04 and Debian 13 for both upgrade baselines; container checks do not establish full deployment support.
 - [x] Refresh GitHub Actions to verified stable Node 24 revisions pinned by commit SHA; retain both strict dependency profiles and all upgrade baselines.

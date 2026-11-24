@@ -40,9 +40,10 @@ Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 
   `6d4fd22b20465ccc0f7354476588e8df7c9ca0e0`, upload-artifact v7.0.2
   `cf430e030ddbb5b0abf93d22962f4752f3646cd9`. The full coverage gates and package
   dependencies remain in place. Installed-context checks include the real
-  descriptor/procfs contract and metadata version. Actual container results are
-  pending CI; Docker is unavailable locally. The systemctl stub verifies installer
-  sequencing and recovery, not a live systemd or CGP deployment.
+  descriptor/procfs contract and metadata version. All four container combinations
+  passed in the implementation CI below; Docker is unavailable locally. The
+  systemctl stub verifies installer sequencing and recovery, not a live systemd
+  or CGP deployment.
 - Added [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and
   [docs/STAGING.md](docs/STAGING.md). The latter separates a DNS-only lab using
   the supervised wrapper from the CGP experiments and keeps every external
@@ -59,9 +60,22 @@ Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 
   accompany the fixes, and the metadata regression is extended. Python
   compilation, installer shell syntax, documentation shell examples/relative
   links and `git diff --check` passed. No exclusions or lowered thresholds.
-- Implementation CI is **pending** for this source revision. Record the exact
-  implementation commit/run only after all seven jobs finish. Docker is not
-  available locally; external Cloudflare/ACME/CGP cases remain unexecuted.
+- Implementation commit:
+  [`4db1f90bea3ec70d860c0fc59b0c881fd4d8a83b`](https://github.com/alphazulu/cgp-certificate-manager/commit/4db1f90bea3ec70d860c0fc59b0c881fd4d8a83b).
+  [CI 45385891519](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45385891519)
+  **passed all seven jobs**. Both test logs confirm **740 tests / 3544 statements
+  / 1430 branches / 100%**, zero missing/partial, with successful `--fail-under=100`
+  (compat 16.891 seconds, current 16.060 seconds). All four installer logs reach
+  the final success marker after version/procfs assertions, journal/receipt/audit
+  preservation, handled rollback and exactly 24 unsafe-path refusal cases each.
+  Installed native Certbot reports 2.9.0 on Ubuntu and 4.0.0 on Debian. Package
+  creation, SHA-256 verification and artifact upload passed. The inspected logs
+  have no GitHub warning/error, deprecation or traceback markers.
+- The PR workflow checked merge preview `52b5f59ecb980c57e228d827f3587f4d347def14`
+  of the implementation head with unchanged stable main. This follow-up changes
+  only the handoff/roadmap to record the observed implementation run; inspect
+  its own current-head CI on resume. External Cloudflare/ACME/CGP acceptance
+  cases remain unexecuted and pending in docs/STAGING.md.
 - Stable main remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / **2.1.0**.
   No merge, release, production DNS/ACME/CGP probe or deployment is part of this
   checkpoint. Automatic bootstrap still requires the disposable CGP experiments.
