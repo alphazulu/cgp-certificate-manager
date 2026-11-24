@@ -22,7 +22,7 @@ ACTIONS = (
     ('Force reissue (ACME limits apply)', ('--force-renew',), True),
     ('Install local certificate / repair chain', ('--repair-chain',), True),
     ('List backups', ('--backups',), False),
-    ('Restore latest backup (rollback)', ('--rollback',), True),
+    ('Select backup to restore (rollback)', ('--rollback',), True),
     ('Reset retry delay', ('--reset-backoff',), True),
     ('Retry now', ('--retry-now',), True),
 )
@@ -59,7 +59,68 @@ def timer_status():
         return 'unavailable'
 
 def row_status(row):
-    return row.get('error') or row.get('tls') or row.get('status','unknown')
+    if row.get('error') or row.get('tls')=='failed': return 'ERROR'
+    if row.get('status')=='blocked': return 'BLOCKED'
+    if row.get('status') in ('disabled','unavailable'): return 'SKIPPED'
+    days=(row.get('installed') or {}).get('days')
+    if isinstance(days,int) and days<1: return 'EXPIRED'
+    if row.get('action') in ('ISSUE','REISSUE'): return row['action']
+    if isinstance(days,int) and days<21: return 'EXPIRING'
+    if row.get('tls')=='verified': return 'VERIFIED'
+    return 'READY' if row.get('status')=='ready' else row.get('status','unknown')
+
+def identity(row):
+    return ((row.get('installed') or {}).get('fingerprint'),
+            (row.get('local') or {}).get('fingerprint'),
+            row.get('pki'),tuple(row.get('desired',[])))
+
+def verified_rows(rows, results):
+    """Keep verification only for matching certificate identity in this session."""
+    by_name={r['domain']:r for r in results}
+    for row in rows:
+        result=by_name.get(row['domain'])
+        if result and identity(result)==identity(row) and row.get('status')=='ready':
+            if result.get('tls') in ('verified','failed'):
+                row['tls']=result['tls']
+                row['verified_at']=result.get('verified_at',time.strftime('%Y-%m-%d %H:%M:%S'))
+                if result.get('error'): row['error']=result['error']
+    return rows
+
+def backup_command(domain, filename):
+    core.identifier(domain)
+    if not re.fullmatch(r'\d{8}T\d{12}Z\.json',filename):
+        raise ValueError('Invalid backup filename')
+    return CLI+['--rollback',domain,'--backup-file',filename]
+
+def domain_history(name):
+    path=core.STATE/'history.jsonl'
+    if not path.is_file(): return []
+    from collections import deque
+    lines=deque(maxlen=150)
+    with path.open() as stream:
+        for line in stream:
+            try: item=json.loads(line)
+            except ValueError: continue
+            if item.get('domain')==name:
+                lines.append(str(item.get('time',''))+' '+str(item.get('event','')))
+    return list(lines)
+
+HELP = [
+    'Up / Down: choose domain or action',
+    'Enter: open selected domain',
+    'F2: configuration wizard',
+    'F5: refresh snapshot (not a TLS test)',
+    'F6: service journal',
+    'F7: systemd timer controls',
+    'F8: verify all managed domains',
+    'S: cycle sorting (name, expiry, status)',
+    'F: cycle filters (all, managed, attention)',
+    'F1: help',
+    'Escape / Q / F10: back or exit',
+    'VERIFIED means TLS was checked during this session.',
+    'Refresh invalidates earlier TLS results; verify again.',
+    'Operations changing certificates require confirmation.',
+]
 
 def details(row):
     installed = row.get('installed') or {}
@@ -74,6 +135,7 @@ def details(row):
         'Installed SHA256: '+str(installed.get('fingerprint','-')),
         'Local SHA256: '+str(local.get('fingerprint','-')),
         'Last result: '+str(row.get('last_result') or '-'),
+        'TLS checked: '+str(row.get('verified_at','not checked this session')),
         '', 'Installed SANs:',
         *['  '+str(n) for n in installed.get('names',[])],
         '', 'Desired SANs:',
@@ -98,6 +160,19 @@ class Screen:
         self.message = ''
         self.timer = 'unknown'
         self.updated = '-'
+        self.sort_mode=0
+        self.filter_mode=0
+        self.all_rows=[]
+        self.colors={}
+        if curses.has_colors():
+            try:
+                curses.start_color()
+                curses.use_default_colors()
+                for i,(status,color) in enumerate((('VERIFIED',curses.COLOR_GREEN),('READY',curses.COLOR_CYAN),('EXPIRING',curses.COLOR_YELLOW),('REISSUE',curses.COLOR_YELLOW),('ISSUE',curses.COLOR_YELLOW),('ERROR',curses.COLOR_RED),('BLOCKED',curses.COLOR_RED),('EXPIRED',curses.COLOR_RED),('SKIPPED',curses.COLOR_WHITE)),1):
+                    curses.init_pair(i,color,-1)
+                    self.colors[status]=curses.color_pair(i)
+            except curses.error:
+                self.colors={}
         try:
             curses.curs_set(0)
         except curses.error:
@@ -122,13 +197,30 @@ class Screen:
             if message.startswith('Status unavailable'):
                 self.message=message+'; previous snapshot retained'
             else:
-                self.rows=rows
+                self.all_rows=rows
                 self.message=message
                 self.updated=time.strftime('%Y-%m-%d %H:%M:%S')
-                self.selected=next((i for i,r in enumerate(rows) if r['domain']==selected),0)
+                self.apply_view(selected)
             self.timer=timer_status()
         except (OSError, subprocess.TimeoutExpired):
             self.message='Refresh failed; previous snapshot retained'
+
+    def apply_view(self,selected=None):
+        if selected is None and self.rows:
+            selected=self.rows[self.selected]['domain']
+        rows=list(self.all_rows)
+        if self.filter_mode==1:
+            rows=[r for r in rows if r.get('status')!='disabled' and r.get('status')!='unavailable']
+        elif self.filter_mode==2:
+            rows=[r for r in rows if row_status(r) not in ('READY','VERIFIED','SKIPPED')]
+        if self.sort_mode==1:
+            rows.sort(key=lambda r:((r.get('installed') or {}).get('days',999999),r['domain']))
+        elif self.sort_mode==2:
+            rows.sort(key=lambda r:(row_status(r),r['domain']))
+        else:
+            rows.sort(key=lambda r:r['domain'])
+        self.rows=rows
+        self.selected=next((i for i,r in enumerate(rows) if r['domain']==selected),0)
 
     def draw(self):
         self.w.erase()
@@ -140,7 +232,7 @@ class Screen:
             return
         self.put(1,0,'Timer: '+self.timer)
         ready=sum(r.get('status')=='ready' and not r.get('error') for r in self.rows)
-        self.put(2,0,'Domains: %d | Ready: %d | Snapshot: %s'%(len(self.rows),ready,self.updated))
+        self.put(2,0,'Domains: %d/%d | Ready: %d | %s'%(len(self.rows),len(self.all_rows),ready,self.updated))
         self.put(3,0,'DOMAIN                    DAYS  SAN     STATUS',curses.A_BOLD)
         visible=max(1,h-8)
         self.offset=max(0,min(self.offset,max(0,len(self.rows)-visible)))
@@ -149,10 +241,10 @@ class Screen:
         for i,row in enumerate(self.rows[self.offset:self.offset+visible],self.offset):
             installed=row.get('installed') or {}
             text='%-25s %4s  %3d>%3d %s'%(row['domain'][:25],installed.get('days','-'),len(installed.get('names',[])),len(row.get('desired',[])),row_status(row))
-            self.put(4+i-self.offset,0,text,curses.A_REVERSE if i==self.selected else 0)
+            self.put(4+i-self.offset,0,text,self.colors.get(row_status(row),0) | (curses.A_REVERSE if i==self.selected else 0))
         self.put(h-3,0,self.message)
         self.put(h-2,0,'Enter Domain | F2 Settings | F5 Refresh | F6 Logs')
-        self.put(h-1,0,'F7 Timer | F8 Verify all | Q/F10 Exit',curses.A_BOLD)
+        self.put(h-1,0,'F1 Help | F7 Timer | F8 Verify | S Sort | F Filter | Q Exit',curses.A_BOLD)
         self.w.refresh()
 
     def view(self,title,lines):
@@ -174,8 +266,8 @@ class Screen:
             if key==curses.KEY_PPAGE: pos-=visible
             if key==curses.KEY_NPAGE: pos+=visible
 
-    def menu(self,title,options):
-        pos=0
+    def menu(self,title,options,initial=0):
+        pos=max(0,min(initial,len(options)-1))
         while True:
             self.w.erase()
             h,w=self.w.getmaxyx()
@@ -194,6 +286,46 @@ class Screen:
 
     def confirm(self,label):
         return self.menu('Confirm: '+label,['Cancel / No','Proceed / Yes'])==1
+
+    def verify(self,domain=None):
+        cmd=CLI+['--verify','--json']+(['--domain',domain] if domain else [])
+        self.w.erase()
+        self.put(0,0,'TLS verification',curses.A_BOLD)
+        self.put(2,0,'Verifying certificate and complete CA chain...')
+        self.w.refresh()
+        try:
+            code,out,err=capture(cmd,timeout=900)
+            results=json.loads(out)
+            if not isinstance(results,list): raise ValueError('Invalid verification response')
+            verified_rows(self.all_rows,results)
+            self.apply_view()
+            lines=[]
+            for r in results:
+                lines.append(str(r.get('domain','?'))+': '+str(row_status(r)))
+                if r.get('error'): lines.append('  '+str(r['error']))
+            lines+=['','Exit code: '+str(code)]
+            if err: lines+=err.splitlines()
+        except (ValueError,OSError,subprocess.TimeoutExpired):
+            # A failed command never leaves a stale successful verification.
+            for r in self.all_rows:
+                if domain is None or r['domain']==domain:
+                    r.pop('tls',None); r.pop('verified_at',None)
+            lines=['Verification unavailable or timed out']
+        self.view('TLS verification',lines)
+
+    def choose_backup(self,name):
+        try:
+            code,out,err=capture(CLI+['--backups',name])
+            files=[f for f in out.splitlines() if re.fullmatch(r'\d{8}T\d{12}Z\.json',f)]
+            if code or not files:
+                self.view('Backups',['No available backups']+err.splitlines())
+                return
+            choice=self.menu('Select backup for '+name,files+['Back'])
+            if choice is None or choice==len(files): return
+            if self.confirm('Restore '+name+' from '+files[choice]):
+                self.execute(backup_command(name,files[choice]),'Restore backup')
+        except (OSError,subprocess.TimeoutExpired):
+            self.view('Backups',['Unable to list backups'])
 
     def inspect(self,cmd,label):
         # Read-only commands never leave curses or hand stdin to a child.
@@ -237,14 +369,27 @@ class Screen:
         if not self.rows: return
         row=self.rows[self.selected]
         name=row['domain']
+        position=0
         while True:
-            choice=self.menu(name,['Certificate details']+[x[0] for x in ACTIONS]+['Back'])
-            if choice is None or choice==len(ACTIONS)+1: return
+            choice=self.menu(name,['Certificate details']+[x[0] for x in ACTIONS]+['Domain history','Back'],initial=position)
+            if choice is None or choice==len(ACTIONS)+2: return
+            position=choice
+            if choice==len(ACTIONS)+1:
+                self.view('Domain history',domain_history(name) or ['No history'])
+                continue
             if choice==0:
                 self.view(name,details(row))
                 continue
             index=choice-1
-            label,_,mutates=ACTIONS[index]
+            label,flags,mutates=ACTIONS[index]
+            if flags==('--verify',):
+                self.verify(name)
+                row=next((r for r in self.all_rows if r['domain']==name),row)
+                continue
+            if flags==('--rollback',):
+                self.choose_backup(name)
+                row=next((r for r in self.all_rows if r['domain']==name),row)
+                continue
             if mutates and not self.confirm(label+' for '+name): continue
             command=command_for(name,index)
             if mutates:
@@ -287,7 +432,16 @@ class Screen:
             elif k==curses.KEY_F2: self.execute(CLI+['--tui'],'Configuration wizard')
             elif k==curses.KEY_F6: self.logs()
             elif k==curses.KEY_F7: self.timer_menu()
-            elif k==curses.KEY_F8: self.inspect(CLI+['--verify'],'Verify all managed domains')
+            elif k==curses.KEY_F8: self.verify()
+            elif k==curses.KEY_F1: self.view('Help',HELP)
+            elif k in (ord('s'),ord('S')):
+                self.sort_mode=(self.sort_mode+1)%3
+                self.apply_view()
+                self.message='Sort: '+('name','expiry','status')[self.sort_mode]
+            elif k in (ord('f'),ord('F')):
+                self.filter_mode=(self.filter_mode+1)%3
+                self.apply_view()
+                self.message='Filter: '+('all','managed','attention')[self.filter_mode]
 
 def entry():
     if os.geteuid()!=0 or not sys.stdin.isatty() or not sys.stdout.isatty():

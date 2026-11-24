@@ -109,3 +109,7 @@ The first two main-menu entries are Save and exit and Exit without saving. The m
 ## Administrative console (2.1 development)
 
 Run `sudo cgp-letsencrypt --console` after installation, or `sudo python3 -m cgp_cert_manager.console` from a checkout. The curses console uses the existing CLI without holding its operation lock. It displays an on-demand status snapshot, systemd timer information, domain details, SANs, and service logs. Enter opens domain actions; F2 opens the whiptail editor; F5 refreshes; F6 opens logs; F7 manages the timer; F8 verifies all domains; Q, Escape or F10 exits. Certificate mutations and timer changes require confirmation. Commands execute synchronously with normal terminal output. The current console is English; actual TLS verification requires an explicit verify action, not merely a ready status.
+
+### Console status and backups
+
+F1 opens help. S cycles sorting and F cycles filters. Colors distinguish ready, verified, expiring, blocked and error states. F8 or the domain verification action records actual TLS results for this console session; refreshing status clears them. Domain history is available in the domain menu. Select a specific backup before confirming rollback, or use `--rollback DOMAIN --backup-file FILENAME`. Backup selection does not change the existing rollback trust model: readback is verified, but live TLS must be checked separately.

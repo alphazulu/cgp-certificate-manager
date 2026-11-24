@@ -41,9 +41,12 @@ class ConsoleTests(unittest.TestCase):
         screen.selected=0
         screen.menu=Mock(side_effect=[1,None])
         screen.inspect=Mock()
+        screen.verify=Mock()
+        screen.all_rows=screen.rows
         screen.execute=Mock()
         screen.domain_menu()
-        screen.inspect.assert_called_once()
+        screen.verify.assert_called_once_with('example.com')
+        screen.inspect.assert_not_called()
         screen.execute.assert_not_called()
         self.assertEqual(screen.menu.call_count,2)
 
@@ -57,3 +60,19 @@ class ConsoleTests(unittest.TestCase):
             screen.inspect(['example'],'TLS')
         endwin.assert_not_called()
         self.assertIn('Exit code: 0',screen.view.call_args.args[1])
+
+    def test_verification_identity(self):
+        row={'domain':'example.com','status':'ready','installed':{'fingerprint':'a'},'local':{'fingerprint':'a'},'desired':['example.com']}
+        result=dict(row,tls='verified')
+        console.verified_rows([row],[result])
+        self.assertEqual(console.row_status(row),'VERIFIED')
+        changed=dict(row,installed={'fingerprint':'b'})
+        changed.pop('tls')
+        console.verified_rows([changed],[result])
+        self.assertNotIn('tls',changed)
+    def test_backup_path(self):
+        self.assertIn('--backup-file',console.backup_command('example.com','20261124T010203123456Z.json'))
+        with self.assertRaises(ValueError): console.backup_command('example.com','../../config.json')
+    def test_status_priority(self):
+        self.assertEqual(console.row_status({'status':'ready','action':'REISSUE','tls':'verified'}),'REISSUE')
+        self.assertEqual(console.row_status({'status':'ready','tls':'failed'}),'ERROR')

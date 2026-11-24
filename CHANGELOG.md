@@ -2,6 +2,8 @@
 
 ## 2.1.0 (development)
 
+- Color-coded console status, session TLS results, filters, sorting, help, per-domain history and backup selection.
+
 - Optional curses administration console with domain details, certificate operations, journal and timer controls.
 
 - Optional whiptail setup and post-install configuration editor.

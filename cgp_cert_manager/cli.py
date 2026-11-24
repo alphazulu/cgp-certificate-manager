@@ -44,11 +44,12 @@ def migrate(cfg):
 
 def main():
     os.umask(0o077)
-    p=argparse.ArgumentParser(); p.add_argument('--version',action='version',version=__version__); p.add_argument('--domain'); p.add_argument('--json',action='store_true'); p.add_argument('--allow-shrink',action='store_true'); p.add_argument('--force-renew',action='store_true'); p.add_argument('--retry-now',action='store_true')
+    p=argparse.ArgumentParser(); p.add_argument('--version',action='version',version=__version__); p.add_argument('--domain'); p.add_argument('--backup-file'); p.add_argument('--json',action='store_true'); p.add_argument('--allow-shrink',action='store_true'); p.add_argument('--force-renew',action='store_true'); p.add_argument('--retry-now',action='store_true')
     g=p.add_mutually_exclusive_group()
     for x in ('sync','list','show-domains','status','plan','verify','doctor','dry-run','install-only','history','hook-auth','hook-cleanup','reset-backoff','discover-listeners','verify-listeners','repair-chain','tui','apply-schedule','console'): g.add_argument('--'+x,action='store_true')
     g.add_argument('--backups',metavar='DOMAIN'); g.add_argument('--rollback',metavar='DOMAIN'); g.add_argument('--migrate',action='store_true')
     a=p.parse_args()
+    if a.backup_file and not a.rollback: p.error('--backup-file requires --rollback')
     if a.console:
         from .console import entry as console_entry
         return console_entry()
@@ -80,12 +81,23 @@ def main():
         name=identifier(a.backups or a.rollback); files=sorted((STATE/'backups'/name).glob('*.json'),reverse=True)
         if a.backups: print('\n'.join(x.name for x in files)); return 0
         if not files: raise Error('No backup')
-        old=load(files[0]); info=installed_info(old)
+        selected=files[0]
+        if a.backup_file:
+            selected=next((f for f in files if f.name==a.backup_file and not f.is_symlink()),None)
+            if selected is None: raise Error('Backup file not found')
+        if selected.is_symlink(): raise Error('Invalid backup path')
+        old=load(selected); info=installed_info(old)
         if not info or info['days']<1: raise Error('Backup certificate expired or missing')
         cur=current(cfg,name)
         if set(cur)!=set(FIELDS): raise Error('Cannot back up current settings')
-        backup(name,cur); update(cfg,name,old)
-        if not same(current(cfg,name),old): raise Error('Rollback not verified')
+        saved=backup(name,cur)
+        try:
+            update(cfg,name,old)
+            if not same(current(cfg,name),old): raise Error('Rollback not verified')
+        except Exception:
+            update(cfg,name,cur)
+            if not same(current(cfg,name),cur): raise Error('CRITICAL: rollback recovery failed; backup '+str(saved))
+            raise Error('Rollback failed; previous settings restored')
         history(name,'manual rollback'); return 0
     if a.show_domains: print(json.dumps(load(STATE/'domains.json',[]),indent=2,ensure_ascii=False)); return 0
     state=load(STATE/'state.json',{}); failures=0
