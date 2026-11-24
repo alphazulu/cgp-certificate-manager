@@ -156,18 +156,24 @@ def locked_main(a,cfg):
                 if not (a.dry_run or a.retry_now or a.force_renew) and time.time()<retry:
                     LOG.warning('%s: %s retry deferred until %s',name,stage,datetime.fromtimestamp(retry,timezone.utc).isoformat()); return True
                 return False
+            issue_deferred=False
             if not a.install_only:
                 # If a freshly issued matching certificate is pending deployment, avoid a second issuance.
                 pending=local and local['days']>=21 and set(local['names'])==set(d['names']) and (not old or old['fingerprint']!=local['fingerprint'])
                 if not pending or a.dry_run or a.force_renew:
                     phase='issue'
-                    if deferred(phase): failures+=1; continue
-                    issue(cfg,d,z,a)
-                    if not a.dry_run: item.setdefault('backoff',{}).pop(phase,None)
-            if not a.dry_run:
+                    issue_deferred=deferred(phase)
+                    if issue_deferred:
+                        failures+=1
+                    else:
+                        issue(cfg,d,z,a)
+                        if not a.dry_run: item.setdefault('backoff',{}).pop(phase,None)
+            if not a.dry_run and not issue_deferred:
                 phase='deploy'
-                if deferred(phase): failures+=1; continue
-                result=deploy(cfg,d); item.update(result=result,failures=0,retry_at=0,last_success=time.time(),backoff={}); item.pop('alert',None); item.pop('alert_at',None); history(name,result); LOG.info('%s: %s',name,result)
+                if deferred(phase):
+                    failures+=1
+                else:
+                    result=deploy(cfg,d); item.update(result=result,failures=0,retry_at=0,last_success=time.time(),backoff={}); item.pop('alert',None); item.pop('alert_at',None); history(name,result); LOG.info('%s: %s',name,result)
         except Exception as e:
             failures+=1; message=str(e) if isinstance(e,Error) else type(e).__name__; LOG.error('%s: %s',name,message)
             if row is None:
