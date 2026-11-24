@@ -97,3 +97,7 @@ Backups contain private keys; restrict them to root. Rollback is a best-effort A
 Unit tests mock API/TLS behavior and are not a substitute for a live integration test. Version 2.0.1 has been verified against a live multi-domain CGP deployment.
 
 Independent project; not affiliated with CommuniGate, Cloudflare or Let's Encrypt. No license has been selected yet; repository visibility alone does not grant redistribution rights.
+
+## Optional interactive setup (2.1 development)
+
+Install the optional dependency with sudo apt install whiptail. Run sudo bash install.sh --tui for interactive configuration, or sudo bash install.sh --non-interactive with a pre-created config. Existing installations default to preserving configuration. Run sudo cgp-letsencrypt --tui to edit settings later. The wizard supports local CGP authentication, multiple Cloudflare accounts, domain selection, wildcard/SAN overrides, ACME email, DNS delay, TLS defaults and SMTP notifications. New installations default to explicit domain selection. Changes are staged until Save; secrets are entered through the terminal, not command arguments. The wizard does not issue certificates or activate the timer. DNS write permissions require a separate dry-run. UI currently English; schedule and advanced per-domain TLS options remain manual configuration.

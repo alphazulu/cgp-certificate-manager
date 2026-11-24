@@ -102,7 +102,7 @@ def discover(cfg,z):
         names=sorted(n for n in accepted if n==name or not any(covered(n,w) for w in accepted))
         for n in accepted-set(names): skipped[n]='covered_by_wildcard'
         if len(names)>100: raise Error('Too many SAN identifiers: '+name)
-        out.append({'cgp_domain':name,'cert_name':identifier(d.get('cert_name',name)),'enabled':d.get('enabled',True),'aliases':aliases,'names':names,'unavailable':sorted(unavailable),'skipped_names':skipped,'cloudflare_available':name in names,'tls':d.get('tls',cfg.get('tls',[]))})
+        out.append({'cgp_domain':name,'cert_name':identifier(d.get('cert_name',name)),'enabled':d.get('enabled',cfg.get('auto_enable_new_domains',True)),'aliases':aliases,'names':names,'unavailable':sorted(unavailable),'skipped_names':skipped,'cloudflare_available':name in names,'tls':d.get('tls',cfg.get('tls',[]))})
     if len({d['cert_name'] for d in out})!=len(out): raise Error('Duplicate certificate lineage')
     return out
 

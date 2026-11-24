@@ -2,7 +2,20 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 [[ $EUID == 0 ]] || { echo 'Run as root'; exit 1; }
-test -f /etc/cgp-letsencrypt/config.json
+mode=${1:---auto}
+case "$mode" in
+  --auto|--tui|--non-interactive|--upgrade) ;;
+  *) echo "Usage: $0 [--tui|--non-interactive|--upgrade]"; exit 2 ;;
+esac
+[[ $# -le 1 ]] || exit 2
+if [[ "$mode" == --auto && ! -f /etc/cgp-letsencrypt/config.json && -t 0 && -t 1 ]]; then
+    mode=--tui
+fi
+if [[ "$mode" == --tui ]]; then
+    command -v whiptail >/dev/null || { echo 'Install whiptail: apt install whiptail'; exit 1; }
+    python3 -m cgp_cert_manager.tui --setup
+fi
+test -f /etc/cgp-letsencrypt/config.json || { echo 'Create configuration or run install.sh --tui'; exit 1; }
 [[ $(pwd -P) != /opt/cgp-certificate-manager ]] || { echo "Extract into /tmp first"; exit 1; }
 umask 077
 b=/root/cgp-manager-backup-$(date +%Y%m%d-%H%M%S)
