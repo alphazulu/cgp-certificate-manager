@@ -28,6 +28,7 @@ ACTIONS = (
     ('Retry now', ('--retry-now',), True),
     ('Transaction status', ('--transactions',), False),
     ('Recover pending transaction', ('--recover',), True),
+    ('Acknowledge previous settings (TLS unverified)', ('--acknowledge-restored',), True),
 )
 
 def command_for(domain, index):
@@ -132,6 +133,7 @@ HELP = [
     'VERIFIED means TLS was checked during this session.',
     'Refresh invalidates earlier TLS results; verify again.',
     'Operations changing certificates require confirmation.',
+    'Acknowledging previous settings does not verify TLS.',
 ]
 
 def details(row):
@@ -260,7 +262,7 @@ class Screen:
         self.put(h-1,0,'F1 Help | F7 Timer | F8 TLS | F9 Recovery | Q',curses.A_BOLD)
         self.w.refresh()
 
-    def view(self,title,lines):
+    def view(self,title,lines,allow_continue=False):
         pos=0
         while True:
             self.w.erase()
@@ -270,14 +272,41 @@ class Screen:
             pos=max(0,min(pos,max(0,len(lines)-visible)))
             for i,line in enumerate(lines[pos:pos+visible],1):
                 self.put(i,0,line)
-            self.put(h-1,0,'Up/Down PgUp/PgDn | Esc/Q Back')
+            self.put(h-1,0,'Up/Down | Enter Continue | Esc/Q Cancel' if allow_continue else 'Up/Down PgUp/PgDn | Esc/Q Back')
             self.w.refresh()
             key=self.w.getch()
-            if key in (27,ord('q'),ord('Q'),curses.KEY_F10): return
+            if key in (27,ord('q'),ord('Q'),curses.KEY_F10): return False if allow_continue else None
+            if allow_continue and key in (10,13,curses.KEY_ENTER): return True
             if key==curses.KEY_UP: pos-=1
             if key==curses.KEY_DOWN: pos+=1
             if key==curses.KEY_PPAGE: pos-=visible
             if key==curses.KEY_NPAGE: pos+=visible
+
+    def input_reason(self):
+        text=''; error=''
+        try:
+            while True:
+                self.w.erase()
+                h,w=self.w.getmaxyx()
+                self.put(0,0,'Reason for acknowledgement',curses.A_BOLD)
+                self.put(2,0,'Enter 1 to 500 printable characters; no secrets.')
+                self.put(4,0,text[-max(1,w-2):],curses.A_REVERSE)
+                self.put(h-2,0,error)
+                self.put(h-1,0,'Enter Continue | Esc/F10 Cancel')
+                self.w.refresh()
+                key=self.w.get_wch()
+                if key in ('\x1b','\x03',curses.KEY_F10): return None
+                if key in ('\n','\r',curses.KEY_ENTER):
+                    if text.strip(): return text.strip()
+                    error='A reason is required'
+                elif key in ('\b','\x7f',curses.KEY_BACKSPACE):
+                    text=text[:-1]; error=''
+                elif isinstance(key,str):
+                    if not key.isprintable(): error='Use printable characters only'
+                    elif len(text)+len(key)>500: error='Maximum reason length is 500 characters'
+                    else: text+=key; error=''
+        except KeyboardInterrupt:
+            return None
 
     def menu(self,title,options,initial=0):
         pos=max(0,min(initial,len(options)-1))
@@ -407,6 +436,9 @@ class Screen:
                 self.choose_backup(name)
                 row=next((r for r in self.all_rows if r['domain']==name),row)
                 continue
+            if flags==('--acknowledge-restored',):
+                self.acknowledge_previous(name)
+                continue
             if mutates and not self.confirm(label+' for '+name): continue
             command=command_for(name,index)
             if mutates:
@@ -438,13 +470,71 @@ class Screen:
 
     def transaction_menu(self):
         # Recovery must remain available even when discovery returns no domains.
-        options=['Transaction status','Recover all pending transactions','Back']
+        options=['Transaction status','Recover all pending transactions','Acknowledge previous settings (TLS unverified)','Back']
         choice=self.menu('Pending transactions',options)
-        if choice is None or choice==2: return
+        if choice is None or choice==3: return
         if choice==0:
             self.inspect(CLI+['--transactions'],options[choice])
+        elif choice==2:
+            self.select_acknowledgement()
         elif self.confirm(options[choice]):
             self.execute(CLI+['--recover'],options[choice])
+
+    def select_acknowledgement(self):
+        title='Acknowledge previous settings (TLS unverified)'
+        try:
+            code,out,err=capture(CLI+['--transactions','--json'])
+            if code:
+                self.view(title,(err or 'Transaction inspection unavailable').splitlines())
+                return
+            rows=json.loads(out)
+            if not isinstance(rows,list) or not all(isinstance(row,dict) and isinstance(row.get('domain'),str) for row in rows):
+                raise ValueError('Invalid transaction response')
+            names=sorted({core.identifier(row['domain']) for row in rows})
+            if not names:
+                self.view(title,['No pending transactions'])
+                return
+            choice=self.menu('Select pending transaction',names+['Back'])
+            if choice is None or choice==len(names): return
+            self.acknowledge_previous(names[choice])
+        except (ValueError,OSError,subprocess.TimeoutExpired,core.Error):
+            self.view(title,['Transaction inspection unavailable'])
+
+    def acknowledge_previous(self,name):
+        title='Acknowledge previous settings (TLS unverified)'
+        try:
+            name=core.identifier(name)
+            cmd=CLI+['--acknowledge-restored','--domain',name]
+            code,out,err=capture(cmd+['--json'])
+            if code:
+                self.view(title,(err or 'Acknowledgement preview unavailable').splitlines())
+                return
+            preview=json.loads(out)
+            if (not isinstance(preview,dict) or preview.get('domain')!=name
+                    or preview.get('phase') not in ('prepared','restoring','acknowledging')
+                    or preview.get('state') not in ('previous','both')
+                    or preview.get('server_matches') is not True or preview.get('tls')!='unverified'
+                    or type(preview.get('pending_journal')) is not bool
+                    or type(preview.get('authorization_recorded')) is not bool
+                    or not isinstance(preview.get('confirmation_token'),str)
+                    or not re.fullmatch(r'[0-9a-f]{64}',preview['confirmation_token'])):
+                raise ValueError('Invalid acknowledgement preview')
+            token=preview['confirmation_token']
+            lines=['Domain:']+[name[i:i+40] for i in range(0,len(name),40)]
+            lines+=['Phase: '+preview['phase'],'CGP state: '+preview['state'],
+                    'TLS: unverified','Pending journal: '+str(preview['pending_journal']),
+                    'Authorization recorded: '+str(preview['authorization_recorded']),
+                    'Confirmation token:',token[:32],token[32:],'',
+                    'CGP settings will remain unchanged.',
+                    'Subsequent certificate work may resume.']
+            if preview['authorization_recorded']: lines+=['Repeat the original acknowledgement reason.']
+            if not self.view(title,lines,allow_continue=True): return
+            reason=self.input_reason()
+            if reason is None: return
+            if not self.confirm('Acknowledge '+name+' / '+token[:12]+' (TLS unverified)'): return
+            self.execute(cmd+['--confirm-transaction',token,'--reason',reason],title+' — '+name)
+        except (ValueError,OSError,subprocess.TimeoutExpired,core.Error,curses.error):
+            self.view(title,['Acknowledgement preview unavailable'])
 
     def loop(self):
         self.refresh_data()

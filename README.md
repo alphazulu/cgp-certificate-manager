@@ -6,7 +6,7 @@ Automatic Let's Encrypt certificate management for CommuniGate Pro on Linux usin
 
 [Русская документация](README.ru.md)
 
-This branch develops **2.2.0.dev1**. The stable production release is **2.1.0**.
+This branch develops **2.2.0.dev2**. The stable production release is **2.1.0**.
 See [ROADMAP.md](ROADMAP.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for completed work,
 test evidence and the next checkpoint. The development branch is not a release.
 
@@ -81,6 +81,7 @@ Replace example.com with a managed domain. Review the plan before enabling autom
 | --backups DOMAIN, --rollback DOMAIN, --backup-file FILENAME | Inspect backups or restore a selected backup |
 | --transactions [--domain DOMAIN] [--json] | Inspect pending transaction metadata without recovery |
 | --recover [--domain DOMAIN] [--json] | Explicitly recover pending transactions |
+| --acknowledge-restored --domain DOMAIN [--json] | Preview acceptance of previous settings with TLS unverified; confirmation requires the preview token and a reason |
 | --history, --json, --version | History, structured status, version |
 | --force-renew, --allow-shrink | Explicit overrides; use with caution |
 
@@ -94,10 +95,11 @@ Recover pending work → CGP discovery → Cloudflare zone selection → Certbot
 - /etc/letsencrypt/: Certbot lineages (not replaced by installer)
 - /var/lib/cgp-letsencrypt/: discovered domains, state, history, backups and lock
 - /var/lib/cgp-letsencrypt/transactions/: pending journals containing private certificate snapshots (directory 0700, files 0600)
+- /var/lib/cgp-letsencrypt/resolutions/: private operator authorization and completion evidence, including original transaction snapshots
 
 ### Private-file permissions
 
-Version 2.2.0.dev1 requires private state directories to be owned by the process's effective UID with mode `0700` or stricter, and private files to be regular, owned by that UID, mode `0600` or stricter, with one hard link. Installed runs use root. Symbolic links and unsafe ancestor directories are refused. A trusted root-owned configuration parent with mode `0755` remains valid when its private files meet these requirements.
+The development version requires private state directories to be owned by the process's effective UID with mode `0700` or stricter, and private files to be regular, owned by that UID, mode `0600` or stricter, with one hard link. Installed runs use root. Symbolic links and unsafe ancestor directories are refused. A trusted root-owned configuration parent with mode `0755` remains valid when its private files meet these requirements.
 
 The CLI and installer validate private state before external operations; the installer keeps the validated lock open across its shell payload and handled rollback. Existing unsafe objects are refused without automatic permission or ownership repair. Certbot's standard `live` symlinks are outside this policy. See [private storage policy and metadata-only diagnostics](docs/STORAGE.md) for exact rules and limits before correcting a refused path.
 
@@ -114,6 +116,19 @@ sudo cgp-letsencrypt --transactions
 The global operation lock covers both commands. Transaction inspection prints domain, phase, recognized remote state and server identity match; it does not print private keys. An empty result means no pending journal, not a fresh TLS health check. A successful inspection returns zero even if a row reports `unknown` or `foreign`; recovery failures return nonzero.
 
 Recovery uses the saved settings and saved TLS endpoints, including names from the previous certificate after SAN changes. It never needs the old Certbot lineage. If CGP contains a third, unrecognized set of settings, recovery refuses to overwrite it and retains the journal. If restoration cannot pass TLS verification, its journal also remains pending. See [transaction recovery and limitations](docs/TRANSACTIONS.md) before handling an unresolved operation.
+
+### Accepting previous settings when TLS cannot be proved
+
+For a `prepared` or `restoring` transaction whose actual CGP settings exactly match the recorded previous snapshot, an administrator can explicitly accept the unverified state:
+
+```sh
+sudo cgp-letsencrypt --acknowledge-restored --domain example.com --json
+sudo cgp-letsencrypt --acknowledge-restored --domain example.com \
+  --confirm-transaction TOKEN_FROM_PREVIEW \
+  --reason 'Previous certificate expired; administrator accepts unverified settings' --json
+```
+
+The first command only previews the decision. The second requires the exact token and a reason, preserves the full journal in private audit storage, and returns `acknowledged_unverified`. It makes no CGP changes and does not claim TLS success. Unknown/foreign states and stale confirmations are refused. An interrupted authorization continues blocking normal recovery and mutations even if its original journal has already been removed; only an explicit retry can finish it. The console exposes the same procedure through domain actions and F9. Read [the full procedure and interruption semantics](docs/RESOLUTION.md) first.
 
 ## Safety and limitations
 
@@ -150,7 +165,7 @@ Both terminal interfaces use the saved UI language for common navigation and pro
 
 Stable 2.1.0 passed 188 unit tests. Development adds unit tests for every new transaction path, process-death/restart scenarios and real OpenSSL/loopback TLS checks. CI enforces `coverage report --fail-under=100` and tests clean installation, upgrades from both 2.0.1 and 2.1.0, rollback, lock handling and journal preservation in disposable Ubuntu containers with mocked systemd. See DEVELOPMENT.md for observed counts and CI results. Coverage does not establish correctness for every live CGP/ACME environment.
 
-The storage-hardening checkpoint passed 386 tests locally and in [CI 45367278665](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45367278665), with 100% measured statement and branch coverage. Both Docker installer upgrade jobs and the package job passed for implementation commit `d2bad6e`. This is development validation; production validation remains a separate step.
+The current acknowledgement checkpoint passed **455 tests locally**, with **2073 measured statements / 844 branches / 100%**. The suite includes 22 process-death/restart tests and 9 real OpenSSL/loopback TLS tests. Installer scenarios also check operator-audit preservation and 24 unsafe-path refusals per baseline; see [DEVELOPMENT.md](DEVELOPMENT.md) for exact observed CI evidence. Production validation remains a separate step.
 
     python3 -m coverage run --branch --source=cgp_cert_manager -m unittest discover -s tests -v
     python3 -m coverage report -m --fail-under=100

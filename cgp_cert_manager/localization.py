@@ -17,6 +17,21 @@ RU = {
     "Recover pending transaction": "Восстановить незавершённую транзакцию",
     "Recover all pending transactions": "Восстановить все незавершённые транзакции",
     "Pending transactions": "Незавершённые транзакции",
+    "Acknowledge previous settings (TLS unverified)": "Принять прежние настройки без подтверждения TLS",
+    "Select pending transaction": "Выберите незавершённую транзакцию",
+    "Reason for acknowledgement": "Причина принятия прежних настроек",
+    "Enter 1 to 500 printable characters; no secrets.": "Введите причину: 1–500 символов, без секретов.",
+    "A reason is required": "Необходимо указать причину",
+    "Use printable characters only": "Управляющие символы недопустимы",
+    "Maximum reason length is 500 characters": "Максимальная длина причины — 500 символов",
+    "Transaction inspection unavailable": "Просмотр транзакций недоступен",
+    "Acknowledgement preview unavailable": "Предварительная проверка недоступна",
+    "No pending transactions": "Незавершённых транзакций нет",
+    "TLS: unverified": "TLS: не подтверждён",
+    "Confirmation token:": "Код подтверждения:",
+    "CGP settings will remain unchanged.": "Настройки CGP останутся прежними.",
+    "Subsequent certificate work may resume.": "Дальнейшее обслуживание сертификатов разрешается.",
+    "Repeat the original acknowledgement reason.": "Повторите исходную причину подтверждения.",
     "Domain history": "История домена",
     "Back": "Назад",
     "Help": "Справка",
@@ -48,6 +63,8 @@ RU = {
     "Configuration wizard": "Мастер настройки",
     "Enter Select | Esc/Q Back": "Enter Выбор | Esc/Q Назад",
     "Up/Down PgUp/PgDn | Esc/Q Back": "Вверх/вниз PgUp/PgDn | Esc/Q Назад",
+    "Up/Down | Enter Continue | Esc/Q Cancel": "Вверх/вниз | Enter Далее | Esc/Q Отмена",
+    "Enter Continue | Esc/F10 Cancel": "Enter Далее | Esc/F10 Отмена",
     "Enter Domain | F2 Settings | F5 Refresh | F6 Logs": "Enter Домен | F2 Настройки | F5 Обновить | F6 Журнал",
     "F1 Help | F7 Timer | F8 TLS | F9 Recovery | Q": "F1 ? | F7 Таймер | F8 TLS | F9 Операции | Q",
     "Enlarge terminal (minimum 48x10). Q / F10 exits.": "Увеличьте терминал до 48x10. Q / F10 — выход.",
@@ -66,6 +83,7 @@ RU = {
     "VERIFIED means TLS was checked during this session.": "VERIFIED: TLS проверен в этой сессии.",
     "Refresh invalidates earlier TLS results; verify again.": "Обновление сбрасывает результаты TLS; проверьте повторно.",
     "Operations changing certificates require confirmation.": "Изменение сертификатов требует подтверждения.",
+    "Acknowledging previous settings does not verify TLS.": "Принятие прежних настроек не подтверждает TLS.",
     "Installed SANs:": "Установленные SAN:",
     "Desired SANs:": "Желаемые SAN:",
     "Unavailable names:": "Недоступные имена:",
@@ -102,6 +120,6 @@ def language():
 def translate(text, lang):
     if lang!='ru': return text
     if text in RU: return RU[text]
-    for pattern,replacement in ((r'^Manage (.+) automatically\?$','Обслуживать \\1 автоматически?'),(r'^Include wildcard for (.+)\?$','Включить wildcard для \\1?'),(r'^Connection OK. Domains: (.+)$','Подключение успешно. Доменов: \\1'),(r'^Confirm: (.+)$','Подтвердите: \\1'),(r'^Select backup for (.+)$','Выберите копию для \\1')):
+    for pattern,replacement in ((r'^Manage (.+) automatically\?$','Обслуживать \\1 автоматически?'),(r'^Include wildcard for (.+)\?$','Включить wildcard для \\1?'),(r'^Connection OK. Domains: (.+)$','Подключение успешно. Доменов: \\1'),(r'^Confirm: Acknowledge (.+) / ([0-9a-f]{12}) \(TLS unverified\)$','Подтвердите: \\1 / \\2 (TLS не подтверждён)'),(r'^Confirm: (.+)$','Подтвердите: \\1'),(r'^Select backup for (.+)$','Выберите копию для \\1')):
         if re.match(pattern,text): return re.sub(pattern,replacement,text)
     return text

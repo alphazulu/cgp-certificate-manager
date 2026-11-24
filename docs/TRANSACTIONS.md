@@ -113,12 +113,20 @@ If the previous certificate is already expired, invalid, inactive, or its
 listener is unavailable, exact restoration may be possible while TLS proof is
 not. The journal remains `restoring` and blocks subsequent mutations. This also
 affects a crash in `prepared` while an already broken previous certificate is
-still installed. The current development version has no special cancellation
-outcome that waives TLS proof; safe bootstrap and operator-assisted resolution
-are still roadmap items. Incomplete previous fields remain an explicit refusal.
+still installed. Version 2.2.0.dev2 adds an explicit, audited administrator
+acknowledgement for `prepared`/`restoring` only when CGP still matches all previous
+settings. Its outcome is `acknowledged_unverified`, with no CGP write and no TLS
+success claim. Preview, exact-token confirmation, reason and durable audit are
+required; see [operator resolution](RESOLUTION.md). Incomplete previous fields
+and safe bootstrap remain a separate roadmap item.
+
+An interrupted acknowledgement blocks normal recovery and mutations even after
+the original journal has been removed. `--transactions` shows an `acknowledging`
+row for that case. Only explicit operator retry can create the missing audit
+completion; ordinary recovery never treats an authorization as TLS proof.
 
 Application installation uses the same validated lock and preserves transaction
-files. A Python wrapper keeps the descriptor locked until its shell payload and
+files and operator-resolution evidence. A Python wrapper keeps the descriptor locked until its shell payload and
 any handled rollback finish. Storage preflight occurs before systemctl or
 installed-file changes. Its own crash recovery is separate and not made durable
 by this feature.
@@ -134,7 +142,8 @@ requirements, compatibility and the trusted-UID boundary.
 
 Backup pruning runs only after a newly applied transaction commits successfully.
 The entire selected backup list is validated before deleting any entry. Pending
-snapshots live in the journal independently of retained backup files.
+snapshots live in the journal independently of retained backup files. Resolution
+audit records are also outside backup pruning.
 Recovery and failed operations do not prune backups, so more than five may
 remain until a subsequent successful installation.
 

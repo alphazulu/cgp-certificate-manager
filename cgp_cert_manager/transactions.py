@@ -112,20 +112,31 @@ class Journal:
         return sorted(core.identifier(path.stem) for path in files)
 
     def read(self, domain):
+        snapshot = self.read_snapshot(domain)
+        return None if snapshot is None else snapshot["record"]
+
+    def read_snapshot(self, domain):
+        """Return a validated record bound to one stable, securely opened inode."""
         path = self.path(domain)
         if not self.check_directory():
             return None
         try:
             with storage.open_private(path) as stream:
+                before = os.fstat(stream.fileno())
                 try:
                     record = json.load(stream)
                 except (ValueError, UnicodeError):
                     raise JournalError("Corrupt transaction journal") from None
+                after = os.fstat(stream.fileno())
         except FileNotFoundError:
             return None
         except storage.StorageError as exc:
             raise JournalError(str(exc)) from None
-        return validate(record, domain)
+        fields = ("dev", "ino", "size", "mtime_ns", "ctime_ns")
+        witness = {field: getattr(before, "st_" + field) for field in fields}
+        if witness != {field: getattr(after, "st_" + field) for field in fields}:
+            raise JournalError("Transaction changed while being read")
+        return {"record": validate(record, domain), "witness": witness}
 
     def prepare(self, domain, previous, intended, endpoints, config_identity, previous_endpoints=None):
         self.ensure_directory()

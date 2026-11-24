@@ -19,10 +19,18 @@
 - [ ] DNS CAA/DNSSEC/delegation checks and dynamic propagation wait.
 - [x] Detect unknown/manual certificate changes, block all subsequent domain mutations while any transaction remains pending, and keep pending snapshots outside backup pruning.
 - [x] Complete ownership/permission validation for private state, lock, configuration, credentials, history, journals and existing backups. Reject unsafe paths before normal CLI/TUI/installer side effects; no automatic permission repair. See docs/STORAGE.md.
-- [ ] Define safe operator-assisted resolution for invalid/expired previous certificates; current behavior retains the journal when TLS proof is unavailable.
+- [x] Implement operator-assisted resolution: exact-preview confirmation, private authorization/completion evidence, incomplete-decision guard and explicit retry without claiming TLS success. See docs/RESOLUTION.md and checkpoint 5 evidence below.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 4 (`2.2.0.dev1`): local and GitHub suites passed **386 tests**, with
+Checkpoint 5 (`2.2.0.dev2`): the complete local suite passed **455 tests**, with
+**2073 statements / 844 branches / 100%**. Code and tests are in the same change,
+including 11 new process-death/restart cases and an actual expired-certificate
+acknowledgement test. CI is pending, including audit preservation and 24 unsafe
+path refusal cases on each installer baseline. See DEVELOPMENT.md for the
+contract, review findings and exact continuation steps. Next functional scope:
+safe bootstrap with incomplete previous fields.
+
+Previous checkpoint 4 (`2.2.0.dev1`): local and GitHub suites passed **386 tests**, with
 **1742 statements / 692 branches / 100%**. New private-storage code and tests are
 in implementation commit `d2bad6e`.
 [CI 45367278665](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45367278665)
@@ -30,7 +38,7 @@ passed tests, both installer baselines and package. Each installer job passed
 18 new unsafe-path refusal cases and preserved pending journals. This follow-up
 documentation commit records the observed result; inspect current-head checks
 when resuming. See DEVELOPMENT.md for exact next steps and remaining limits.
-Next: safe operator-assisted resolution of invalid/expired previous certificates.
+Operator-assisted resolution is the active checkpoint above.
 This remains a development checkpoint, not a production release.
 
 ## 2.3 — Monitoring

@@ -287,7 +287,8 @@ class TransactionDeploymentTests(unittest.TestCase):
 
     def test_unsafe_state_blocks_before_readback_or_write(self):
         self.root.chmod(0o755)
-        with self.assertRaises(JournalError): self.apply()
+        # Audit validation can reject unsafe STATE before journal enumeration.
+        with self.assertRaisesRegex(core.Error, "Unsafe private directory"): self.apply()
         self.current.assert_not_called()
         self.update.assert_not_called()
         self.assertFalse((self.root / "transactions").exists())

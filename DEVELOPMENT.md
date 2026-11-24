@@ -2,7 +2,98 @@
 
 Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 4
+## Current handoff — checkpoint 5
+
+- Development version: **`2.2.0.dev2`**; draft PR [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
+- Completed explicit, audited operator acknowledgement of exact previous
+  settings whose TLS cannot be proved. Code, unit tests, process-death tests and
+  documentation are in the same checkpoint.
+- Observed complete local suite: **455 tests passed**, Python 3.12.14 / coverage
+  7.10.7; **2073 statements, 844 branches, zero missing or partial, 100%**.
+  Includes 22 process-death/restart tests (11 for acknowledgement) and 9 real
+  OpenSSL/loopback TLS tests. Python compile, all installer shell syntax and
+  `git diff --check` passed. New CI is pending; Docker is unavailable locally.
+- Starting HEAD: `ddcd63cc2045b7341f8a0240fa18cdfb065944d4`, clean on resume;
+  [CI 45367623871](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45367623871)
+  passed tests, both installer baselines and package. Baseline: 386 tests,
+  1742 statements / 692 branches / 100%. That historical run does not validate
+  this checkpoint's new code.
+- Stable `main` remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / 2.1.0.
+  Development is not a production installation or release.
+
+### Checkpoint 5 contract
+
+1. `--acknowledge-restored --domain DOMAIN` is a preview. Both
+   `--confirm-transaction TOKEN` and `--reason TEXT` are required to act. Preview
+   and submit use the operation lock; malformed flags/reasons fail before
+   filesystem or external actions. The console exposes the same flow in domain
+   actions and F9, including domains absent from discovery.
+2. Only valid schema-2 journals in `prepared` or `restoring`, with matching
+   machine/CGP identity and all four actual settings matching `previous`/`both`,
+   can be acknowledged. No CGP write, TLS verification or ACME operation occurs.
+   The explicit result is `acknowledged_unverified`; no `VERIFIED` UI state is
+   produced. Missing fields and unknown/manual/foreign states remain refusals.
+3. `Journal.read_snapshot()` binds canonical journal content to a stable secure
+   descriptor's dev/inode/size/mtime_ns/ctime_ns. The token includes that witness
+   and decision name. Same-content replacement changes the token; completed
+   tokens cannot retire another pending instance. Schema 2 stays unchanged.
+4. Private `resolutions/<token>/authorization.json` preserves the full original
+   journal, witness, decision, reason, UID and UTC time. It is immutable evidence
+   of authorization, not successful retirement. Fresh readbacks follow durable
+   authorization. Pending deletion and its directory fsync precede a separate
+   `completion.json` bound to the authorization digest.
+5. An authorization without completion blocks normal recovery and mutations even
+   when pending is already absent. Explicit same-token/same-reason retry can
+   finish it after fresh checks. Ordinary runs never promote an authorization;
+   they only validate and resynchronize already completed evidence before
+   allowing later mutations. Orphan authorizations remain visible in transaction
+   status as `acknowledging`.
+6. Existing evidence is checked and resynchronized on retry, never replaced with
+   a different reason or snapshot. Full journal evidence remains outside backup
+   pruning and survives installer upgrades/rollback. The installer also refuses
+   unsafe audit directories/files before installed-system changes.
+
+### Review issues addressed in checkpoint 5
+
+- A content-only token would replay across two identical schema-2 transactions:
+  bind to the opened file instance and reject reuse of completed evidence.
+- Authorization alone is not proof of completion. A crash after pending unlink
+  must not release the mutation guard; retain a separate incomplete-authorization
+  guard and require explicit retry.
+- A visible completion can follow a failed final directory fsync. Before later
+  remote mutations, validate and resynchronize both completed files and their
+  directory chain. Read-only status does not perform that sync.
+- JSON `null` is corrupt evidence, not an absent file. Keep missing-file handling
+  distinct so corrupt authorization cannot make the guard disappear.
+- Reject control characters in the original reason before whitespace trimming;
+  keep reasons and full snapshots out of normal output and console previews.
+
+### Resume from checkpoint 5
+
+1. Fetch actual HEAD, draft PR #2 and its checks. Inspect newer changes before
+   editing; historical CI never validates a later commit.
+2. Confirm the complete 100% statement/branch gate, process-death restart cases,
+   both installer baselines with audit preservation/refusal, and package. Record
+   exact implementation SHA and observed CI below. Local counts are recorded
+   above; they do not substitute for the container upgrade jobs.
+3. Next functional scope after this checkpoint: safe bootstrap when previous
+   certificate fields are missing. Establish actual CGP semantics before adding
+   writes; preserve fail-closed behavior until those semantics are known.
+4. Then address DNS CAA/DNSSEC/delegation and propagation, final review, RC and
+   production validation. Explicit maintainer approval remains required for
+   merge/release; do not install this development branch on the stable server.
+
+The acknowledgement is an administrative decision, not certificate repair or TLS
+proof. It does not reset backoff or bypass bootstrap restrictions. Same-UID/root
+concurrent changes remain outside the filesystem trust boundary; no remote CAS
+is assumed. Stat-based tokens are not permanent global operation IDs. Full
+details are in [docs/RESOLUTION.md](docs/RESOLUTION.md). Process-death tests do not
+simulate storage power loss, and application installation retains its separate
+handled-error rollback boundary.
+
+## Checkpoint 4 — private storage (historical)
+
+For current work and resume steps use checkpoint 5 above.
 
 - Development version: **`2.2.0.dev1`**; draft PR [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
 - Completed ownership, permissions and path checks for private state, config,
@@ -82,10 +173,10 @@ Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 
 2. Confirm tests, both installer matrix jobs and package for the current HEAD;
    inspect new refusal cases and journal preservation. Fix failures with
    regression coverage, retain the strict 100% gate, and record exact SHA/run.
-3. Next functional task: define operator-assisted resolution when the previous
+3. Next task at checkpoint 4 was to define operator-assisted resolution when the previous
    certificate is expired, invalid, inactive or unverifiable. Preserve unknown
    state refusal and audit evidence; do not add an unreviewed force/delete
-   escape. Implement the selected semantics together with unit/fault tests.
+   escape. Checkpoint 5 implements the selected semantics with unit/fault tests.
 4. Then resolve bootstrap semantics and DNS CAA/DNSSEC/delegation/propagation.
    Keep code, tests, docs and progress together. Finish review and upgrade
    validation before an RC; explicit maintainer approval and a separate
@@ -137,7 +228,7 @@ next actions use checkpoint 4 above.
 ### Limits to preserve in future work
 
 - Unknown CGP state is never overwritten. The API has no assumed atomic compare-and-swap, so a WebAdmin write can still race the last readback and update.
-- An expired, invalid or inactive previous certificate, or an unavailable old listener, can leave exact settings restored but TLS unverified. The pending journal remains blocking, including a crash in `prepared` with an already broken previous certificate. There is no force/adopt/cancel-without-proof mode yet.
+- An expired, invalid or inactive previous certificate, or an unavailable old listener, can leave exact settings restored but TLS unverified. Ordinary recovery keeps its journal blocking. Checkpoint 5 adds an explicit audited acknowledgement for exact previous settings; it never treats that decision as TLS proof. Unknown/foreign states still cannot be forced or adopted.
 - At checkpoint 3, only journal ownership/mode/path checks were complete. Checkpoint 4 above adds parent state, global lock, configuration, credentials, history and older backups.
 - Experimental schema 1 is rejected rather than guessed/migrated. No stable release has used these journals.
 - Process-death tests exercise fresh interpreters and real filesystem fsync, not actual storage power loss. TLS integration is local; real CommuniGate/ACME behavior and production renewal remain separately validated.

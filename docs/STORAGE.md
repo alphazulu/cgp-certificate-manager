@@ -1,6 +1,7 @@
 # Private storage policy
 
-This policy describes the checks in **2.2.0.dev1**. The stable production release
+This policy describes the checks introduced in **2.2.0.dev1** and extended in
+**2.2.0.dev2**. The stable production release
 remains 2.1.0. The implementation is in
 [storage.py](../cgp_cert_manager/storage.py); its callers include the CLI,
 configuration wizard, transaction journal and installer.
@@ -10,8 +11,9 @@ configuration wizard, transaction journal and installer.
 The private storage policy covers manager configuration, Cloudflare credential
 files, and the manager's state under `/var/lib/cgp-letsencrypt`. That state
 includes `run.lock`, JSON state and discovery files, history, certificate backups,
-configuration backups and pending transaction journals. Certificate backups and
-journals contain private keys.
+configuration backups, pending transaction journals and operator-resolution
+authorization/completion evidence. Certificate backups, journals and resolution
+authorizations contain private keys. See [operator resolution](RESOLUTION.md).
 
 | Object | Required ownership and metadata |
 |---|---|

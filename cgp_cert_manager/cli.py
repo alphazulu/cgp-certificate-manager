@@ -45,11 +45,25 @@ def migrate(cfg):
 def main():
     os.umask(0o077)
     p=argparse.ArgumentParser(); p.add_argument('--version',action='version',version=__version__); p.add_argument('--domain'); p.add_argument('--backup-file'); p.add_argument('--json',action='store_true'); p.add_argument('--allow-shrink',action='store_true'); p.add_argument('--force-renew',action='store_true'); p.add_argument('--retry-now',action='store_true')
+    p.add_argument('--confirm-transaction'); p.add_argument('--reason')
     g=p.add_mutually_exclusive_group()
-    for x in ('sync','list','show-domains','status','plan','verify','doctor','dry-run','install-only','history','hook-auth','hook-cleanup','reset-backoff','discover-listeners','verify-listeners','repair-chain','tui','apply-schedule','console','transactions','recover'): g.add_argument('--'+x,action='store_true')
+    for x in ('sync','list','show-domains','status','plan','verify','doctor','dry-run','install-only','history','hook-auth','hook-cleanup','reset-backoff','discover-listeners','verify-listeners','repair-chain','tui','apply-schedule','console','transactions','recover','acknowledge-restored'): g.add_argument('--'+x,action='store_true')
     g.add_argument('--backups',metavar='DOMAIN'); g.add_argument('--rollback',metavar='DOMAIN'); g.add_argument('--migrate',action='store_true')
     a=p.parse_args()
     if a.backup_file and not a.rollback: p.error('--backup-file requires --rollback')
+    if a.acknowledge_restored:
+        if not a.domain: p.error('--acknowledge-restored requires --domain')
+        try: identifier(a.domain)
+        except Error: p.error('Invalid acknowledgement domain')
+    elif a.confirm_transaction is not None or a.reason is not None:
+        p.error('--confirm-transaction and --reason require --acknowledge-restored')
+    if (a.confirm_transaction is None)!=(a.reason is None):
+        p.error('--confirm-transaction and --reason must be supplied together')
+    if a.confirm_transaction is not None:
+        if not re.fullmatch(r'[0-9a-f]{64}',a.confirm_transaction): p.error('Invalid transaction confirmation token')
+        if not a.reason.isprintable() or not 1<=len(a.reason.strip())<=500:
+            p.error('Reason must contain 1 to 500 printable characters without controls')
+        a.reason=a.reason.strip()
     if a.console:
         from .console import entry as console_entry
         return console_entry()
@@ -66,6 +80,29 @@ def main():
         return locked_main(a,migrate(load(CONFIG)))
 
 def locked_main(a,cfg):
+    if a.acknowledge_restored:
+        from . import resolution
+        if a.confirm_transaction is None:
+            result=resolution.preview(cfg,a.domain)
+        else:
+            result=resolution.acknowledge(cfg,a.domain,a.confirm_transaction,a.reason)
+        if a.json: print(json.dumps(result,indent=2,ensure_ascii=False))
+        else:
+            print('Domain: '+result['domain'])
+            print('TLS: '+result['tls'])
+            print('Confirmation token: '+result['confirmation_token'])
+            if a.confirm_transaction is None:
+                print('Phase: '+result['phase'])
+                print('CGP state: '+result['state'])
+                print('Pending journal: '+str(result['pending_journal']))
+                print('Authorization recorded: '+str(result['authorization_recorded']))
+                if result['authorization_recorded']: print('Repeat the original acknowledgement reason.')
+                print('Acknowledgement keeps the previous CGP settings and permits subsequent certificate work.')
+                print('Supply --confirm-transaction TOKEN and --reason TEXT to acknowledge this preview.')
+            else:
+                print('Result: '+result['result'])
+                print('CGP settings were not changed. TLS remains unverified.')
+        return 0
     if a.transactions or a.recover:
         rows=deployment.transaction_status(cfg,a.domain) if a.transactions else deployment.recover_pending(cfg,a.domain)
         if a.json: print(json.dumps(rows,indent=2,ensure_ascii=False))

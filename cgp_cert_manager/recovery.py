@@ -79,6 +79,8 @@ def recover(journal, domain, cfg, identity, verifier=None):
     On unsuccessful verification of the intended snapshot, restoration is
     permitted only after a fresh readback confirms a known snapshot.
     """
+    from . import resolution
+    resolution.assert_no_incomplete(journal.directory.parent)
     record = journal.read(domain)
     if record is None:
         return "none"

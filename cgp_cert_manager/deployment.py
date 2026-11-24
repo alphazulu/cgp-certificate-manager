@@ -1,6 +1,6 @@
 """Certificate transactions. Callers must hold the global operation lock."""
 
-from . import core, recovery
+from . import core, recovery, resolution
 from .transactions import Journal, JournalError, classify
 
 
@@ -41,21 +41,22 @@ def transaction_status(cfg, domain=None):
     """Report only non-secret metadata; inspection never alters a journal."""
     journal = Journal(core.STATE / "transactions")
     names = pending_domains(journal, domain)
+    rows = resolution.pending_status(cfg, domain)
     if not names:
-        return []
+        return rows
     identity = recovery.server_identity(cfg)
-    rows = []
     for name in names:
         record = journal.read(name)
         matches = record["config_identity"] == identity
         state = classify(record, core.current(cfg, name)) if matches else "foreign"
         rows.append({"domain": name, "phase": record["phase"],
                      "state": state, "server_matches": matches})
-    return rows
+    return sorted(rows, key=lambda row: row["domain"])
 
 
 def recover_pending(cfg, domain=None):
     """Resolve pending work before Certbot, discovery or another CGP write."""
+    resolution.assert_no_incomplete()
     journal = Journal(core.STATE / "transactions")
     names = pending_domains(journal, domain)
     if not names:
@@ -75,6 +76,7 @@ def recover_pending(cfg, domain=None):
 
 def assert_no_pending():
     """An unresolved earlier domain blocks every further certificate mutation."""
+    resolution.assert_no_incomplete()
     if Journal(core.STATE / "transactions").domains():
         raise JournalError("Pending transaction blocks certificate changes; inspect --transactions and run --recover")
 

@@ -50,6 +50,32 @@ assert_pending_journal() {
     test "$(stat -c %u "$journal")" = 0
     test "$(stat -c %a "$(dirname "$journal")")" = 700
     test "$(stat -c %u "$(dirname "$journal")")" = 0
+    assert_audit_archives
+}
+assert_audit_archives() {
+    python3 - /tmp/cgp-resolution-expected/manifest.json "${audit_unsafe_path:-}" <<'AUDIT_CHECK'
+import json
+from pathlib import Path
+import stat
+import sys
+
+manifest = json.loads(Path(sys.argv[1]).read_text())
+intentional_fault = sys.argv[2]
+for entry in manifest['files']:
+    path = Path(entry['path'])
+    assert path.read_bytes() == Path(entry['expected']).read_bytes(), str(path)
+    if str(path) != intentional_fault:
+        info = path.lstat()
+        assert stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+        assert info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o600
+for value in manifest['directories']:
+    if value != intentional_fault:
+        info = Path(value).lstat()
+        assert stat.S_ISDIR(info.st_mode)
+        assert info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o700
+missing = Path(manifest['incomplete']) / 'completion.json'
+assert not missing.exists() and not missing.is_symlink()
+AUDIT_CHECK
 }
 write_config() {
     cat >"$config" <<'JSON'
@@ -73,6 +99,50 @@ cat >"$journal" <<'JSON'
 JSON
 chmod 600 "$journal"
 cp "$journal" /tmp/pending.expected
+# Create real-format synthetic audit evidence with a fake local CGP readback.
+# Keep one incomplete authorization after pending was removed: the installer
+# must preserve it without converting it into an acknowledged completion.
+python3 - /tmp/candidate-writable /var/lib/cgp-letsencrypt /tmp/cgp-resolution-expected <<'AUDIT_FIXTURES'
+from pathlib import Path
+import sys
+from unittest.mock import patch
+
+sys.path.insert(0, sys.argv[1])
+from cgp_cert_manager import core, recovery, resolution, storage
+from cgp_cert_manager.transactions import Journal
+
+core.STATE = Path(sys.argv[2])
+expected = Path(sys.argv[3])
+storage.ensure_private_directory(expected)
+cfg = {'communigate': {'url': 'http://127.0.0.1:8100/CLI/'}}
+identity = recovery.server_identity(cfg, 'a' * 32)
+previous = {'PrivateSecureKey': '[b2xkLWtleQ==]', 'SecureCertificate': '[b2xkLWNlcnQ=]',
+            'CAChain': '[Y2E=]', 'CertificateType': 'NO'}
+intended = dict(previous, SecureCertificate='[bmV3LWNlcnQ=]', CertificateType='YES')
+manifest = {'files': [], 'directories': [str(core.STATE / 'resolutions')]}
+with storage.operation_lock(core.STATE), \
+        patch.object(core, 'current', return_value=previous), \
+        patch.object(core, 'update', side_effect=AssertionError('No CGP writes in audit fixture')), \
+        patch.object(recovery, 'verify_snapshot', side_effect=AssertionError('No TLS proof in audit fixture')), \
+        patch.object(recovery, 'server_identity', return_value=identity):
+    for kind in ('completed', 'incomplete'):
+        domain = kind + '.example.com'
+        Journal(core.STATE / 'transactions').prepare(
+            domain, previous, intended, [{'port': 443, 'sni': domain}], identity)
+        token = resolution.preview(cfg, domain)['confirmation_token']
+        resolution.acknowledge(cfg, domain, token, 'Synthetic installer preservation test')
+        bundle = core.STATE / 'resolutions' / token
+        if kind == 'incomplete':
+            # Fixture for death after pending unlink but before completion.
+            (bundle / 'completion.json').unlink()
+        manifest[kind] = str(bundle)
+        manifest['directories'].append(str(bundle))
+        for path in sorted(bundle.glob('*.json')):
+            copy = expected / (kind + '-' + path.name)
+            storage.atomic_text(copy, storage.read_text(path))
+            manifest['files'].append({'path': str(path), 'expected': str(copy)})
+storage.atomic_json(expected / 'manifest.json', manifest)
+AUDIT_FIXTURES
 
 echo '=== clean install ==='
 bash /tmp/candidate-writable/install.sh --non-interactive
@@ -172,6 +242,9 @@ path_contents() {
 }
 exercise_unsafe_path() {
     local path=$1 safe_mode=$2 unsafe_mode=$3 before target
+    # Audit content must remain unchanged even while this one path's metadata
+    # is intentionally unsafe; the caller verifies that the fault is retained.
+    local audit_unsafe_path=$path
     chmod "$unsafe_mode" "$path"
     before=$(path_contents "$path")
     assert_preflight_refused
@@ -207,5 +280,9 @@ exercise_unsafe_path /var/lib/cgp-letsencrypt 700 755
 exercise_unsafe_path /var/lib/cgp-letsencrypt/run.lock 600 644
 exercise_unsafe_path /var/lib/cgp-letsencrypt/backups 700 755
 exercise_unsafe_path "$backup_fixture" 600 644
+audit_fixture=$(python3 -c 'import json; print(json.load(open("/tmp/cgp-resolution-expected/manifest.json"))["completed"] + "/authorization.json")')
+exercise_unsafe_path /var/lib/cgp-letsencrypt/resolutions 700 755
+exercise_unsafe_path "$audit_fixture" 600 644
+assert_audit_archives
 
 echo 'Installer integration scenarios passed.'

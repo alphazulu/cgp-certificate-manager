@@ -14,7 +14,8 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from cgp_cert_manager import core, recovery
+from cgp_cert_manager import core, recovery, resolution
+from cgp_cert_manager.transactions import Journal
 
 
 def openssl(*args):
@@ -223,6 +224,28 @@ class RecordedSnapshotTLSTests(unittest.TestCase):
             with self.assertRaisesRegex(core.Error, "openssl failed"):
                 recovery.verify_snapshot(self.expired, [{"port": 443, "sni": "example.com"}])
             probe.assert_not_called()
+
+    def test_real_expired_previous_requires_explicit_unverified_acceptance(self):
+        endpoint = {"port": 443, "sni": "example.com"}
+        with self.assertRaisesRegex(core.Error, "openssl failed"):
+            recovery.verify_snapshot(self.expired, [endpoint])
+        cfg = {"communigate": {"url": "http://127.0.0.1:8100/CLI/"}}
+        identity = recovery.server_identity(cfg, "a" * 32)
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(core, "STATE", Path(tmp)), \
+                patch.object(core, "current", return_value=self.expired), \
+                patch.object(core, "update") as update, \
+                patch.object(recovery, "server_identity", return_value=identity), \
+                patch.object(recovery, "verify_snapshot", side_effect=AssertionError("Cannot claim TLS proof")):
+            journal = Journal(Path(tmp) / "transactions")
+            journal.prepare("example.com", self.expired, self.settings["new"], [endpoint], identity)
+            token = resolution.preview(cfg, "example.com")["confirmation_token"]
+            result = resolution.acknowledge(cfg, "example.com", token,
+                                            "Confirmed expired certificate; accept previous settings")
+            self.assertEqual(result["result"], "acknowledged_unverified")
+            self.assertEqual(result["tls"], "unverified")
+            self.assertIsNone(journal.read("example.com"))
+            update.assert_not_called()
 
     def test_untrusted_chain_fails_before_network(self):
         # A valid DER root in place of the issuer cannot validate this leaf.

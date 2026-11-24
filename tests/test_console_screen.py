@@ -232,7 +232,7 @@ class ScreenTests(unittest.TestCase):
         s=self.screen
         s.menu=Mock(); s.confirm=Mock(return_value=True)
         s.inspect=Mock(); s.execute=Mock()
-        for choice in (None,2,0,1):
+        for choice in (None,3,0,1):
             s.menu.return_value=choice
             s.transaction_menu()
         s.inspect.assert_called_once_with(c.CLI+['--transactions'],'Transaction status')

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.0.dev2 — unreleased
+
+- Add explicit `--acknowledge-restored --domain` preview and exact-token/reason confirmation for previous settings that cannot pass TLS verification. Limit it to `prepared`/`restoring` with matching server identity and all four previous CGP fields; refuse unknown states and stale journal instances.
+- Preserve full original evidence in private authorization and completion records. Keep incomplete acknowledgements globally blocking even after the pending journal has been removed; only explicit retry can complete them. Resynchronize existing completed evidence before permitting later mutations.
+- Report `acknowledged_unverified` without CGP writes, ACME calls or a TLS-success claim. Bind confirmation to the complete schema-2 journal and securely opened file identity; refuse replay against another transaction.
+- Expose the same procedure in domain actions and F9, including domains absent from normal discovery. Add unit, cross-module and process-death coverage together with implementation, plus installer preservation/refusal checks for audit records.
+- Document commands, crash semantics, audit confidentiality and remaining limits in [docs/RESOLUTION.md](docs/RESOLUTION.md). Exact observed test and CI results are recorded in DEVELOPMENT.md.
+- Complete local validation: 455 tests, 2073 measured statements and 844 branches at 100%; Python compile, shell syntax and diff checks passed. Includes 11 new acknowledgement process-death/restart tests and an actual expired-certificate regression. Container CI evidence is tracked separately in DEVELOPMENT.md.
+
 ## 2.2.0.dev1 — unreleased
 
 - Add shared descriptor-based private storage validation for configuration, Cloudflare credentials, state, history, backups and transaction journals. Require effective-UID ownership, private mode limits, regular files and a single hard link; refuse symlinks and unsafe ancestor paths.
