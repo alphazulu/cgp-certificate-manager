@@ -67,6 +67,7 @@ class AuditTests(unittest.TestCase):
     def test_history_skips_nonobjects(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(core,'STATE',Path(tmp)):
             (Path(tmp)/'history.jsonl').write_text('null\n[]\n{"domain":"example.com","event":"ok"}\n')
+            (Path(tmp)/'history.jsonl').chmod(0o600)
             self.assertEqual(console.domain_history('example.com'),[' ok'])
 
     def test_verification_error_survives_missing_identity(self):
@@ -84,9 +85,12 @@ class AuditTests(unittest.TestCase):
 
     def test_issue_changed_san(self):
         d={'cert_name':'example.com','names':['example.com','alias.com']}
-        zones={'example.com':{'credentials':'one.ini'},'alias.com':{'credentials':'two.ini'}}
         args=argparse.Namespace(force_renew=False,dry_run=True)
-        with patch.object(core,'local_info',return_value={'names':['example.com']}),patch.object(core.subprocess,'run') as run:
+        with tempfile.TemporaryDirectory() as tmp, patch.object(core,'local_info',return_value={'names':['example.com']}),patch.object(core.subprocess,'run') as run:
+            paths=[Path(tmp)/name for name in ('one.ini','two.ini')]
+            for path in paths:
+                path.write_text('dns_cloudflare_api_token = dummy\n'); path.chmod(0o600)
+            zones={name:{'credentials':str(path)} for name,path in zip(('example.com','alias.com'),paths)}
             core.issue({'email':'admin@example.com','dns_preflight':False},d,zones,args)
         cmd=run.call_args.args[0]
         self.assertIn('--manual',cmd)

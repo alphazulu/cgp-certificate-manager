@@ -250,7 +250,9 @@ class WizardHelpers(unittest.TestCase):
             root=Path(stack.enter_context(tempfile.TemporaryDirectory()))
             stack.enter_context(patch.object(c,'STATE',root))
             stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
-            uid=stack.enter_context(patch.object(t.os,'geteuid',return_value=1))
+            ui_os=stack.enter_context(patch.object(t,'os',Mock(wraps=os)))
+            uid=ui_os.geteuid
+            uid.return_value=1
             stack.enter_context(patch.object(t.sys.stdin,'isatty',return_value=True))
             stack.enter_context(patch.object(t.sys.stdout,'isatty',return_value=True))
             which=stack.enter_context(patch.object(t.shutil,'which',return_value=None))
@@ -259,7 +261,7 @@ class WizardHelpers(unittest.TestCase):
             uid.return_value=0
             self.assertEqual(t.setup(),1)
             which.return_value='/usr/bin/whiptail'
-            with patch.object(t.fcntl,'flock',side_effect=BlockingIOError()):
+            with patch.object(t.storage,'operation_lock',side_effect=BlockingIOError()):
                 self.assertEqual(t.setup(),1)
             with patch.object(t,'edit',return_value=t.SAVED):
                 self.assertEqual(t.setup(),t.SAVED)

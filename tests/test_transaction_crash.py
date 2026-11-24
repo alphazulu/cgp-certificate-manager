@@ -138,6 +138,7 @@ class TransactionProcessCrashTests(unittest.TestCase):
             "previous": PREVIOUS, "intended": INTENDED, "domain": DOMAIN,
         }))
         (self.path / "remote.json").write_text(json.dumps(PREVIOUS))
+        (self.path / "remote.json").chmod(0o600)
         self.journal = self.path / "state" / "transactions" / (DOMAIN + ".json")
 
     def child(self, mode, checkpoint=""):

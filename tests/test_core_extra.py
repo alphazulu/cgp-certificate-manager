@@ -49,6 +49,7 @@ class CoreExtraTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'token.ini'
             path.write_text('# comment\ndns_cloudflare_api_token = dummy\n')
+            path.chmod(0o600)
             self.assertEqual(c.token(path),'dummy')
             for success in (True,False):
                 with patch.object(c,'opener') as opener:
@@ -125,8 +126,10 @@ class CoreExtraTests(unittest.TestCase):
 
     def test_single_account_issue(self):
         d={'cert_name':'example.com','names':['example.com']}
-        z={'example.com':{'credentials':'one.ini'}}
-        with patch.object(c,'local_info',return_value=None),patch.object(c,'dns_preflight') as pre,patch.object(c.subprocess,'run') as run:
+        with tempfile.TemporaryDirectory() as tmp, patch.object(c,'local_info',return_value=None),patch.object(c,'dns_preflight') as pre,patch.object(c.subprocess,'run') as run:
+            credentials=Path(tmp)/'one.ini'
+            credentials.write_text('dns_cloudflare_api_token = dummy\n'); credentials.chmod(0o600)
+            z={'example.com':{'credentials':str(credentials)}}
             c.issue({'email':'a@example.com'},d,z,argparse.Namespace(force_renew=False,dry_run=False))
         pre.assert_called_once_with(d,z)
         cmd=run.call_args.args[0]
@@ -195,8 +198,9 @@ class DeploymentExtraTests(unittest.TestCase):
         stack.enter_context(patch.object(recovery,'server_identity',return_value='server'))
 
     def test_success_and_retention(self):
-        path=self.root/'backups'/'example.com'; path.mkdir(parents=True)
-        for i in range(6): (path/('2000%d.json'%i)).write_text('{}')
+        path=self.root/'backups'/'example.com'
+        path.parent.mkdir(mode=0o700); path.mkdir(mode=0o700)
+        for i in range(6): c.atomic(path/('2000%d.json'%i),{})
         self.assertEqual(c.deploy({},self.d),'installed')
         self.assertEqual(len(list(path.glob('*.json'))),5)
         self.update.assert_called_once_with({},'example.com',self.new)

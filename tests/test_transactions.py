@@ -1,10 +1,10 @@
 import os
+import stat
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from types import SimpleNamespace
-from cgp_cert_manager import core
+from cgp_cert_manager import core, storage
 from cgp_cert_manager.transactions import Journal, JournalError, classify, durable_json, validate, sync_directory
 
 def settings(value="YQ=="):
@@ -56,13 +56,13 @@ class JournalTests(unittest.TestCase):
         self.assertEqual(classify(dict(r, intended=self.old),self.old),"both")
 
     def test_reads_and_listing_have_no_write_side_effects(self):
-        with patch("cgp_cert_manager.transactions.sync_directory") as sync,patch.object(Path,"mkdir") as mkdir:
+        with patch("cgp_cert_manager.storage.os.fsync") as sync,patch.object(Path,"mkdir") as mkdir:
             self.assertIsNone(self.j.read("example.com"))
             self.assertEqual(self.j.domains(),[])
             mkdir.assert_not_called()
             sync.assert_not_called()
         self.prepare()
-        with patch("cgp_cert_manager.transactions.sync_directory") as sync,patch.object(Path,"mkdir") as mkdir:
+        with patch("cgp_cert_manager.storage.os.fsync") as sync,patch.object(Path,"mkdir") as mkdir:
             self.assertEqual(self.j.read("example.com")["phase"],"prepared")
             self.assertEqual(self.j.domains(),["example.com"])
             self.assertIsNone(self.j.read("other.com"))
@@ -72,9 +72,11 @@ class JournalTests(unittest.TestCase):
     def test_lists_domain_names_without_reading_keys(self):
         self.prepare()
         self.j.path("other.com").write_text("unreadable record")
+        self.j.path("other.com").chmod(0o600)
         (self.j.directory/".txn-abandoned").write_text("temporary")
         self.assertEqual(self.j.domains(),["example.com","other.com"])
         (self.j.directory/"bad_name.json").write_text("invalid")
+        (self.j.directory/"bad_name.json").chmod(0o600)
         with self.assertRaises(core.Error): self.j.domains()
 
     def test_unsafe_directory(self):
@@ -99,8 +101,16 @@ class JournalTests(unittest.TestCase):
         with self.assertRaises(JournalError): self.j.read("example.com")
         self.j.path("example.com").chmod(0o600)
         info=self.j.path("example.com").stat()
+        fstat=os.fstat
         for mode,uid in ((info.st_mode,info.st_uid+1),(0o010600,info.st_uid)):
-            with self.subTest(mode=mode,uid=uid),patch("cgp_cert_manager.transactions.os.fstat",return_value=SimpleNamespace(st_mode=mode,st_uid=uid)):
+            def changed(fd):
+                actual=fstat(fd)
+                if not stat.S_ISREG(actual.st_mode): return actual
+                fields=list(actual)
+                fields[stat.ST_MODE]=mode
+                fields[stat.ST_UID]=uid
+                return os.stat_result(fields)
+            with self.subTest(mode=mode,uid=uid),patch("cgp_cert_manager.transactions.os.fstat",side_effect=changed):
                 with self.assertRaises(JournalError): self.j.read("example.com")
 
     def test_corrupt_file(self):
@@ -141,14 +151,24 @@ class JournalTests(unittest.TestCase):
 
     def test_file_sync_failure_preserves_previous_record(self):
         before=self.prepare()
-        with patch("cgp_cert_manager.transactions.os.fsync",side_effect=OSError("disk failure")):
+        fsync=os.fsync
+        def fail_file(fd):
+            if stat.S_ISREG(os.fstat(fd).st_mode): raise OSError("disk failure")
+            fsync(fd)
+        with patch("cgp_cert_manager.transactions.os.fsync",side_effect=fail_file):
             with self.assertRaises(OSError): self.j.transition("example.com","applying")
         self.assertEqual(self.j.read("example.com"),before)
         self.assertEqual(list(self.j.directory.iterdir()),[self.j.path("example.com")])
 
     def test_directory_sync_failure_leaves_readable_pending_record(self):
         self.prepare()
-        with patch("cgp_cert_manager.transactions.sync_directory",side_effect=OSError("disk failure")):
+        fsync=os.fsync
+        directory=self.j.directory.stat()
+        def fail_directory(fd):
+            opened=os.fstat(fd)
+            if (opened.st_dev,opened.st_ino)==(directory.st_dev,directory.st_ino): raise OSError("disk failure")
+            fsync(fd)
+        with patch("cgp_cert_manager.storage.os.fsync",side_effect=fail_directory):
             with self.assertRaises(OSError): self.j.transition("example.com","applying")
         # The caller receives an error, but recovery can inspect the replaced file.
         self.assertEqual(self.j.read("example.com")["phase"],"applying")
@@ -168,7 +188,64 @@ class JournalTests(unittest.TestCase):
         target=self.root/"target"
         path.rename(target)
         path.symlink_to(target)
-        with self.assertRaises(OSError): self.j.read("example.com")
+        with self.assertRaises(JournalError): self.j.read("example.com")
+
+    def test_missing_state_reads_are_side_effect_free(self):
+        journal=Journal(self.root/"missing"/"transactions")
+        with patch("cgp_cert_manager.storage.os.fsync") as sync:
+            self.assertIsNone(journal.read("example.com"))
+            self.assertEqual(journal.domains(),[])
+        sync.assert_not_called()
+        self.assertFalse((self.root/"missing").exists())
+
+    def test_unsafe_state_rejected_before_creating_transactions(self):
+        self.root.chmod(0o755)
+        for operation in (self.prepare,self.j.domains,lambda:self.j.read("example.com")):
+            with self.subTest(operation=operation),self.assertRaises(JournalError): operation()
+        self.assertFalse(self.j.directory.exists())
+
+    def test_state_symlink_rejected_even_without_transaction_directory(self):
+        real=self.root/"real"
+        real.mkdir(mode=0o700)
+        link=self.root/"state"
+        link.symlink_to(real,target_is_directory=True)
+        journal=Journal(link/"transactions")
+        for operation in (journal.domains,lambda:journal.read("example.com"),journal.ensure_directory):
+            with self.subTest(operation=operation),self.assertRaises(JournalError): operation()
+        self.assertFalse((real/"transactions").exists())
+
+    def test_hardlinked_record_rejected_by_read_and_listing(self):
+        self.prepare()
+        linked=self.root/"extra-link"
+        os.link(self.j.path("example.com"),linked)
+        evidence=linked.read_bytes()
+        for operation in (self.j.domains,lambda:self.j.read("example.com")):
+            with self.subTest(operation=operation),self.assertRaises(JournalError): operation()
+        self.assertEqual(linked.read_bytes(),evidence)
+
+    def test_hardlinked_terminal_record_cannot_be_removed(self):
+        self.prepare()
+        self.j.transition("example.com","restoring")
+        self.j.transition("example.com","restored")
+        linked=self.root/"extra-link"
+        os.link(self.j.path("example.com"),linked)
+        evidence=linked.read_bytes()
+        with self.assertRaises(JournalError): self.j.finish("example.com")
+        self.assertEqual(self.j.path("example.com").read_bytes(),evidence)
+        self.assertEqual(linked.read_bytes(),evidence)
+
+    def test_ancestor_symlink_cannot_hide_existing_pending_record(self):
+        container=self.root/"container"
+        state=container/"state"
+        storage.ensure_private_directory(state)
+        journal=Journal(state/"transactions")
+        journal.prepare("example.com",self.old,self.new,[{"port":443,"sni":"example.com"}],"server")
+        link=self.root/"alias"
+        link.symlink_to(container,target_is_directory=True)
+        alias=Journal(link/"state"/"transactions")
+        for operation in (alias.domains,lambda:alias.read("example.com")):
+            with self.subTest(operation=operation),self.assertRaises(JournalError): operation()
+        self.assertEqual(journal.read("example.com")["phase"],"prepared")
 
     def test_endpoint_validation(self):
         r=self.prepare()

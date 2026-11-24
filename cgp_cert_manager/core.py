@@ -14,18 +14,15 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def opener(): return urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
 def atomic(path, data):
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    fd, tmp = tempfile.mkstemp(dir=path.parent)
-    try:
-        with os.fdopen(fd, 'w') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False); f.write('\n'); f.flush(); os.fsync(f.fileno())
-        os.replace(tmp, path)
-    finally:
-        if os.path.exists(tmp): os.unlink(tmp)
+    from . import storage
+    storage.atomic_json(path,data)
 
 def load(path, default=None):
-    if not path.exists() and default is not None: return default
-    return json.loads(path.read_text())
+    from . import storage
+    try: return json.loads(storage.read_text(path))
+    except FileNotFoundError:
+        if default is not None: return default
+        raise
 
 def dns_name(value):
     s = value.strip().rstrip('.').lower(); wild = s.startswith('*.'); s = s[2:] if wild else s
@@ -54,7 +51,8 @@ def array(s):
     return [v.strip() for v in next(csv.reader([s[1:-1].replace('\n',' ')],skipinitialspace=True)) if v.strip()]
 
 def token(path):
-    for line in Path(path).read_text().splitlines():
+    from . import storage
+    for line in storage.read_text(path).splitlines():
         k,_,v=line.partition('=')
         if k.strip()=='dns_cloudflare_api_token' and v.strip(): return v.strip()
     raise Error('Cloudflare token missing')
@@ -223,9 +221,11 @@ def dns_preflight(d,z):
         if run('dig','+short','+time=4','+tries=2','CNAME',challenge).strip(): raise Error('ACME CNAME requires manual configuration: '+challenge)
 
 def issue(cfg,d,z,args):
+    from . import storage
+    paths={z[zone_for(n,z)]['credentials'] for n in d['names']}
+    for path in paths: storage.check_private_file(path)
     local=local_info(d); changed=local is not None and set(local['names'])!=set(d['names'])
     if cfg.get('dns_preflight',True): dns_preflight(d,z)
-    paths={z[zone_for(n,z)]['credentials'] for n in d['names']}
     cmd=['certbot','certonly','--non-interactive','--agree-tos','--email',cfg['email'],'--cert-name',d['cert_name'],'--key-type','rsa','--rsa-key-size','2048']
     if len(paths)==1:
         cmd+=['--dns-cloudflare','--dns-cloudflare-credentials',next(iter(paths)),'--dns-cloudflare-propagation-seconds',str(cfg.get('propagation_seconds',60))]
@@ -236,8 +236,20 @@ def issue(cfg,d,z,args):
     if args.dry_run: cmd+=['--dry-run']
     subprocess.run(cmd,check=True,timeout=3600)
 
+def backup_files(name):
+    from . import storage
+    name=identifier(name)
+    if not storage.check_private_directory(STATE,missing_ok=True): return []
+    root=STATE/'backups'
+    if not storage.check_private_directory(root,missing_ok=True): return []
+    return sorted(storage.private_files(root/name),reverse=True)
+
 def backup(name,f):
-    p=STATE/'backups'/identifier(name)/(datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')+'.json'); atomic(p,f); return p
+    from . import storage
+    root=STATE/'backups'; directory=root/identifier(name)
+    for path in (STATE,root,directory): storage.ensure_private_directory(path)
+    backup_files(name)  # Validate retained copies before creating or deploying.
+    p=directory/(datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')+'.json'); atomic(p,f); return p
 
 def update(cfg,name,f):
     if set(f)!=set(FIELDS): raise Error('Incomplete CGP settings; refusing write')

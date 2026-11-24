@@ -14,12 +14,14 @@ handling because they are children of the process holding that lock.
 separate TLS endpoint lists for those two snapshots, a schema number, a phase
 and a server identity. The identity hashes the local `/etc/machine-id` and CGP
 CLI URL; passwords and Cloudflare tokens are not included. The journal does
-contain private certificate keys. Its directory is 0700 and each file is 0600;
-reads reject unexpected owners, types, permissions and symbolic links.
+contain private certificate keys. New private directories are 0700 and files
+0600; reads also reject unexpected owners, types, permissions, symbolic links
+and extra hard links. Parent paths are validated through directory descriptors.
 
 Each replacement is written to a temporary file, flushed and fsynced, atomically
 renamed, then followed by a directory fsync. Creating the transaction directory
-also fsyncs its existing parent. This uses the filesystem's durability contract;
+also fsyncs its parents; retries sync existing parents too, in case an earlier
+mkdir succeeded but its fsync failed. This uses the filesystem's durability contract;
 it cannot guarantee that faulty storage hardware honors flushes.
 
 The current journal schema is **2**. Experimental schema-1 journals from earlier
@@ -115,18 +117,24 @@ still installed. The current development version has no special cancellation
 outcome that waives TLS proof; safe bootstrap and operator-assisted resolution
 are still roadmap items. Incomplete previous fields remain an explicit refusal.
 
-Application installation uses the existing lock and preserves transaction
-files. Its own crash recovery is separate and not made durable by this feature.
+Application installation uses the same validated lock and preserves transaction
+files. A Python wrapper keeps the descriptor locked until its shell payload and
+any handled rollback finish. Storage preflight occurs before systemctl or
+installed-file changes. Its own crash recovery is separate and not made durable
+by this feature.
 Upgrading or reverting application code does not authorize replaying a journal
 with a different machine identity or unsupported schema.
 
-The journal validates its own directory and files. Full ownership/permission
-validation of the parent manager state directory, configuration, lock file and
-older backups remains outstanding. The normal installer creates the state
-directory with mode 0700. The mechanism assumes this parent remains trusted.
+The journal, parent manager state, configuration, credentials, lock and existing
+backups now share ownership, permission and path validation. Unsafe objects are
+refused without silently repairing their modes or owner. Read-only storage
+inspection does not create directories or fsync; CLI inspection still acquires
+the ordinary operation lock. See [private storage policy](STORAGE.md) for exact
+requirements, compatibility and the trusted-UID boundary.
 
 Backup pruning runs only after a newly applied transaction commits successfully.
-Pending snapshots live in the journal independently of retained backup files.
+The entire selected backup list is validated before deleting any entry. Pending
+snapshots live in the journal independently of retained backup files.
 Recovery and failed operations do not prune backups, so more than five may
 remain until a subsequent successful installation.
 
@@ -145,6 +153,8 @@ remain until a subsequent successful installation.
   missing chain elements and the independence of old snapshots from `LIVE`.
 - Installer CI uses disposable Ubuntu containers and mocked systemd, upgrading
   from stable 2.0.1 and 2.1.0 while checking pending journal bytes and permissions.
+  Refusal cases cover unsafe configuration, credentials, state, lock and older
+  backups. DEVELOPMENT.md records which exact implementation and runs passed.
 
 Process termination tests do not simulate a disk losing power, and local TLS
 tests do not establish all CommuniGate or public ACME behavior. Production

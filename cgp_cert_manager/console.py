@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import __version__, core
+from . import __version__, core, storage
 from .localization import language, translate
 
 # The module path must refer to the same checkout, even when testing from /tmp.
@@ -101,15 +101,19 @@ def backup_command(domain, filename):
 
 def domain_history(name):
     path=core.STATE/'history.jsonl'
-    if not path.is_file(): return []
     from collections import deque
     lines=deque(maxlen=150)
-    with path.open() as stream:
-        for line in stream:
-            try: item=json.loads(line)
-            except ValueError: continue
-            if isinstance(item,dict) and item.get('domain')==name:
-                lines.append(str(item.get('time',''))+' '+str(item.get('event','')))
+    try:
+        with storage.open_private(path) as stream:
+            for line in stream:
+                try: item=json.loads(line)
+                except ValueError: continue
+                if isinstance(item,dict) and item.get('domain')==name:
+                    lines.append(str(item.get('time',''))+' '+str(item.get('event','')))
+    except FileNotFoundError:
+        return []
+    except (OSError,UnicodeError,core.Error):
+        return ['History unavailable']
     return list(lines)
 
 HELP = [
@@ -478,6 +482,9 @@ def entry():
         return 0
     except curses.error:
         print('Unable to initialize terminal; check TERM and terminal size',file=sys.stderr)
+        return 1
+    except (OSError,core.Error) as error:
+        print('Console unavailable: '+(str(error) if isinstance(error,core.Error) else type(error).__name__),file=sys.stderr)
         return 1
 
 if __name__=='__main__':

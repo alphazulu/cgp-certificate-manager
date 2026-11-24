@@ -1,8 +1,11 @@
+import contextlib
+import io
+import os
 import tempfile
 import unittest
 from pathlib import Path
-from cgp_cert_manager import tui, core
-from unittest.mock import patch
+from cgp_cert_manager import tui, core, storage
+from unittest.mock import Mock, patch
 
 class TUITests(unittest.TestCase):
     def test_defaults(self):
@@ -80,3 +83,133 @@ class TUITests(unittest.TestCase):
         self.assertEqual(translate('Back','ru'),'Назад')
         self.assertEqual(translate('Manage example.com automatically?','ru'),'Обслуживать example.com автоматически?')
         self.assertEqual(translate('Back','en'),'Back')
+
+
+class WizardPrivateStorageTests(unittest.TestCase):
+    def setUp(self):
+        self.stack=contextlib.ExitStack()
+        self.addCleanup(self.stack.close)
+        self.root=Path(self.stack.enter_context(tempfile.TemporaryDirectory()))
+        self.config=self.root/'config.json'
+        self.state=self.root/'state'
+        self.state.mkdir(mode=0o700)
+        self.stage=self.root/'stage.ini'
+        self.target=self.root/'new.ini'
+        core.atomic(self.config,{'previous':True})
+        tui.write_token(self.stage,'dummy')
+        self.stack.enter_context(patch.object(core,'CONFIG',self.config))
+        self.stack.enter_context(patch.object(core,'STATE',self.state))
+
+    def save(self):
+        tui.save_config({'next':True},{str(self.target):self.stage},{str(self.target)})
+
+    def test_token_write_refuses_unsafe_existing_file(self):
+        before=self.stage.read_bytes()
+        self.stage.chmod(0o644)
+        with self.assertRaises(storage.StorageError): tui.write_token(self.stage,'new_dummy')
+        self.assertEqual(self.stage.read_bytes(),before)
+        self.assertEqual(self.stage.stat().st_mode&0o777,0o644)
+
+    def test_token_write_refuses_symlink_and_unsafe_parent(self):
+        self.target.symlink_to(self.stage)
+        with self.assertRaises(storage.StorageError): tui.write_token(self.target,'new_dummy')
+        self.assertTrue(self.target.is_symlink())
+        self.assertEqual(core.token(self.stage),'dummy')
+        directory=self.root/'unsafe'
+        directory.mkdir(mode=0o777)
+        directory.chmod(0o777)
+        with self.assertRaises(storage.StorageError): tui.write_token(directory/'token.ini','dummy')
+        self.assertEqual(list(directory.iterdir()),[])
+        self.assertEqual(directory.stat().st_mode&0o777,0o777)
+
+    def test_unsafe_configuration_is_refused_before_backup(self):
+        before=self.config.read_bytes()
+        self.config.chmod(0o644)
+        with self.assertRaises(storage.StorageError): self.save()
+        self.assertEqual(self.config.read_bytes(),before)
+        self.assertEqual(self.config.stat().st_mode&0o777,0o644)
+        self.assertFalse((self.state/'config-backups').exists())
+        self.assertFalse(self.target.exists())
+
+    def test_configuration_symlink_is_refused_before_backup(self):
+        original=self.root/'original.json'
+        self.config.rename(original)
+        self.config.symlink_to(original)
+        with self.assertRaises(storage.StorageError): self.save()
+        self.assertTrue(self.config.is_symlink())
+        self.assertEqual(core.load(original),{'previous':True})
+        self.assertFalse((self.state/'config-backups').exists())
+
+    def test_unsafe_backup_directory_is_not_repaired(self):
+        directory=self.state/'config-backups'
+        directory.mkdir(mode=0o755)
+        directory.chmod(0o755)
+        with self.assertRaises(storage.StorageError): self.save()
+        self.assertEqual(directory.stat().st_mode&0o777,0o755)
+        self.assertEqual(list(directory.iterdir()),[])
+        self.assertEqual(core.load(self.config),{'previous':True})
+        self.assertFalse(self.target.exists())
+
+    def test_backup_directory_symlink_is_refused(self):
+        elsewhere=self.root/'elsewhere'
+        elsewhere.mkdir(mode=0o700)
+        (self.state/'config-backups').symlink_to(elsewhere,target_is_directory=True)
+        with self.assertRaises(storage.StorageError): self.save()
+        self.assertEqual(list(elsewhere.iterdir()),[])
+        self.assertEqual(core.load(self.config),{'previous':True})
+
+    def test_backup_keeps_original_bytes_and_private_modes(self):
+        previous=self.config.read_bytes()
+        self.save()
+        backups=list((self.state/'config-backups').glob('*/config.json'))
+        self.assertEqual(len(backups),1)
+        self.assertEqual(backups[0].read_bytes(),previous)
+        self.assertEqual(backups[0].stat().st_mode&0o777,0o600)
+        self.assertEqual(backups[0].parent.stat().st_mode&0o777,0o700)
+        self.assertEqual(backups[0].parent.parent.stat().st_mode&0o777,0o700)
+        self.assertEqual(core.load(self.config),{'next':True})
+        self.assertEqual(core.token(self.target),'dummy')
+
+    def test_dangling_credential_target_is_refused(self):
+        missing=self.root/'missing.ini'
+        self.target.symlink_to(missing)
+        with self.assertRaises(storage.StorageError): self.save()
+        self.assertTrue(self.target.is_symlink())
+        self.assertFalse(missing.exists())
+        self.assertEqual(core.load(self.config),{'previous':True})
+
+    def test_setup_refuses_unsafe_lock_without_editing(self):
+        (self.state/'run.lock').symlink_to(self.stage)
+        with patch.object(tui,'os',Mock(wraps=os)) as ui_os, \
+                patch.object(tui.sys.stdin,'isatty',return_value=True), \
+                patch.object(tui.sys.stdout,'isatty',return_value=True), \
+                patch.object(tui.shutil,'which',return_value='/usr/bin/whiptail'), \
+                patch.object(tui,'edit') as edit,contextlib.redirect_stderr(io.StringIO()) as output:
+            ui_os.geteuid.return_value=0
+            ui_os.umask.return_value=0o022
+            self.assertEqual(tui.setup(),1)
+        edit.assert_not_called()
+        self.assertIn('Configuration refused',output.getvalue())
+        self.assertEqual(core.token(self.stage),'dummy')
+
+    def test_existing_unsafe_backup_blocks_save_and_editor(self):
+        directory=self.state/'config-backups'
+        directory.mkdir(mode=0o700)
+        backup=directory/'old.json'
+        backup.write_text('private backup fixture')
+        backup.chmod(0o644)
+        with self.assertRaises(storage.StorageError): self.save()
+        with patch.object(tui,'os',Mock(wraps=os)) as ui_os, \
+                patch.object(tui.sys.stdin,'isatty',return_value=True), \
+                patch.object(tui.sys.stdout,'isatty',return_value=True), \
+                patch.object(tui.shutil,'which',return_value='/usr/bin/whiptail'), \
+                patch.object(tui,'edit') as edit,contextlib.redirect_stderr(io.StringIO()):
+            ui_os.geteuid.return_value=0
+            ui_os.umask.return_value=0o022
+            self.assertEqual(tui.setup(),1)
+        edit.assert_not_called()
+        self.assertEqual(core.load(self.config),{'previous':True})
+        self.assertEqual(backup.read_text(),'private backup fixture')
+        self.assertEqual(backup.stat().st_mode&0o777,0o644)
+        self.assertEqual(list(directory.iterdir()),[backup])
+        self.assertFalse(self.target.exists())

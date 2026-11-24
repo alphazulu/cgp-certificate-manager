@@ -2,11 +2,9 @@
 import json
 import os
 import re
-import stat
-import tempfile
 from pathlib import Path
 
-from . import core
+from . import core, storage
 
 PHASES = {
     "prepared": {"applying", "restoring"},
@@ -26,25 +24,15 @@ class JournalError(core.Error):
     pass
 
 def sync_directory(path):
-    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    storage.check_private_directory(path)
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         os.fsync(fd)
     finally:
         os.close(fd)
 
 def durable_json(path, data):
-    fd, tmp = tempfile.mkstemp(prefix=".txn-", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w") as stream:
-            json.dump(data, stream, sort_keys=True)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(tmp, path)
-        sync_directory(path.parent)
-    finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
+    storage.atomic_json(path, data)
 
 def validate_settings(settings):
     if not isinstance(settings, dict) or set(settings) != set(core.FIELDS):
@@ -98,39 +86,45 @@ class Journal:
 
     def ensure_directory(self):
         # The parent is the existing manager state directory.
-        self.directory.mkdir(mode=0o700, exist_ok=True)
-        self.check_directory()
-        sync_directory(self.directory.parent)
+        try:
+            storage.check_private_directory(self.directory.parent)
+            storage.ensure_private_directory(self.directory)
+        except storage.StorageError as exc:
+            raise JournalError(str(exc)) from None
 
     def check_directory(self):
         """Validate without creating or syncing anything for read-only callers."""
         try:
-            info = self.directory.lstat()
-        except FileNotFoundError:
-            return False
-        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
-            raise JournalError("Unsafe transaction directory")
-        return True
+            if not storage.check_private_directory(self.directory.parent, missing_ok=True):
+                return False
+            return storage.check_private_directory(self.directory, missing_ok=True)
+        except storage.StorageError as exc:
+            raise JournalError(str(exc)) from None
 
     def domains(self):
         """List pending domain names without reading sensitive settings."""
         if not self.check_directory():
             return []
-        return sorted(core.identifier(path.stem) for path in self.directory.glob("*.json"))
+        try:
+            files = storage.private_files(self.directory)
+        except storage.StorageError as exc:
+            raise JournalError(str(exc)) from None
+        return sorted(core.identifier(path.stem) for path in files)
 
     def read(self, domain):
         path = self.path(domain)
-        if not self.check_directory() or not os.path.lexists(path):
+        if not self.check_directory():
             return None
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(fd, "r") as stream:
-            info = os.fstat(stream.fileno())
-            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
-                raise JournalError("Unsafe transaction file")
-            try:
-                record = json.load(stream)
-            except (ValueError, UnicodeError):
-                raise JournalError("Corrupt transaction journal") from None
+        try:
+            with storage.open_private(path) as stream:
+                try:
+                    record = json.load(stream)
+                except (ValueError, UnicodeError):
+                    raise JournalError("Corrupt transaction journal") from None
+        except FileNotFoundError:
+            return None
+        except storage.StorageError as exc:
+            raise JournalError(str(exc)) from None
         return validate(record, domain)
 
     def prepare(self, domain, previous, intended, endpoints, config_identity, previous_endpoints=None):

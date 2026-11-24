@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import call, patch
 
-from cgp_cert_manager import cli, core
+from cgp_cert_manager import cli, core, storage
 from cgp_cert_manager.transactions import Journal
 
 
@@ -17,6 +17,7 @@ class TransactionCLITests(unittest.TestCase):
         self.stack = contextlib.ExitStack()
         self.addCleanup(self.stack.close)
         self.root = Path(self.stack.enter_context(tempfile.TemporaryDirectory()))
+        self.live = Path(self.stack.enter_context(tempfile.TemporaryDirectory()))
         self.cfg = {'schema_version': 2, 'email': 'admin@example.com'}
         self.config = self.root / 'config.json'
         core.atomic(self.config, self.cfg)
@@ -30,10 +31,10 @@ class TransactionCLITests(unittest.TestCase):
         }
         for module, name, value in (
             (cli, 'CONFIG', self.config), (cli, 'STATE', self.root),
-            (core, 'STATE', self.root), (cli, 'LIVE', self.root / 'live'),
+            (core, 'STATE', self.root), (cli, 'LIVE', self.live),
         ):
             self.stack.enter_context(patch.object(module, name, value))
-        live = self.root / 'live' / self.name
+        live = self.live / self.name
         live.mkdir(parents=True)
         (live / 'chain.pem').write_bytes(b'dummy')
         self.stack.enter_context(patch.object(cli.os, 'umask'))
@@ -167,7 +168,7 @@ class TransactionCLITests(unittest.TestCase):
         self.assertNotIn('other.example.com', state)
 
     def test_recovery_cannot_bypass_global_lock(self):
-        with (self.root / 'run.lock').open('a') as lock:
+        with storage.open_private(self.root / 'run.lock','a',create=True) as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             with self.assertRaises(BlockingIOError):
                 self.invoke('--recover')

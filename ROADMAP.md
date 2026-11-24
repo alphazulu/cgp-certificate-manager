@@ -18,16 +18,19 @@
 - [ ] Safe bootstrap when previous fields missing; fail closed until CGP semantics established.
 - [ ] DNS CAA/DNSSEC/delegation checks and dynamic propagation wait.
 - [x] Detect unknown/manual certificate changes, block all subsequent domain mutations while any transaction remains pending, and keep pending snapshots outside backup pruning.
-- [ ] Complete ownership/permission validation for parent state directory, lock, configuration and existing backups; journal directory/files already checked.
+- [x] Complete ownership/permission validation for private state, lock, configuration, credentials, history, journals and existing backups. Reject unsafe paths before normal CLI/TUI/installer side effects; no automatic permission repair. See docs/STORAGE.md.
 - [ ] Define safe operator-assisted resolution for invalid/expired previous certificates; current behavior retains the journal when TLS proof is unavailable.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 3: local and GitHub suites passed 303 tests with 100% measured
-statements and branches. [CI 45363794396](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45363794396)
-passed for implementation commit `458c840`: tests, installer upgrades from stable
-2.0.1 and 2.1.0 (including pending-journal preservation), and package. See
-DEVELOPMENT.md for exact resume steps and remaining limits. This is still a
-development checkpoint, not a production release.
+Checkpoint 4 (`2.2.0.dev1`): the local suite passed **386 tests**, with **1742
+statements / 692 branches / 100%**. New private-storage code and tests are in
+the same change. CI for this checkpoint is pending, including 18 new refusal
+cases on each installer baseline. Prior checkpoint HEAD `903c793` passed
+[CI 45364065834](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45364065834),
+which does not validate these newer changes. See DEVELOPMENT.md for observed
+results, exact resume steps and remaining limits. Next: safe operator-assisted
+resolution of invalid/expired previous certificates. This remains a development
+checkpoint, not a production release.
 
 ## 2.3 — Monitoring
 Zabbix discovery/template; Prometheus textfile; Grafana; external TLS probes; SMTP/webhooks and optional Telegram/MQTT.

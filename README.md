@@ -6,7 +6,7 @@ Automatic Let's Encrypt certificate management for CommuniGate Pro on Linux usin
 
 [Русская документация](README.ru.md)
 
-This branch develops **2.2.0.dev0**. The stable production release is **2.1.0**.
+This branch develops **2.2.0.dev1**. The stable production release is **2.1.0**.
 See [ROADMAP.md](ROADMAP.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for completed work,
 test evidence and the next checkpoint. The development branch is not a release.
 
@@ -23,6 +23,7 @@ A mail server can host many domains and aliases. Renewing certificates manually 
 - Deploy via local HTTP CLI, verify private key, certificate, CA chain and PKI setting; use CertificateType=YES and Base64-encoded concatenated DER for CAChain.
 - Verify hostname, trust, and complete ordered TLS chain over HTTPS/SNI by default. Installation and recovery verify captured certificate snapshots; `--verify` compares the live installation with the current Certbot lineage.
 - Durably journal prior and intended settings before deployment, recover interrupted transactions, and verify restoration by readback and live TLS. Prune older backups only after a completed installation, retaining five recent backups per domain.
+- Validate private configuration, credentials, state, history, backups and lock files; reject unsafe ownership, permissions, links and file types before use.
 - Separate retry backoff for issuance and deployment, optional SMTP error notifications, JSON status and history, systemd scheduling.
 
 ## Requirements
@@ -94,6 +95,12 @@ Recover pending work → CGP discovery → Cloudflare zone selection → Certbot
 - /var/lib/cgp-letsencrypt/: discovered domains, state, history, backups and lock
 - /var/lib/cgp-letsencrypt/transactions/: pending journals containing private certificate snapshots (directory 0700, files 0600)
 
+### Private-file permissions
+
+Version 2.2.0.dev1 requires private state directories to be owned by the process's effective UID with mode `0700` or stricter, and private files to be regular, owned by that UID, mode `0600` or stricter, with one hard link. Installed runs use root. Symbolic links and unsafe ancestor directories are refused. A trusted root-owned configuration parent with mode `0755` remains valid when its private files meet these requirements.
+
+The CLI and installer validate private state before external operations; the installer keeps the validated lock open across its shell payload and handled rollback. Existing unsafe objects are refused without automatic permission or ownership repair. Certbot's standard `live` symlinks are outside this policy. See [private storage policy and metadata-only diagnostics](docs/STORAGE.md) for exact rules and limits before correcting a refused path.
+
 ## Interrupted certificate operations
 
 Normal runs, installation-only runs and manual rollback resolve pending transactions before starting new certificate changes. A newly unresolved transaction stops the same batch before another domain can issue or deploy. Read-only diagnostics never trigger recovery. Inspection and explicit recovery also work when Cloudflare discovery is unavailable:
@@ -142,6 +149,8 @@ Both terminal interfaces use the saved UI language for common navigation and pro
 ## Test suite
 
 Stable 2.1.0 passed 188 unit tests. Development adds unit tests for every new transaction path, process-death/restart scenarios and real OpenSSL/loopback TLS checks. CI enforces `coverage report --fail-under=100` and tests clean installation, upgrades from both 2.0.1 and 2.1.0, rollback, lock handling and journal preservation in disposable Ubuntu containers with mocked systemd. See DEVELOPMENT.md for observed counts and CI results. Coverage does not establish correctness for every live CGP/ACME environment.
+
+The storage-hardening checkpoint passed 386 tests locally with 100% measured statement and branch coverage. Its Docker installer CI result is still pending; the local result is not a production validation.
 
     python3 -m coverage run --branch --source=cgp_cert_manager -m unittest discover -s tests -v
     python3 -m coverage report -m --fail-under=100

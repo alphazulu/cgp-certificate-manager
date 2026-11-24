@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.0.dev1 — unreleased
+
+- Add shared descriptor-based private storage validation for configuration, Cloudflare credentials, state, history, backups and transaction journals. Require effective-UID ownership, private mode limits, regular files and a single hard link; refuse symlinks and unsafe ancestor paths.
+- Accept trusted configuration parents with mode `0755` while keeping private state directories at `0700` or stricter and files at `0600` or stricter. Refuse unsafe existing objects without automatic `chmod` or `chown`.
+- Validate the state tree under the operation lock before CLI side effects, and check credential files before issuance. Use secure reads, appends and atomic saves in CLI, journal and configuration workflows.
+- Run installer preflight before timer or application changes and retain the same validated lock descriptor through the shell payload and handled rollback.
+- Report unsafe console history and configuration access errors explicitly. Keep standard Certbot `live` symlinks outside the private-storage rules.
+- Document the exact policy and limits in [docs/STORAGE.md](docs/STORAGE.md), including metadata-only diagnostics and the absence of protection against concurrent root/same-UID modification or installer power loss.
+- Local checkpoint validation: 386 tests, 1,742 statements and 692 branches at 100% coverage; Python compilation, shell syntax and diff checks passed. Docker installer CI for this checkpoint is pending. Development artifacts identify themselves as `2.2.0.dev1`.
+
 ## 2.2.0.dev0 — unreleased
 
 - Route certificate deployment and manual backup restoration through a durable per-domain transaction journal under the existing global operation lock.

@@ -2,12 +2,13 @@
 import contextlib
 import copy
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cgp_cert_manager import core, deployment as d, recovery
+from cgp_cert_manager import core, deployment as d, recovery, storage
 from cgp_cert_manager.transactions import Journal, JournalError
 
 
@@ -46,9 +47,11 @@ class TransactionDeploymentTests(unittest.TestCase):
 
     def test_durable_journal_before_remote_write_and_retention(self):
         backups = self.root / "backups" / NAME
-        backups.mkdir(parents=True)
+        storage.ensure_private_directory(backups)
         for number in range(6):
-            (backups / ("2000%d.json" % number)).write_text("{}")
+            path = backups / ("2000%d.json" % number)
+            path.write_text("{}")
+            path.chmod(0o600)
 
         def write(cfg, name, settings):
             record = self.journal.read(name)
@@ -281,6 +284,107 @@ class TransactionDeploymentTests(unittest.TestCase):
     def test_invalid_domain_filter_is_rejected(self):
         with self.assertRaises(core.Error):
             d.transaction_status({}, "../outside")
+
+    def test_unsafe_state_blocks_before_readback_or_write(self):
+        self.root.chmod(0o755)
+        with self.assertRaises(JournalError): self.apply()
+        self.current.assert_not_called()
+        self.update.assert_not_called()
+        self.assertFalse((self.root / "transactions").exists())
+
+    def test_unsafe_preexisting_backup_blocks_before_remote_write(self):
+        backups = self.root / "backups" / NAME
+        storage.ensure_private_directory(backups)
+        path = backups / "old.json"
+        path.write_text("private backup")
+        path.chmod(0o644)
+        with self.assertRaises(storage.StorageError): self.apply()
+        self.update.assert_not_called()
+        self.assertEqual(path.read_text(), "private backup")
+        self.assertFalse(self.journal.path(NAME).exists())
+        self.assertEqual(list(backups.iterdir()), [path])
+
+    def test_symlink_backup_directory_blocks_before_remote_write(self):
+        parent = self.root / "backups"
+        parent.mkdir(mode=0o700)
+        target = self.root / "external"
+        target.mkdir(mode=0o700)
+        (parent / NAME).symlink_to(target, target_is_directory=True)
+        with self.assertRaises(storage.StorageError): self.apply()
+        self.update.assert_not_called()
+        self.assertEqual(list(target.iterdir()), [])
+        self.assertFalse(self.journal.path(NAME).exists())
+
+    def test_hardlinked_backup_blocks_before_remote_write(self):
+        backups = self.root / "backups" / NAME
+        storage.ensure_private_directory(backups)
+        path = backups / "old.json"
+        path.write_text("private backup")
+        path.chmod(0o600)
+        linked = self.root / "linked.json"
+        os.link(path, linked)
+        with self.assertRaises(storage.StorageError): self.apply()
+        self.update.assert_not_called()
+        self.assertEqual(path.read_bytes(), linked.read_bytes())
+        self.assertFalse(self.journal.path(NAME).exists())
+
+    def test_retention_validates_all_files_before_deleting_any_backup(self):
+        backups = self.root / "backups" / NAME
+        storage.ensure_private_directory(backups)
+        for number in range(6):
+            path = backups / ("2000%d.json" % number)
+            path.write_text("old backup")
+            path.chmod(0o600)
+        before = sorted(backups.iterdir())
+
+        def introduce_unsafe_backup(*_):
+            path = backups / "1900.json"
+            path.write_text("unsafe late backup")
+            path.chmod(0o644)
+
+        self.verify.side_effect = introduce_unsafe_backup
+        with self.assertRaises(storage.StorageError): self.apply()
+        self.assertEqual(self.actual, NEW)
+        self.assertIsNone(self.journal.read(NAME))
+        self.update.assert_called_once()
+        self.assertTrue(all(path.read_text() == "old backup" for path in before))
+        self.assertEqual(len(list(backups.glob("*.json"))), 8)
+
+    def test_failed_directory_creation_sync_is_retried_before_remote_write(self):
+        state = self.root.stat()
+        fsync = os.fsync
+
+        def is_state(fd):
+            opened = os.fstat(fd)
+            return (opened.st_dev, opened.st_ino) == (state.st_dev, state.st_ino)
+
+        def fail_new_transaction_link(fd):
+            if is_state(fd) and self.journal.directory.exists():
+                raise OSError("transaction directory link was not synced")
+            fsync(fd)
+
+        with patch.object(storage.os, "fsync", side_effect=fail_new_transaction_link):
+            with self.assertRaises(OSError): self.apply()
+        self.update.assert_not_called()
+        self.assertEqual(self.actual, OLD)
+        self.assertTrue(self.journal.directory.exists())
+        self.assertFalse(self.journal.path(NAME).exists())
+        events = []
+
+        def successful_sync(fd):
+            fsync(fd)
+            if is_state(fd): events.append("parent synced")
+
+        def write_after_sync(*args):
+            self.assertIn("parent synced", events)
+            events.append("remote write")
+            self.remote_write(*args)
+
+        self.update.side_effect = write_after_sync
+        with patch.object(storage.os, "fsync", side_effect=successful_sync):
+            self.assertEqual(self.apply(), "installed")
+        self.assertEqual(self.actual, NEW)
+        self.assertLess(events.index("parent synced"), events.index("remote write"))
 
 
 class SnapshotEndpointTests(unittest.TestCase):

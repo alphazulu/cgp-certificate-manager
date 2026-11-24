@@ -133,6 +133,6 @@ def apply(cfg, domain, previous, intended, endpoints, previous_endpoints):
     # it must not trigger a fresh rollback of an already verified installation.
     journal.transition(domain, "committed")
     journal.finish(domain)
-    for stale in sorted(saved.parent.glob("*.json"), reverse=True)[5:]:
+    for stale in sorted(core.backup_files(domain), reverse=True)[5:]:
         stale.unlink()
     return "installed"

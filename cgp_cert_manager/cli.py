@@ -1,7 +1,7 @@
-import argparse, fcntl, shutil, sys, smtplib, socket
+import argparse, shutil, sys, smtplib, socket
 from email.message import EmailMessage
 from .core import *
-from . import __version__, deployment
+from . import __version__, deployment, storage
 
 def hook(cfg,cleanup):
     if cleanup:
@@ -32,7 +32,7 @@ def notify(cfg,state,name,message):
     item.update(alert=message,alert_at=now)
 
 def history(name,event):
-    with (STATE/'history.jsonl').open('a') as f: f.write(json.dumps({'time':datetime.now(timezone.utc).isoformat(),'domain':name,'event':event})+'\n')
+    with storage.open_private(STATE/'history.jsonl','a',create=True) as f: f.write(json.dumps({'time':datetime.now(timezone.utc).isoformat(),'domain':name,'event':event})+'\n')
 
 def migrate(cfg):
     if cfg.get('schema_version')==2: return cfg
@@ -56,12 +56,13 @@ def main():
     if a.tui:
         from .tui import setup
         return setup()
-    STATE.mkdir(mode=0o700,parents=True,exist_ok=True)
     # Certbot hooks are children of the process holding this lock.
     if a.hook_auth or a.hook_cleanup:
+        storage.ensure_private_directory(STATE)
+        storage.validate_tree(STATE)
         hook(migrate(load(CONFIG)),a.hook_cleanup); return 0
-    with (STATE/'run.lock').open('a') as lock:
-        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    with storage.operation_lock(STATE):
+        storage.validate_tree(STATE)
         return locked_main(a,migrate(load(CONFIG)))
 
 def locked_main(a,cfg):
@@ -91,17 +92,17 @@ def locked_main(a,cfg):
 
     if a.list: print(cli(cfg,'LISTDOMAINS')); return 0
     if a.history:
-        if (STATE/'history.jsonl').exists(): print((STATE/'history.jsonl').read_text(),end='')
+        try: print(storage.read_text(STATE/'history.jsonl'),end='')
+        except FileNotFoundError: pass
         return 0
     if a.backups or a.rollback:
-        name=identifier(a.backups or a.rollback); files=sorted((STATE/'backups'/name).glob('*.json'),reverse=True)
+        name=identifier(a.backups or a.rollback); files=backup_files(name)
         if a.backups: print('\n'.join(x.name for x in files)); return 0
         if not files: raise Error('No backup')
         selected=files[0]
         if a.backup_file:
-            selected=next((f for f in files if f.name==a.backup_file and not f.is_symlink()),None)
+            selected=next((f for f in files if f.name==a.backup_file),None)
             if selected is None: raise Error('Backup file not found')
-        if selected.is_symlink(): raise Error('Invalid backup path')
         old=load(selected); info=installed_info(old)
         if not info or info['days']<1: raise Error('Backup certificate expired or missing')
         validate_backup(old)

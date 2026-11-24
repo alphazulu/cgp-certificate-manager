@@ -4,7 +4,8 @@ set -euo pipefail
 [[ -f /.dockerenv && $EUID == 0 ]] || { echo 'Disposable Docker container required'; exit 1; }
 [[ -d /tmp/candidate-writable && -d /tmp/baseline-writable ]] || exit 1
 export PATH=/mock-bin:$PATH
-mkdir -p /mock-bin /etc/cgp-letsencrypt /etc/systemd/system /var/lib/cgp-letsencrypt
+mkdir -p /mock-bin /etc/cgp-letsencrypt /etc/systemd/system
+install -d -m 700 /var/lib/cgp-letsencrypt
 cat >/mock-bin/systemctl <<'SH'
 #!/bin/bash
 set -eu
@@ -101,6 +102,7 @@ test "$("$launcher" --version)" = "$baseline_version"
 assert_pending_journal
 touch "$app/cgp_cert_manager/stale.py"
 echo 'persistent-state' >/var/lib/cgp-letsencrypt/sentinel
+chmod 600 /var/lib/cgp-letsencrypt/sentinel
 touch /tmp/timer-active
 cp "$config" /tmp/config.before-upgrade
 
@@ -147,5 +149,63 @@ test -f /tmp/timer-active
 test "$("$launcher" --version)" = "$candidate_version"
 cp /tmp/valid-config "$config"
 assert_pending_journal
+
+echo '=== unsafe private paths are refused before installer mutations ==='
+assert_preflight_refused() {
+    local before_log before_app before_backups
+    before_log=$(sha256sum /tmp/systemctl.log)
+    before_app=$(tar -C "$app" -cf - . | sha256sum)
+    before_backups=$(find /root -maxdepth 1 -type d -name 'cgp-manager-backup-*' | sort)
+    must_fail bash /tmp/candidate-writable/install.sh --upgrade
+    test "$(sha256sum /tmp/systemctl.log)" = "$before_log"
+    test "$(tar -C "$app" -cf - . | sha256sum)" = "$before_app"
+    test "$(find /root -maxdepth 1 -type d -name 'cgp-manager-backup-*' | sort)" = "$before_backups"
+    test -f /tmp/timer-active
+    assert_pending_journal
+}
+path_contents() {
+    if [[ -d $1 ]]; then
+        tar -C "$1" -cf - . | sha256sum
+    else
+        sha256sum <"$1"
+    fi
+}
+exercise_unsafe_path() {
+    local path=$1 safe_mode=$2 unsafe_mode=$3 before target
+    chmod "$unsafe_mode" "$path"
+    before=$(path_contents "$path")
+    assert_preflight_refused
+    test "$(stat -c %a "$path")" = "$unsafe_mode"
+    test "$(path_contents "$path")" = "$before"
+    chmod "$safe_mode" "$path"
+
+    target=$(mktemp -d /tmp/cgp-permission-target-XXXXXXXX)
+    rmdir "$target"
+    mv "$path" "$target"
+    ln -s "$target" "$path"
+    before=$(path_contents "$target")
+    assert_preflight_refused
+    test -L "$path"
+    test "$(path_contents "$target")" = "$before"
+    rm "$path"
+    mv "$target" "$path"
+
+    chown 65534:65534 "$path"
+    before=$(path_contents "$path")
+    assert_preflight_refused
+    test "$(stat -c %u "$path")" = 65534
+    test "$(path_contents "$path")" = "$before"
+    chown 0:0 "$path"
+}
+install -d -m 700 /var/lib/cgp-letsencrypt/backups /var/lib/cgp-letsencrypt/backups/example.com
+backup_fixture=/var/lib/cgp-letsencrypt/backups/example.com/synthetic.json
+printf '%s\n' '{"synthetic":"private backup"}' >"$backup_fixture"
+chmod 600 "$backup_fixture"
+exercise_unsafe_path "$config" 600 644
+exercise_unsafe_path /etc/cgp-letsencrypt/cloudflare.ini 600 644
+exercise_unsafe_path /var/lib/cgp-letsencrypt 700 755
+exercise_unsafe_path /var/lib/cgp-letsencrypt/run.lock 600 644
+exercise_unsafe_path /var/lib/cgp-letsencrypt/backups 700 755
+exercise_unsafe_path "$backup_fixture" 600 644
 
 echo 'Installer integration scenarios passed.'

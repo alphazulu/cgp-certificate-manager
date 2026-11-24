@@ -38,6 +38,7 @@ RU = {
     "Diagnostic unavailable or timed out": "Диагностика недоступна или истекло время ожидания",
     "Recent service journal": "Журнал службы",
     "No history": "История пуста",
+    "History unavailable": "История недоступна",
     "No entries": "Нет записей",
     "Journal unavailable": "Журнал недоступен",
     "Backups": "Резервные копии",
@@ -95,7 +96,7 @@ RU = {
 def language():
     try:
         return core.load(core.CONFIG,{}).get('tui_language','en')
-    except (OSError,ValueError):
+    except (FileNotFoundError,ValueError):
         return 'en'
 
 def translate(text, lang):

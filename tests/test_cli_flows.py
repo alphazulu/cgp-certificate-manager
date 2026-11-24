@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch, Mock
-from cgp_cert_manager import cli, core, schedule, console, tui
+from cgp_cert_manager import cli, core, schedule, console, tui, storage
 
 NAME='example.com'
 CERT={'fingerprint':'a','names':[NAME],'days':80}
@@ -20,15 +20,16 @@ class CLIFlowTests(unittest.TestCase):
         self.stack=contextlib.ExitStack()
         self.addCleanup(self.stack.close)
         self.root=Path(self.stack.enter_context(tempfile.TemporaryDirectory()))
+        self.live=Path(self.stack.enter_context(tempfile.TemporaryDirectory()))
         self.cfg={'schema_version':2,'email':'admin@example.com'}
         self.config=self.root/'config.json'
         core.atomic(self.config,self.cfg)
         self.stack.enter_context(patch.object(cli,'CONFIG',self.config))
         self.stack.enter_context(patch.object(cli,'STATE',self.root))
         self.stack.enter_context(patch.object(core,'STATE',self.root))
-        self.stack.enter_context(patch.object(cli,'LIVE',self.root/'live'))
-        (self.root/'live'/NAME).mkdir(parents=True)
-        (self.root/'live'/NAME/'chain.pem').write_bytes(b'dummy')
+        self.stack.enter_context(patch.object(cli,'LIVE',self.live))
+        (self.live/NAME).mkdir(parents=True)
+        (self.live/NAME/'chain.pem').write_bytes(b'dummy')
         self.domain={'cgp_domain':NAME,'cert_name':NAME,'enabled':True,'cloudflare_available':True,'names':[NAME],'unavailable':[]}
         self.m={}
         for name,value in {'zones':{},'discover':[self.domain],'current':dict(FIELDS),'installed_info':dict(CERT),'local_info':dict(CERT),'issue':None,'deploy':'installed','verify_tls':None,'chain_payload':'YQ==','discover_listeners':[{'port':443}],'expected_chain':['a'],'probe_tls':None}.items():
@@ -209,7 +210,7 @@ class CLIFlowTests(unittest.TestCase):
         self.assertEqual(self.invoke('--migrate'),0)
 
     def test_lock_released_and_busy(self):
-        with (self.root/'run.lock').open('a') as lock:
+        with storage.open_private(self.root/'run.lock','a',create=True) as lock:
             fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             with self.assertRaises(BlockingIOError):
                 self.invoke('--status')
@@ -284,9 +285,9 @@ class CLIFlowTests(unittest.TestCase):
         core.atomic(other,old)
         path.unlink()
         path.symlink_to(other)
-        with self.assertRaisesRegex(core.Error,'Invalid backup path'):
+        with self.assertRaises(storage.StorageError):
             self.invoke('--rollback',NAME)
-        with self.assertRaisesRegex(core.Error,'not found'):
+        with self.assertRaises(storage.StorageError):
             self.invoke('--rollback',NAME,'--backup-file',path.name)
 
     def test_incomplete_current_settings(self):

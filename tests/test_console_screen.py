@@ -335,6 +335,7 @@ class ConsoleHelperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp,patch.object(core,'STATE',Path(tmp)):
             self.assertEqual(c.domain_history(NAME),[])
             (Path(tmp)/'history.jsonl').write_text('bad JSON\n'+json.dumps({'domain':NAME,'event':'ok'})+'\n')
+            (Path(tmp)/'history.jsonl').chmod(0o600)
             self.assertEqual(c.domain_history(NAME),[' ok'])
 
     def test_entry(self):

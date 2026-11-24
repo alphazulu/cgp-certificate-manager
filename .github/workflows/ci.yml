@@ -22,7 +22,7 @@ jobs:
         with:
           name: coverage
           path: coverage.xml
-      - run: bash -n install.sh
+      - run: bash -n install.sh scripts/install-locked.sh tests/integration/installer.sh
   installer:
     name: installer (${{ matrix.baseline.version }})
     runs-on: ubuntu-24.04
