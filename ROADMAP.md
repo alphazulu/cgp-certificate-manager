@@ -8,7 +8,7 @@
 
 ## 2.2 — Reliability (in progress)
 - [x] Define transaction design and safety invariants.
-- [ ] Implement durable per-domain write-ahead journal (atomic replace, file and directory fsync, mode 0600).
+- [x] Implement durable per-domain write-ahead journal (atomic replace, file and directory fsync, mode 0600).
 - [ ] Implement recovery: distinguish previous, intended and unknown CGP state; refuse to overwrite unknown/manual changes.
 - [ ] Integrate journal with deployment and manual rollback under global lock.
 - [ ] Verify live TLS using restored backup chain, not current Certbot files.

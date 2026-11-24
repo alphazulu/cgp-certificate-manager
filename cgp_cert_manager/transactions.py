@@ -1,0 +1,131 @@
+"""Durable write-ahead journal. Callers must hold the manager operation lock."""
+import json
+import os
+import re
+import stat
+import tempfile
+from pathlib import Path
+
+from . import core
+
+PHASES = {
+    "prepared": {"applying", "restoring"},
+    "applying": {"applied", "restoring"},
+    "applied": {"verifying", "restoring"},
+    "verifying": {"committed", "restoring"},
+    "restoring": {"restored"},
+    "committed": set(),
+    "restored": set(),
+}
+
+class JournalError(core.Error):
+    pass
+
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+def durable_json(path, data):
+    fd, tmp = tempfile.mkstemp(prefix=".txn-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            json.dump(data, stream, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(tmp, path)
+        sync_directory(path.parent)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+def validate_settings(settings):
+    if not isinstance(settings, dict) or set(settings) != set(core.FIELDS):
+        raise JournalError("Incomplete transaction settings")
+    for value in settings.values():
+        if not isinstance(value, str) or not re.fullmatch(
+            r'\[[A-Za-z0-9+/=]*\]|[A-Za-z][A-Za-z0-9_-]*|"[A-Za-z][A-Za-z0-9_-]*"', value
+        ):
+            raise JournalError("Invalid transaction settings")
+
+def validate(record, domain):
+    if not isinstance(record, dict) or record.get("schema") != 1:
+        raise JournalError("Unsupported transaction journal schema")
+    if record.get("domain") != domain or record.get("phase") not in PHASES:
+        raise JournalError("Invalid transaction identity or phase")
+    validate_settings(record.get("previous"))
+    validate_settings(record.get("intended"))
+    if not isinstance(record.get("endpoints"), list):
+        raise JournalError("Invalid transaction endpoints")
+    if not isinstance(record.get("config_identity"), str) or not record["config_identity"]:
+        raise JournalError("Missing server identity")
+    return record
+
+class Journal:
+    def __init__(self, directory):
+        self.directory = Path(directory)
+
+    def path(self, domain):
+        return self.directory / (core.identifier(domain) + ".json")
+
+    def ensure_directory(self):
+        # The parent is the existing manager state directory.
+        self.directory.mkdir(mode=0o700, exist_ok=True)
+        info = self.directory.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+            raise JournalError("Unsafe transaction directory")
+        sync_directory(self.directory.parent)
+
+    def read(self, domain):
+        path = self.path(domain)
+        if not os.path.lexists(path):
+            return None
+        self.ensure_directory()
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "r") as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+                raise JournalError("Unsafe transaction file")
+            try:
+                record = json.load(stream)
+            except (ValueError, UnicodeError):
+                raise JournalError("Corrupt transaction journal") from None
+        return validate(record, domain)
+
+    def prepare(self, domain, previous, intended, endpoints, config_identity):
+        self.ensure_directory()
+        if self.read(domain) is not None:
+            raise JournalError("Unresolved transaction already exists")
+        record = validate({
+            "schema": 1, "domain": domain, "phase": "prepared",
+            "previous": previous, "intended": intended,
+            "endpoints": endpoints, "config_identity": config_identity,
+        }, domain)
+        durable_json(self.path(domain), record)
+        return record
+
+    def transition(self, domain, phase):
+        record = self.read(domain)
+        if record is None or phase not in PHASES[record["phase"]]:
+            raise JournalError("Invalid transaction transition")
+        record["phase"] = phase
+        durable_json(self.path(domain), record)
+        return record
+
+    def finish(self, domain):
+        record = self.read(domain)
+        if record is None or record["phase"] not in ("committed", "restored"):
+            raise JournalError("Cannot remove unresolved transaction")
+        self.path(domain).unlink()
+        sync_directory(self.directory)
+
+def classify(record, actual):
+    """No remote write is permitted for an unknown state."""
+    if core.same(actual, record["previous"]):
+        return "previous"
+    if core.same(actual, record["intended"]):
+        return "intended"
+    return "unknown"

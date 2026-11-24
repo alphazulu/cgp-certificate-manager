@@ -11,3 +11,9 @@ Recovery must use recorded TLS endpoints and the recorded certificate chain, ind
 - Confirmed stable HEAD and read existing deployment, rollback, installer and CI code.
 - Created development branch, documented roadmap and design.
 - Next: implement and test durable journal primitives; then integrate with existing core.deploy and CLI. Do not mark integration complete before tests and CI.
+
+## Checkpoint 1 — journal primitives
+- Added cgp_cert_manager/transactions.py: root-only per-domain JSON, atomic replacement, file and directory fsync, validated phase transitions, refusal to remove unresolved records, previous/intended/unknown classification.
+- Added tests/test_transactions.py for lifecycle, corruption, permissions, symlink, failed writes and state classification.
+- No deployment or CLI integration yet; existing production behavior unchanged. CI/coverage not yet observed for these additions.
+- Next: inspect CI, fix any uncovered branches, tighten endpoint/schema validation and server identity binding, then integrate journal with deployment and recovery under existing lock. Do not enable production recovery until fault-injection and TLS tests pass.
