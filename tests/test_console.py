@@ -33,3 +33,27 @@ class ConsoleTests(unittest.TestCase):
         text='\n'.join(console.details({'domain':'example.com','installed':{'names':['example.com']},'desired':['example.com','alias.com']}))
         self.assertIn('alias.com',text)
         self.assertIn('Installed SANs:',text)
+
+    def test_verify_returns_to_domain_menu(self):
+        from unittest.mock import Mock
+        screen=console.Screen.__new__(console.Screen)
+        screen.rows=[{'domain':'example.com'}]
+        screen.selected=0
+        screen.menu=Mock(side_effect=[1,None])
+        screen.inspect=Mock()
+        screen.execute=Mock()
+        screen.domain_menu()
+        screen.inspect.assert_called_once()
+        screen.execute.assert_not_called()
+        self.assertEqual(screen.menu.call_count,2)
+
+    def test_inspection_does_not_suspend_curses(self):
+        from unittest.mock import Mock
+        screen=console.Screen.__new__(console.Screen)
+        screen.w=Mock()
+        screen.put=Mock()
+        screen.view=Mock()
+        with patch.object(console,'capture',return_value=(0,'verified','')), patch.object(console.curses,'endwin') as endwin:
+            screen.inspect(['example'],'TLS')
+        endwin.assert_not_called()
+        self.assertIn('Exit code: 0',screen.view.call_args.args[1])

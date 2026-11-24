@@ -195,6 +195,20 @@ class Screen:
     def confirm(self,label):
         return self.menu('Confirm: '+label,['Cancel / No','Proceed / Yes'])==1
 
+    def inspect(self,cmd,label):
+        # Read-only commands never leave curses or hand stdin to a child.
+        self.w.erase()
+        self.put(0,0,label,curses.A_BOLD)
+        self.put(2,0,'Running diagnostic...')
+        self.w.refresh()
+        try:
+            code,out,err=capture(cmd,timeout=900)
+            lines=(out+'\n'+err).strip().splitlines()
+            lines+=['','Exit code: '+str(code)]
+        except (OSError,subprocess.TimeoutExpired):
+            lines=['Diagnostic unavailable or timed out']
+        self.view(label,lines)
+
     def execute(self,cmd,label):
         # Leave curses while an operation runs: live Certbot output and prompts
         # remain visible, and no root lock is held by the console itself.
@@ -210,6 +224,11 @@ class Screen:
             print('\nOperation interrupted or unavailable.')
         finally:
             curses.reset_prog_mode()
+            curses.noecho()
+            curses.cbreak()
+            self.w.keypad(True)
+            curses.flushinp()
+            self.w.clearok(True)
             self.w.clear()
             self.w.refresh()
         self.refresh_data()
@@ -227,8 +246,15 @@ class Screen:
             index=choice-1
             label,_,mutates=ACTIONS[index]
             if mutates and not self.confirm(label+' for '+name): continue
-            self.execute(command_for(name,index),label+' — '+name)
-            return
+            command=command_for(name,index)
+            if mutates:
+                self.execute(command,label+' — '+name)
+            else:
+                self.inspect(command,label+' — '+name)
+            # Stay inside the domain menu. A subsequent Back returns to the
+            # domain list, not to the shell.
+            row=next((r for r in self.rows if r['domain']==name),None)
+            if row is None: return
 
     def logs(self):
         try:
@@ -242,7 +268,7 @@ class Screen:
         choice=self.menu('Systemd timer',options)
         if choice is None or choice==5: return
         if choice==0:
-            self.execute(['systemctl','status','cgp-letsencrypt.timer','--no-pager'],options[choice])
+            self.inspect(['systemctl','status','cgp-letsencrypt.timer','--no-pager'],options[choice])
             return
         if not self.confirm(options[choice]): return
         commands={1:CLI+['--apply-schedule'],2:['systemctl','enable','--now','cgp-letsencrypt.timer'],3:['systemctl','stop','cgp-letsencrypt.timer'],4:['systemctl','disable','--now','cgp-letsencrypt.timer']}
@@ -261,7 +287,7 @@ class Screen:
             elif k==curses.KEY_F2: self.execute(CLI+['--tui'],'Configuration wizard')
             elif k==curses.KEY_F6: self.logs()
             elif k==curses.KEY_F7: self.timer_menu()
-            elif k==curses.KEY_F8: self.execute(CLI+['--verify'],'Verify all managed domains')
+            elif k==curses.KEY_F8: self.inspect(CLI+['--verify'],'Verify all managed domains')
 
 def entry():
     if os.geteuid()!=0 or not sys.stdin.isatty() or not sys.stdout.isatty():
