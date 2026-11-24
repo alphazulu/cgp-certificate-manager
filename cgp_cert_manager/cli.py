@@ -44,14 +44,31 @@ def migrate(cfg):
 
 def main():
     os.umask(0o077)
-    p=argparse.ArgumentParser(); p.add_argument('--version',action='version',version=__version__); p.add_argument('--domain'); p.add_argument('--json',action='store_true'); p.add_argument('--allow-shrink',action='store_true'); p.add_argument('--force-renew',action='store_true'); p.add_argument('--retry-now',action='store_true')
+    p=argparse.ArgumentParser(); p.add_argument('--version',action='version',version=__version__); p.add_argument('--domain'); p.add_argument('--backup-file'); p.add_argument('--json',action='store_true'); p.add_argument('--allow-shrink',action='store_true'); p.add_argument('--force-renew',action='store_true'); p.add_argument('--retry-now',action='store_true')
     g=p.add_mutually_exclusive_group()
-    for x in ('sync','list','show-domains','status','plan','verify','doctor','dry-run','install-only','history','hook-auth','hook-cleanup','reset-backoff','discover-listeners','verify-listeners','repair-chain'): g.add_argument('--'+x,action='store_true')
+    for x in ('sync','list','show-domains','status','plan','verify','doctor','dry-run','install-only','history','hook-auth','hook-cleanup','reset-backoff','discover-listeners','verify-listeners','repair-chain','tui','apply-schedule','console'): g.add_argument('--'+x,action='store_true')
     g.add_argument('--backups',metavar='DOMAIN'); g.add_argument('--rollback',metavar='DOMAIN'); g.add_argument('--migrate',action='store_true')
-    a=p.parse_args(); cfg=migrate(load(CONFIG)); STATE.mkdir(mode=0o700,parents=True,exist_ok=True)
-    if a.hook_auth or a.hook_cleanup: hook(cfg,a.hook_cleanup); return 0
-    lock=(STATE/'run.lock').open('a'); fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    a=p.parse_args()
+    if a.backup_file and not a.rollback: p.error('--backup-file requires --rollback')
+    if a.console:
+        from .console import entry as console_entry
+        return console_entry()
+    if a.tui:
+        from .tui import setup
+        return setup()
+    STATE.mkdir(mode=0o700,parents=True,exist_ok=True)
+    # Certbot hooks are children of the process holding this lock.
+    if a.hook_auth or a.hook_cleanup:
+        hook(migrate(load(CONFIG)),a.hook_cleanup); return 0
+    with (STATE/'run.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        return locked_main(a,migrate(load(CONFIG)))
+
+def locked_main(a,cfg):
     if a.migrate: atomic(CONFIG,cfg); return 0
+    if a.apply_schedule:
+        from .schedule import apply
+        apply(); return 0
     if a.discover_listeners:
         print(json.dumps(discover_listeners(),indent=2)); return 0
     if a.reset_backoff:
@@ -70,18 +87,41 @@ def main():
         name=identifier(a.backups or a.rollback); files=sorted((STATE/'backups'/name).glob('*.json'),reverse=True)
         if a.backups: print('\n'.join(x.name for x in files)); return 0
         if not files: raise Error('No backup')
-        old=load(files[0]); info=installed_info(old)
+        selected=files[0]
+        if a.backup_file:
+            selected=next((f for f in files if f.name==a.backup_file and not f.is_symlink()),None)
+            if selected is None: raise Error('Backup file not found')
+        if selected.is_symlink(): raise Error('Invalid backup path')
+        old=load(selected); info=installed_info(old)
         if not info or info['days']<1: raise Error('Backup certificate expired or missing')
+        validate_backup(old)
         cur=current(cfg,name)
         if set(cur)!=set(FIELDS): raise Error('Cannot back up current settings')
-        backup(name,cur); update(cfg,name,old)
-        if not same(current(cfg,name),old): raise Error('Rollback not verified')
+        saved=backup(name,cur)
+        try:
+            update(cfg,name,old)
+            if not same(current(cfg,name),old): raise Error('Rollback not verified')
+        except (Exception, KeyboardInterrupt):
+            try:
+                update(cfg,name,cur)
+                if not same(current(cfg,name),cur): raise Error('Rollback recovery readback mismatch')
+            except Exception:
+                raise Error('CRITICAL: rollback recovery failed; backup '+str(saved)) from None
+            raise Error('Rollback failed; previous settings restored') from None
         history(name,'manual rollback'); return 0
     if a.show_domains: print(json.dumps(load(STATE/'domains.json',[]),indent=2,ensure_ascii=False)); return 0
     state=load(STATE/'state.json',{}); failures=0
-    try: z=zones(cfg); domains=discover(cfg,z); atomic(STATE/'domains.json',domains)
+    read_only=a.dry_run or a.status or a.plan or a.doctor or a.verify or a.verify_listeners
+    try:
+        z=zones(cfg); domains=discover(cfg,z)
+        if not read_only: atomic(STATE/'domains.json',domains)
     except Exception as e:
-        notify(cfg,state,'discovery',type(e).__name__); atomic(STATE/'state.json',state); return 1
+        if read_only:
+            LOG.error('Discovery failed: %s',type(e).__name__)
+        else:
+            notify(cfg,state,'discovery',type(e).__name__)
+            atomic(STATE/'state.json',state)
+        return 1
     if a.sync: print(json.dumps(domains,indent=2,ensure_ascii=False)); return 0
     rows=[]
     for d in domains:
@@ -116,21 +156,30 @@ def main():
                 if not (a.dry_run or a.retry_now or a.force_renew) and time.time()<retry:
                     LOG.warning('%s: %s retry deferred until %s',name,stage,datetime.fromtimestamp(retry,timezone.utc).isoformat()); return True
                 return False
+            issue_deferred=False
             if not a.install_only:
                 # If a freshly issued matching certificate is pending deployment, avoid a second issuance.
                 pending=local and local['days']>=21 and set(local['names'])==set(d['names']) and (not old or old['fingerprint']!=local['fingerprint'])
                 if not pending or a.dry_run or a.force_renew:
                     phase='issue'
-                    if deferred(phase): failures+=1; continue
-                    issue(cfg,d,z,a)
-                    if not a.dry_run: item.setdefault('backoff',{}).pop(phase,None)
-            if not a.dry_run:
+                    issue_deferred=deferred(phase)
+                    if issue_deferred:
+                        failures+=1
+                    else:
+                        issue(cfg,d,z,a)
+                        if not a.dry_run: item.setdefault('backoff',{}).pop(phase,None)
+            if not a.dry_run and not issue_deferred:
                 phase='deploy'
-                if deferred(phase): failures+=1; continue
-                result=deploy(cfg,d); item.update(result=result,failures=0,retry_at=0,last_success=time.time(),backoff={}); item.pop('alert',None); item.pop('alert_at',None); history(name,result); LOG.info('%s: %s',name,result)
+                if deferred(phase):
+                    failures+=1
+                else:
+                    result=deploy(cfg,d); item.update(result=result,failures=0,retry_at=0,last_success=time.time(),backoff={}); item.pop('alert',None); item.pop('alert_at',None); history(name,result); LOG.info('%s: %s',name,result)
         except Exception as e:
             failures+=1; message=str(e) if isinstance(e,Error) else type(e).__name__; LOG.error('%s: %s',name,message)
-            if row is not None: row['error']=message; row['tls']='failed' if a.verify else row.get('tls','not checked')
+            if row is None:
+                row={'domain':name,'action':'SKIP','status':'error','installed':None,'local':None,'desired':d.get('names',[]),'blocked':[]}
+                rows.append(row)
+            row['error']=message; row['tls']='failed' if a.verify else row.get('tls','not checked')
             if not (a.dry_run or a.status or a.plan or a.doctor or a.verify or a.verify_listeners):
                 stage=item.setdefault('backoff',{}).setdefault(phase,{}); count=stage.get('failures',0)+1; stage.update(failures=count,retry_at=time.time()+min(86400,900*2**min(count,7))); item.update(result=message,failures=count,retry_at=stage['retry_at']); notify(cfg,state,name,message); history(name,'failure: '+message)
         finally:

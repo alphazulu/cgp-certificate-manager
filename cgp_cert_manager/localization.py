@@ -1,0 +1,101 @@
+"""Shared UI translations; technical identifiers and backend errors stay intact."""
+import re
+from . import core
+RU = {
+    "Certificate details": "Сведения о сертификате",
+    "Verify certificate / TLS": "Проверить сертификат / TLS",
+    "Verify all TLS listeners": "Проверить все TLS-слушатели",
+    "ACME staging dry-run": "Тестовый выпуск ACME",
+    "Renew if necessary": "Продлить при необходимости",
+    "Force reissue (ACME limits apply)": "Принудительный перевыпуск (лимиты ACME)",
+    "Install local certificate / repair chain": "Установить локальный сертификат / исправить цепочку",
+    "List backups": "Список резервных копий",
+    "Select backup to restore (rollback)": "Выбрать копию для восстановления",
+    "Reset retry delay": "Сбросить задержку повторной попытки",
+    "Retry now": "Повторить сейчас",
+    "Domain history": "История домена",
+    "Back": "Назад",
+    "Help": "Справка",
+    "Systemd timer": "Таймер systemd",
+    "Show timer status": "Состояние таймера",
+    "Apply saved schedule": "Применить расписание",
+    "Enable and start timer": "Включить и запустить таймер",
+    "Stop timer": "Остановить таймер",
+    "Disable and stop timer": "Отключить и остановить таймер",
+    "Cancel / No": "Отмена / Нет",
+    "Proceed / Yes": "Продолжить / Да",
+    "TLS verification": "Проверка TLS",
+    "Verifying certificate and complete CA chain...": "Проверяется сертификат и полная цепочка CA...",
+    "Running diagnostic...": "Выполняется диагностика...",
+    "Refreshing status...": "Обновление состояния...",
+    "Status loaded": "Состояние получено",
+    "Inspection reported errors": "Обнаружены ошибки",
+    "Verification unavailable or timed out": "Проверка недоступна или истекло время ожидания",
+    "Diagnostic unavailable or timed out": "Диагностика недоступна или истекло время ожидания",
+    "Recent service journal": "Журнал службы",
+    "No history": "История пуста",
+    "No entries": "Нет записей",
+    "Journal unavailable": "Журнал недоступен",
+    "Backups": "Резервные копии",
+    "No available backups": "Нет доступных копий",
+    "Unable to list backups": "Не удалось получить список копий",
+    "Restore backup": "Восстановление копии",
+    "Configuration wizard": "Мастер настройки",
+    "Enter Select | Esc/Q Back": "Enter Выбор | Esc/Q Назад",
+    "Up/Down PgUp/PgDn | Esc/Q Back": "Вверх/вниз PgUp/PgDn | Esc/Q Назад",
+    "Enter Domain | F2 Settings | F5 Refresh | F6 Logs": "Enter Домен | F2 Настройки | F5 Обновить | F6 Журнал",
+    "F1 Help | F7 Timer | F8 Verify | S Sort | F Filter | Q Exit": "F1 Справка | F7 Таймер | F8 TLS | S Сорт. | F Фильтр | Q Выход",
+    "Enlarge terminal (minimum 48x10). Q / F10 exits.": "Увеличьте терминал до 48x10. Q / F10 — выход.",
+    "Up / Down: choose domain or action": "Вверх / вниз: выбрать домен или действие",
+    "Enter: open selected domain": "Enter: открыть выбранный домен",
+    "F2: configuration wizard": "F2: мастер настройки",
+    "F5: refresh snapshot (not a TLS test)": "F5: обновить состояние (без проверки TLS)",
+    "F6: service journal": "F6: журнал службы",
+    "F7: systemd timer controls": "F7: управление таймером",
+    "F8: verify all managed domains": "F8: проверить все обслуживаемые домены",
+    "S: cycle sorting (name, expiry, status)": "S: сортировка (имя, срок, статус)",
+    "F: cycle filters (all, managed, attention)": "F: фильтры (все, обслуживаемые, проблемные)",
+    "F1: help": "F1: справка",
+    "Escape / Q / F10: back or exit": "Escape / Q / F10: назад или выход",
+    "VERIFIED means TLS was checked during this session.": "VERIFIED: TLS проверен в этой сессии.",
+    "Refresh invalidates earlier TLS results; verify again.": "Обновление сбрасывает результаты TLS; проверьте повторно.",
+    "Operations changing certificates require confirmation.": "Изменение сертификатов требует подтверждения.",
+    "Installed SANs:": "Установленные SAN:",
+    "Desired SANs:": "Желаемые SAN:",
+    "Unavailable names:": "Недоступные имена:",
+    "Blocked removals:": "Заблокированные удаления:",
+    "Remove account from configuration": "Удалить аккаунт из конфигурации",
+    "Credential file": "Файл учётных данных",
+    "Account identifier (letters, digits, hyphens)": "Имя аккаунта (буквы, цифры, дефисы)",
+    "Token accepted; zone read access verified. DNS edit access is tested by Certbot dry-run.": "Токен принят, чтение зон проверено. Право изменения DNS проверяется через dry-run Certbot.",
+    "Configure individual TLS verification for this domain?": "Настроить индивидуальную проверку TLS домена?",
+    "No accessible zones": "Нет доступных зон",
+    "At least one account is required": "Необходим хотя бы один аккаунт",
+    "Invalid account identifier": "Некорректное имя аккаунта",
+    "No domains returned by CommuniGate": "CommuniGate не вернул домены",
+    "Sender and recipient required": "Укажите отправителя и получателя",
+    "Invalid DNS name": "Некорректное DNS-имя",
+    "Number outside allowed range": "Число вне допустимого диапазона",
+    "Use a loopback HTTP CLI URL": "Используйте локальный URL HTTP CLI",
+    "CommuniGate credentials required": "Необходимы учётные данные CommuniGate",
+    "Valid ACME email required": "Укажите корректный email ACME",
+    "Invalid token syntax": "Некорректный формат токена",
+    "Unsupported protocol": "Неподдерживаемый протокол",
+    "One concrete hostname required": "Укажите одно конкретное имя хоста",
+    "Credential path already exists": "Файл учётных данных уже существует",
+    "Yes": "Да",
+    "No": "Нет"
+}
+
+def language():
+    try:
+        return core.load(core.CONFIG,{}).get('tui_language','en')
+    except (OSError,ValueError):
+        return 'en'
+
+def translate(text, lang):
+    if lang!='ru': return text
+    if text in RU: return RU[text]
+    for pattern,replacement in ((r'^Manage (.+) automatically\?$','Обслуживать \\1 автоматически?'),(r'^Include wildcard for (.+)\?$','Включить wildcard для \\1?'),(r'^Connection OK. Domains: (.+)$','Подключение успешно. Доменов: \\1'),(r'^Confirm: (.+)$','Подтвердите: \\1'),(r'^Select backup for (.+)$','Выберите копию для \\1')):
+        if re.match(pattern,text): return re.sub(pattern,replacement,text)
+    return text

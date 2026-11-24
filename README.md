@@ -73,7 +73,7 @@ Replace example.com with a managed domain. Review the plan before enabling autom
 | --install-only, --repair-chain | Deploy matching local certificates without issuing |
 | --domain DOMAIN --retry-now | Bypass retry delay without forcing renewal |
 | --domain DOMAIN --reset-backoff | Reset retry delay |
-| --backups DOMAIN, --rollback DOMAIN | Inspect backups or restore latest backup |
+| --backups DOMAIN, --rollback DOMAIN, --backup-file FILENAME | Inspect backups or restore a selected backup |
 | --history, --json, --version | History, structured status, version |
 | --force-renew, --allow-shrink | Explicit overrides; use with caution |
 
@@ -97,3 +97,34 @@ Backups contain private keys; restrict them to root. Rollback is a best-effort A
 Unit tests mock API/TLS behavior and are not a substitute for a live integration test. Version 2.0.1 has been verified against a live multi-domain CGP deployment.
 
 Independent project; not affiliated with CommuniGate, Cloudflare or Let's Encrypt. No license has been selected yet; repository visibility alone does not grant redistribution rights.
+
+## Optional interactive setup
+
+Install the optional dependency with sudo apt install whiptail. Run sudo bash install.sh --tui for interactive configuration, or sudo bash install.sh --non-interactive with a pre-created config. Existing installations default to preserving configuration. Run sudo cgp-letsencrypt --tui to edit settings later. The wizard supports local CGP authentication, multiple Cloudflare accounts, domain selection, wildcard/SAN overrides, ACME email, DNS delay, TLS defaults and SMTP notifications. New installations default to explicit domain selection. Changes are staged until Save; secrets are entered through the terminal, not command arguments. The wizard does not issue certificates or activate the timer. DNS write permissions require a separate dry-run. The main menu and common prompts support Russian and English; some diagnostic text remains English. Per-domain TLS endpoints and renewal schedule can be edited. After changing the schedule in an installed system, run sudo cgp-letsencrypt --apply-schedule to apply the systemd drop-in; this does not enable an inactive timer. Installation applies the saved schedule automatically.
+
+### Leaving the setup wizard
+
+The first two main-menu entries are Save and exit and Exit without saving. The main-menu Exit button and Escape discard changes only after confirmation when settings have changed. Nested menus have a Back button. Ctrl+C cancels the wizard. Cancelling interactive installation stops before copying application files or systemd units. The standalone editor returns exit status 3 on cancellation, 0 after saving.
+
+## Administrative console
+
+Run `sudo cgp-letsencrypt --console` after installation, or `sudo python3 -m cgp_cert_manager.console` from a checkout. The curses console uses the existing CLI without holding its operation lock. It displays an on-demand status snapshot, systemd timer information, domain details, SANs, and service logs. Enter opens domain actions; F2 opens the whiptail editor; F5 refreshes; F6 opens logs; F7 manages the timer; F8 verifies all domains; Q, Escape or F10 exits. Certificate mutations and timer changes require confirmation. Commands execute synchronously with normal terminal output. The console supports English and Russian navigation; actual TLS verification requires an explicit verify action, not merely a ready status.
+
+### Console status and backups
+
+F1 opens help. S cycles sorting and F cycles filters. Colors distinguish ready, verified, expiring, blocked and error states. F8 or the domain verification action records actual TLS results for this console session; refreshing status clears them. Domain history is available in the domain menu. Select a specific backup before confirming rollback, or use `--rollback DOMAIN --backup-file FILENAME`. Backup selection does not change the existing rollback trust model: readback is verified, but live TLS must be checked separately.
+
+### Installation and upgrade checks
+
+Both terminal interfaces use the saved UI language for common navigation and prompts; technical status codes and some diagnostic text remain English. Run the full test suite, verify the live certificates, and review the installation backup before enabling the timer. The installer checks Python syntax before changing application files. The installer serializes application changes with normal certificate operations and attempts to restore the previous application, configuration and units on handled failures. It leaves the timer stopped after success. A power loss or SIGKILL is not transactionally recoverable.
+
+## Test suite
+
+The final RC passed 188 unit tests with 100% measured line and branch coverage on the tested environments. CI enforces `coverage report --fail-under=100` and tests clean installation, upgrade from 2.0.1, rollback and lock handling in a disposable Ubuntu container with mocked systemd. These tests do not certify every live CGP/ACME environment.
+
+    python3 -m coverage run --branch --source=cgp_cert_manager -m unittest discover -s tests -v
+    python3 -m coverage report -m --fail-under=100
+
+## Upgrade from 2.0.1
+
+From a separate trusted release checkout, run `sudo bash install.sh --upgrade`, then `sudo cgp-letsencrypt --version`, `--doctor`, `--plan`, and `--verify`. Review the backup path printed by the installer. Only after successful verification run `sudo systemctl enable --now cgp-letsencrypt.timer`. The installer does not issue certificates.

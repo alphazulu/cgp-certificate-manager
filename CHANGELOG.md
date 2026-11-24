@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.0
+
+- Optional whiptail setup and curses administration console with shared Russian/English navigation, domain details, TLS verification, sorting, filters, history, backup selection and timer controls.
+- Explicit domain opt-in for new interactive installations, staged credentials and atomic configuration save.
+- Configurable TLS endpoints, SMTP notifications and twice-daily renewal schedule.
+- Validate rollback backup PKI, key matching, DER chain and trust before writes; improve recovery on handled errors and interruption.
+- Serialize configuration loading and installation with the global lock; restore previous application, configuration and units on handled upgrade failures.
+- Keep read-only diagnostics free from notification and state writes; preserve failure rows and invalidate stale TLS results.
+- 188 unit tests, strict 100% line/branch coverage gate, isolated installer integration checks against 2.0.1.
+
 ## 2.0.1
 
 - Correct PKI activation with CertificateType=YES.

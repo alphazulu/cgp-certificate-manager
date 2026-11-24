@@ -102,12 +102,12 @@ def discover(cfg,z):
         names=sorted(n for n in accepted if n==name or not any(covered(n,w) for w in accepted))
         for n in accepted-set(names): skipped[n]='covered_by_wildcard'
         if len(names)>100: raise Error('Too many SAN identifiers: '+name)
-        out.append({'cgp_domain':name,'cert_name':identifier(d.get('cert_name',name)),'enabled':d.get('enabled',True),'aliases':aliases,'names':names,'unavailable':sorted(unavailable),'skipped_names':skipped,'cloudflare_available':name in names,'tls':d.get('tls',cfg.get('tls',[]))})
+        out.append({'cgp_domain':name,'cert_name':identifier(d.get('cert_name',name)),'enabled':d.get('enabled',cfg.get('auto_enable_new_domains',True)),'aliases':aliases,'names':names,'unavailable':sorted(unavailable),'skipped_names':skipped,'cloudflare_available':name in names,'tls':d.get('tls',cfg.get('tls',[]))})
     if len({d['cert_name'] for d in out})!=len(out): raise Error('Duplicate certificate lineage')
     return out
 
 def run(*args, data=None, timeout=60):
-    p=subprocess.run(args,input=data,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)
+    p=subprocess.run(args,input=b'' if data is None else data,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)
     if p.returncode: raise Error(f'{args[0]} failed ({p.returncode})')
     return p.stdout
 
@@ -245,7 +245,7 @@ def update(cfg,name,f):
         if not re.fullmatch(r'\[[A-Za-z0-9+/=]*\]|[A-Za-z][A-Za-z0-9_-]*|"[A-Za-z][A-Za-z0-9_-]*"',v): raise Error('Unsafe CGP value')
     cli(cfg,'UPDATEDOMAINSETTINGS '+identifier(name)+' {'+''.join(k+'='+v+';' for k,v in f.items())+'}')
 
-def same(a,b): return all(a.get(k,'').strip('"')==b.get(k,'').strip('"') for k in FIELDS)
+def same(a,b): return set(FIELDS)<=a.keys() and set(FIELDS)<=b.keys() and all(a[k].strip('"')==b[k].strip('"') for k in FIELDS)
 
 def pem_fingerprints(data):
     return [hashlib.sha256(base64.b64decode(b''.join(x.split()),validate=True)).hexdigest()
@@ -257,12 +257,13 @@ def expected_chain(d):
 
 def tls_endpoints(d):
     # HTTPS/SNI is the default; other listeners are opt-in.
-    if d.get('tls'): return d['tls']
+    if d.get('tls') and all(e.get('sni') for e in d['tls']): return d['tls']
     names=set(n for n in d['names'] if not n.startswith('*.'))
     for alias in d.get('aliases',[]):
         n,e=dns_name(alias)
         if n and not n.startswith('*.') and any(n==x or covered(n,x) for x in d['names']): names.add(n)
-    return [{'host':'127.0.0.1','port':443,'sni':n} for n in sorted(names)]
+    templates=d.get('tls') or [{'host':'127.0.0.1','port':443}]
+    return [dict(ep,sni=n) for ep in templates for n in ([ep['sni']] if ep.get('sni') else sorted(names))]
 
 def probe_tls(endpoint,expected):
     host=endpoint.get('host','127.0.0.1'); port=int(endpoint['port']); sni=endpoint['sni']; mode=endpoint.get('starttls')
@@ -310,7 +311,7 @@ def deploy(cfg,d):
         except Exception: LOG.warning('%s: update returned error; checking readback',name)
         if not certificate_settings_match(current(cfg,name),new): raise Error('CGP readback mismatch')
         verify_tls(d,info['fingerprint'])
-    except Exception:
+    except (Exception, KeyboardInterrupt):
         try:
             update(cfg,name,old)
             if not same(current(cfg,name),old): raise Error('Rollback readback mismatch')
@@ -318,3 +319,37 @@ def deploy(cfg,d):
         raise Error('Deployment failed; previous settings restored') from None
     for stale in sorted(b.parent.glob('*.json'),reverse=True)[5:]: stale.unlink()
     return 'installed'
+
+def validate_backup(settings):
+    """Reject incomplete or cryptographically invalid backup before any write."""
+    if set(settings)!=set(FIELDS) or settings['CertificateType'].strip('"').upper()!='YES':
+        raise Error('Backup PKI is disabled or incomplete')
+    def decode(field):
+        value=settings[field]
+        if not value.startswith('[') or not value.endswith(']'):
+            raise Error('Invalid backup DataBlock')
+        return base64.b64decode(value[1:-1],validate=True)
+    key=decode('PrivateSecureKey')
+    leaf=decode('SecureCertificate')
+    chain=decode('CAChain')
+    if run('openssl','pkey','-inform','DER','-pubout',data=key)!=run('openssl','x509','-inform','DER','-pubkey','-noout',data=leaf):
+        raise Error('Backup key mismatch')
+    # CGP chain is a sequence of complete DER certificates.
+    parts=[]
+    while chain:
+        if len(chain)<2 or chain[0]!=0x30: raise Error('Invalid backup CA DER')
+        n=chain[1]
+        if n<128: size=2+n
+        else:
+            width=n&127
+            if not 1<=width<=4 or len(chain)<2+width: raise Error('Invalid backup CA DER length')
+            size=2+width+int.from_bytes(chain[2:2+width],'big')
+        if size>len(chain): raise Error('Truncated backup CA DER')
+        parts.append(run('openssl','x509','-inform','DER',data=chain[:size]))
+        chain=chain[size:]
+    if not parts: raise Error('Empty backup CA chain')
+    with tempfile.TemporaryDirectory() as tmp:
+        path=Path(tmp)
+        (path/'leaf.pem').write_bytes(run('openssl','x509','-inform','DER',data=leaf))
+        (path/'chain.pem').write_bytes(b''.join(parts))
+        run('openssl','verify','-purpose','sslserver','-CAfile','/etc/ssl/certs/ca-certificates.crt','-untrusted',str(path/'chain.pem'),str(path/'leaf.pem'))

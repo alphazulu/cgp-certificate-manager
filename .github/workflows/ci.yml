@@ -10,5 +10,55 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m unittest discover -s tests -v
+      - run: python -m compileall -q cgp_cert_manager tests
+      - run: python -m pip install coverage==7.10.7
+      - run: python -m coverage run --branch --source=cgp_cert_manager -m unittest discover -s tests -v
+      - run: python -m coverage report -m --fail-under=100
+        if: always()
+      - run: python -m coverage xml -o coverage.xml
+        if: always()
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage.xml
       - run: bash -n install.sh
+  installer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Export baseline 2.0.1 and candidate
+        run: |
+          mkdir -p "$RUNNER_TEMP/cgp-baseline" "$RUNNER_TEMP/cgp-candidate"
+          git archive e335c7cd3a836ae1fa8fdeeaac018f1b79bbaf53 | tar -x -C "$RUNNER_TEMP/cgp-baseline"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/cgp-candidate"
+      - name: Test installer in disposable Ubuntu container
+        run: |
+          docker run --rm \
+            -v "$RUNNER_TEMP/cgp-baseline:/baseline:ro" \
+            -v "$RUNNER_TEMP/cgp-candidate:/candidate:ro" \
+            ubuntu:24.04 bash -ec '
+              apt-get update -qq
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 util-linux
+              cp -a /candidate /tmp/candidate-writable
+              cp -a /baseline /tmp/baseline-writable
+              bash /candidate/tests/integration/installer.sh
+            '
+  package:
+    needs: [tests, installer]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build release archive and SHA-256
+        run: |
+          version=$(python3 -c 'from cgp_cert_manager import __version__; print(__version__)')
+          name="cgp-certificate-manager-v$version"
+          mkdir -p dist
+          git archive --format=tar --prefix="$name/" HEAD | gzip -n > "dist/$name.tar.gz"
+          (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256" && sha256sum -c "$name.tar.gz.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: dist/
