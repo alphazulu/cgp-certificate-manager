@@ -18,10 +18,15 @@ Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 
   The complete suite retains 22 process-death/restart tests and now includes
   10 real OpenSSL/TLS fixture tests. Python compile, installer shell syntax and
   `git diff --check` passed. No coverage exclusions or lowered thresholds.
-- Implementation CI is not yet observed for this working checkpoint. Record its
-  exact commit and run in a follow-up after tests, both installer baselines and
-  package complete. Local results do not establish Docker installer success;
-  Docker is unavailable in this workspace.
+- Implementation commit: [`2cefcc7deac815c9ac992798d3520c94871fa22a`](https://github.com/alphazulu/cgp-certificate-manager/commit/2cefcc7deac815c9ac992798d3520c94871fa22a).
+  [CI 45374434817](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45374434817)
+  **passed all four jobs**: tests, installer (2.0.1), installer (2.1.0) and
+  package. The test log confirms **542 tests / 2434 statements / 1012 branches /
+  100%**. Both container logs confirm the installer scenarios passed, including
+  24 unsafe-path refusals per baseline and preservation checks for journals and
+  resolution evidence. Docker is unavailable locally; those execution results
+  come from CI. This follow-up changes only the handoff and roadmap to record
+  the observed implementation run; inspect its own current-head CI on resume.
 - Starting HEAD: `be8e2a2ec4c26c32c025a131dfd4785b2efb64f4`, clean on resume.
   [CI 45370875060](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45370875060)
   passed all four jobs for that previous checkpoint, with 455 tests and

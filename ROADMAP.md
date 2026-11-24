@@ -28,9 +28,13 @@ Checkpoint 6 (`2.2.0.dev3`): the complete local suite passed **542 tests**, with
 87 additional tests are part of this checkpoint, including secret-safe pure
 diagnostics, strict input parsing, explicit/effective races around forward and
 rollback fsync/TLS, and a real expired-certificate readiness fixture. Python
-compile, installer shell syntax and diff checks passed. Implementation CI is
-not yet observed; record exact SHA/run after all four jobs complete. See
-DEVELOPMENT.md for the full contract and continuation steps. Automatic bootstrap
+compile, installer shell syntax and diff checks passed. Implementation
+[`2cefcc7`](https://github.com/alphazulu/cgp-certificate-manager/commit/2cefcc7deac815c9ac992798d3520c94871fa22a)
+passed [CI 45374434817](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45374434817):
+tests (the same 542 / 2434 / 1012 / 100%), both installer baselines and package.
+Both installers passed the preservation and 24 unsafe-path refusal scenarios.
+This follow-up records the observed run; inspect current-head checks on resume.
+See DEVELOPMENT.md for the full contract and continuation steps. Automatic bootstrap
 remains blocked; the next write-enablement step requires a disposable CGP and
 the documented experiments. DNS hardening can proceed independently if that
 environment is unavailable.
