@@ -303,7 +303,6 @@ def edit():
                     delay=number(ask('Random delay in seconds',str(old.get('random_delay',900))),0,3600)
                     cfg['schedule']={'hour':hour,'random_delay':delay}
                 elif choice == '11':
-                    global LANGUAGE
                     LANGUAGE=dialog('--menu','Language / Язык',12,60,3,'en','English','ru','Русский')
                     cfg['tui_language']=LANGUAGE
                 elif choice == '8':
