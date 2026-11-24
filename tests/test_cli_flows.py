@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch, Mock
-from cgp_cert_manager import cli, core, schedule, console, tui, storage
+from cgp_cert_manager import cli, core, schedule, console, tui, storage, bootstrap
 
 NAME='example.com'
 CERT={'fingerprint':'a','names':[NAME],'days':80}
@@ -34,6 +34,7 @@ class CLIFlowTests(unittest.TestCase):
         self.m={}
         for name,value in {'zones':{},'discover':[self.domain],'current':dict(FIELDS),'installed_info':dict(CERT),'local_info':dict(CERT),'issue':None,'deploy':'installed','verify_tls':None,'chain_payload':'YQ==','discover_listeners':[{'port':443}],'expected_chain':['a'],'probe_tls':None}.items():
             self.m[name]=self.stack.enter_context(patch.object(cli,name,return_value=value))
+        self.stack.enter_context(patch.object(bootstrap,'inspect',side_effect=self.inspect_current))
         self.recover=self.stack.enter_context(patch.object(cli.deployment,'recover_pending',return_value=[]))
         self.stack.enter_context(patch.object(cli.os,'umask'))
         self.out=io.StringIO()
@@ -48,6 +49,11 @@ class CLIFlowTests(unittest.TestCase):
     def output(self): return json.loads(self.out.getvalue())
     def state(self): return core.load(self.root/'state.json',{})
     def set_state(self,s): core.atomic(self.root/'state.json',s)
+
+    def inspect_current(self,cfg,name):
+        settings=cli.current(cfg,name)
+        complete=set(settings)==set(core.FIELDS)
+        return bootstrap.Inspection({'domain':name,'deployment_ready':complete,'blocking_reason':None if complete else 'missing_effective_fields'},settings)
 
     def test_status_plan_doctor_sync(self):
         for arg in ('--status','--plan','--doctor','--sync'):
@@ -294,7 +300,7 @@ class CLIFlowTests(unittest.TestCase):
         self.make_backup()
         self.m['current'].return_value={}
         with patch.object(cli,'validate_backup'),patch.object(cli,'update') as update:
-            with self.assertRaisesRegex(core.Error,'Cannot back up'):
+            with self.assertRaisesRegex(core.Error,'Certificate deployment blocked.*missing_effective_fields'):
                 self.invoke('--rollback',NAME)
             update.assert_not_called()
 

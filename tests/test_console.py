@@ -88,5 +88,7 @@ class ConsoleTests(unittest.TestCase):
         self.assertIn('--backup-file',console.backup_command('example.com','20261124T010203123456Z.json'))
         with self.assertRaises(ValueError): console.backup_command('example.com','../../config.json')
     def test_status_priority(self):
+        self.assertEqual(console.row_status({'action':'BLOCKED','status':'blocked','error':'Replacement blocked','tls':'not checked'}),'BLOCKED')
+        self.assertEqual(console.row_status({'action':'BLOCKED','status':'blocked','error':'Replacement blocked','tls':'failed'}),'ERROR')
         self.assertEqual(console.row_status({'status':'ready','action':'REISSUE','tls':'verified'}),'REISSUE')
         self.assertEqual(console.row_status({'status':'ready','tls':'failed'}),'ERROR')

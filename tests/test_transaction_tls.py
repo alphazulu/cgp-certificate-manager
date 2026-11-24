@@ -14,7 +14,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from cgp_cert_manager import core, recovery, resolution
+from cgp_cert_manager import bootstrap, core, recovery, resolution
 from cgp_cert_manager.transactions import Journal
 
 
@@ -224,6 +224,30 @@ class RecordedSnapshotTLSTests(unittest.TestCase):
             with self.assertRaisesRegex(core.Error, "openssl failed"):
                 recovery.verify_snapshot(self.expired, [{"port": 443, "sni": "example.com"}])
             probe.assert_not_called()
+
+    def test_bootstrap_readiness_accepts_real_expired_snapshot_without_crypto(self):
+        # Establish expiry with the real OpenSSL parser before forbidding all
+        # crypto below.  Capture eligibility must not prevent later renewal.
+        self.assertLess(core.installed_info(self.expired)["days"], 0)
+        cfg = {"communigate": {"url": "http://127.0.0.1:8100/CLI/"}}
+        response = "{" + "".join(name + "=" + value + ";"
+                                  for name, value in self.expired.items()) + "}"
+        with patch.object(core, "cli", return_value=response) as read, \
+                patch.object(core, "run", side_effect=AssertionError("Readiness attempted crypto")) as run, \
+                patch.object(core, "validate_backup") as validate, \
+                patch.object(core, "probe_tls") as probe, \
+                patch.object(recovery, "verify_snapshot") as verify:
+            inspection = bootstrap.inspect(cfg, "example.com")
+            self.assertTrue(inspection.report["deployment_ready"])
+            self.assertTrue(inspection.report["explicit_snapshot_complete"])
+            self.assertFalse(inspection.report["automatic_bootstrap"])
+            self.assertEqual(inspection.settings, self.expired)
+            self.assertEqual(bootstrap.require_ready(cfg, "example.com"), self.expired)
+            self.assertEqual(read.call_count, 8)
+            run.assert_not_called()
+            validate.assert_not_called()
+            probe.assert_not_called()
+            verify.assert_not_called()
 
     def test_real_expired_previous_requires_explicit_unverified_acceptance(self):
         endpoint = {"port": 443, "sni": "example.com"}

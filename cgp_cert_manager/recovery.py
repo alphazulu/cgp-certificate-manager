@@ -72,12 +72,14 @@ def verify_snapshot(settings, endpoints):
     for endpoint in endpoints:
         core.probe_tls(endpoint, expected)
 
-def recover(journal, domain, cfg, identity, verifier=None):
+def recover(journal, domain, cfg, identity, verifier=None, readback=None):
     """Resolve one journal or raise, retaining evidence on uncertain outcomes.
 
     A completed phase can only be cleaned up if CGP still matches its snapshot.
     On unsuccessful verification of the intended snapshot, restoration is
     permitted only after a fresh readback confirms a known snapshot.
+    New in-process transactions may supply a stricter provenance reader;
+    standalone schema-2 recovery keeps its recorded effective-value contract.
     """
     from . import resolution
     resolution.assert_no_incomplete(journal.directory.parent)
@@ -88,7 +90,9 @@ def recover(journal, domain, cfg, identity, verifier=None):
         raise JournalError("Transaction belongs to another server configuration")
     if verifier is None:
         verifier = verify_snapshot
-    actual = core.current(cfg, domain)
+    if readback is None:
+        readback = core.current
+    actual = readback(cfg, domain)
     state = classify(record, actual)
     phase = record["phase"]
     if state == "unknown":
@@ -111,31 +115,33 @@ def recover(journal, domain, cfg, identity, verifier=None):
             verifier(record["intended"], record["endpoints"])
         except Exception:
             # Do not touch an administrator's intervening change.
-            return restore(journal, domain, cfg, record, verifier)
-        if not core.same(core.current(cfg, domain), record["intended"]):
+            return restore(journal, domain, cfg, record, verifier, readback=readback)
+        if not core.same(readback(cfg, domain), record["intended"]):
             raise JournalError("CGP changed during transaction verification")
         journal.transition(domain, "committed")
         journal.finish(domain)
         return "committed"
-    return restore(journal, domain, cfg, record, verifier)
+    return restore(journal, domain, cfg, record, verifier, readback=readback)
 
-def restore(journal, domain, cfg, record, verifier):
-    state = classify(record, core.current(cfg, domain))
+def restore(journal, domain, cfg, record, verifier, readback=None):
+    if readback is None:
+        readback = core.current
+    state = classify(record, readback(cfg, domain))
     if state == "unknown":
         raise JournalError("CGP changed before recovery; refusing write")
     if journal.read(domain)["phase"] != "restoring":
         journal.transition(domain, "restoring")
         # Persisting a phase may block on fsync; check again before the write.
-        state = classify(record, core.current(cfg, domain))
+        state = classify(record, readback(cfg, domain))
         if state == "unknown":
             raise JournalError("CGP changed while preparing recovery; refusing write")
     if state == "intended":
         core.update(cfg, domain, record["previous"])
-    if not core.same(core.current(cfg, domain), record["previous"]):
+    if not core.same(readback(cfg, domain), record["previous"]):
         raise JournalError("Recovery readback mismatch")
     # A failed TLS check retains the restoring journal for the administrator.
     verifier(record["previous"], record["previous_endpoints"])
-    if not core.same(core.current(cfg, domain), record["previous"]):
+    if not core.same(readback(cfg, domain), record["previous"]):
         raise JournalError("CGP changed during recovery verification")
     journal.transition(domain, "restored")
     journal.finish(domain)

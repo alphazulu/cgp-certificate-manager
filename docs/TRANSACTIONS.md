@@ -118,7 +118,12 @@ acknowledgement for `prepared`/`restoring` only when CGP still matches all previ
 settings. Its outcome is `acknowledged_unverified`, with no CGP write and no TLS
 success claim. Preview, exact-token confirmation, reason and durable audit are
 required; see [operator resolution](RESOLUTION.md). Incomplete previous fields
-and safe bootstrap remain a separate roadmap item.
+and safe bootstrap remain a separate roadmap item. Version 2.2.0.dev3 adds
+[explicit/effective readiness diagnostics](BOOTSTRAP.md) and repeated gates for
+new transactions, without changing schema-2 journal evidence or permitting
+restoration to absent fields. If a new transaction observes lost provenance,
+it retains its journal rather than automatically treating effective values as
+explicit settings.
 
 An interrupted acknowledgement blocks normal recovery and mutations even after
 the original journal has been removed. `--transactions` shows an `acknowledging`
@@ -137,7 +142,9 @@ The journal, parent manager state, configuration, credentials, lock and existing
 backups now share ownership, permission and path validation. Unsafe objects are
 refused without silently repairing their modes or owner. Read-only storage
 inspection does not create directories or fsync; CLI inspection still acquires
-the ordinary operation lock. See [private storage policy](STORAGE.md) for exact
+the ordinary operation lock. The separate `--bootstrap-check` path is an
+exception: it reads configuration and CGP without creating state or a lock.
+See [private storage policy](STORAGE.md) for exact
 requirements, compatibility and the trusted-UID boundary.
 
 Backup pruning runs only after a newly applied transaction commits successfully.

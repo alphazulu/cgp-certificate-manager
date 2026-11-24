@@ -1,7 +1,7 @@
 import argparse, shutil, sys, smtplib, socket
 from email.message import EmailMessage
 from .core import *
-from . import __version__, deployment, storage
+from . import __version__, bootstrap, deployment, storage
 
 def hook(cfg,cleanup):
     if cleanup:
@@ -47,7 +47,7 @@ def main():
     p=argparse.ArgumentParser(); p.add_argument('--version',action='version',version=__version__); p.add_argument('--domain'); p.add_argument('--backup-file'); p.add_argument('--json',action='store_true'); p.add_argument('--allow-shrink',action='store_true'); p.add_argument('--force-renew',action='store_true'); p.add_argument('--retry-now',action='store_true')
     p.add_argument('--confirm-transaction'); p.add_argument('--reason')
     g=p.add_mutually_exclusive_group()
-    for x in ('sync','list','show-domains','status','plan','verify','doctor','dry-run','install-only','history','hook-auth','hook-cleanup','reset-backoff','discover-listeners','verify-listeners','repair-chain','tui','apply-schedule','console','transactions','recover','acknowledge-restored'): g.add_argument('--'+x,action='store_true')
+    for x in ('sync','list','show-domains','status','plan','verify','doctor','dry-run','install-only','history','hook-auth','hook-cleanup','reset-backoff','discover-listeners','verify-listeners','repair-chain','tui','apply-schedule','console','transactions','recover','acknowledge-restored','bootstrap-check'): g.add_argument('--'+x,action='store_true')
     g.add_argument('--backups',metavar='DOMAIN'); g.add_argument('--rollback',metavar='DOMAIN'); g.add_argument('--migrate',action='store_true')
     a=p.parse_args()
     if a.backup_file and not a.rollback: p.error('--backup-file requires --rollback')
@@ -64,6 +64,25 @@ def main():
         if not a.reason.isprintable() or not 1<=len(a.reason.strip())<=500:
             p.error('Reason must contain 1 to 500 printable characters without controls')
         a.reason=a.reason.strip()
+    if a.bootstrap_check:
+        if a.domain is not None:
+            try: identifier(a.domain)
+            except Error: p.error('Invalid bootstrap diagnostic domain')
+        rows=bootstrap.reports(load(CONFIG),a.domain)
+        if a.json: print(json.dumps(rows,indent=2,ensure_ascii=False))
+        elif not rows: print('No CGP domains')
+        else:
+            for row in rows:
+                print('Domain: '+row['domain'])
+                print('Deployment ready: '+('yes' if row['deployment_ready'] else 'no'))
+                print('Response: '+row['response_status'])
+                print('Reason: '+(row['blocking_reason'] or 'none'))
+                print('Origin: '+', '.join(name+'='+row['origin'][name] for name in FIELDS))
+                for label,key in (('Missing explicit fields','missing_explicit_fields'),('Missing effective fields','missing_effective_fields'),('Unreadable fields','unreadable_fields'),('Empty fields','empty_fields')):
+                    values=row[key]
+                    print(label+': '+('unknown' if values is None else ', '.join(values) or 'none'))
+                print('Automatic bootstrap: disabled')
+        return int(any(not row['deployment_ready'] for row in rows))
     if a.console:
         from .console import entry as console_entry
         return console_entry()
@@ -144,8 +163,7 @@ def locked_main(a,cfg):
         if not info or info['days']<1: raise Error('Backup certificate expired or missing')
         validate_backup(old)
         deployment.recover_pending(cfg)
-        cur=current(cfg,name)
-        if set(cur)!=set(FIELDS): raise Error('Cannot back up current settings')
+        cur=bootstrap.require_ready(cfg,name)
         d=next((item for item in cfg.get('domains',[]) if item['cgp_domain']==name),{'cgp_domain':name,'names':info['names']})
         d=dict(d,tls=d.get('tls',cfg.get('tls',[])))
         deployment.apply(cfg,name,cur,old,deployment.snapshot_endpoints(d,old),deployment.snapshot_endpoints(d,cur))
@@ -172,10 +190,20 @@ def locked_main(a,cfg):
         if not read_only: deployment.assert_no_pending()
         phase='inspection'; row=None
         try:
-            stored=current(cfg,name); old=installed_info(stored); local=local_info(d)
+            readiness=None
+            if d['enabled'] and d['cloudflare_available'] and not (a.status or a.verify or a.verify_listeners or a.dry_run):
+                inspection=bootstrap.inspect(cfg,name); readiness=inspection.report
+                if not readiness['deployment_ready']:
+                    row={'action':'BLOCKED','domain':name,'status':'blocked','installed':None,'local':None,'desired':d['names'],'blocked':[],'last_result':item.get('result'),'unavailable':d['unavailable'],'backoff':item.get('backoff',{}),'readiness':readiness}; rows.append(row)
+                    raise Error('Certificate deployment blocked ('+readiness['blocking_reason']+'); run --bootstrap-check for diagnostics')
+                stored=inspection.settings
+            else:
+                stored=current(cfg,name)
+            old=installed_info(stored); local=local_info(d)
             blocked=sorted(set(shrink_block(d,old,a.allow_shrink)+shrink_block(d,local,a.allow_shrink)))
             status='disabled' if not d['enabled'] else 'blocked' if blocked else 'unavailable' if not d['cloudflare_available'] else 'ready'
             row={'action':('SKIP' if status!='ready' else 'ISSUE' if not local else 'REISSUE' if set(local['names'])!=set(d['names']) else 'CHECK/RENEW' if local['days']<30 else 'VERIFY/KEEP'),'domain':name,'status':status,'installed':old,'local':local,'desired':d['names'],'blocked':blocked,'last_result':item.get('result'),'unavailable':d['unavailable'],'backoff':item.get('backoff',{}),'pki':stored.get('CertificateType')}; rows.append(row)
+            if readiness is not None: row['readiness']=readiness
             if a.status or a.plan or a.doctor or a.verify or a.verify_listeners:
                 if a.verify and d['enabled'] and d['cloudflare_available']:
                     if not old or not local or old['fingerprint']!=local['fingerprint']: raise Error('Installed fingerprint mismatch')

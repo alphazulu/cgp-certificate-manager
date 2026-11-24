@@ -64,6 +64,11 @@ def current(config, domain):
     return json.loads(remote.read_text())
 
 
+def settings_reply(config, command):
+    assert command in ("GETDOMAINSETTINGS " + name, "GETDOMAINEFFECTIVESETTINGS " + name)
+    return "{" + "".join(k + "=" + v + ";" for k, v in current(config, name).items()) + "}"
+
+
 def update(config, domain, settings):
     assert config == cfg and domain == name
     assert settings in (previous, intended)
@@ -108,6 +113,7 @@ with ExitStack() as stack:
     for obj, attr, value in (
         (core, "STATE", state),
         (core, "current", current),
+        (core, "cli", settings_reply),
         (core, "update", update),
         (core, "validate_backup", lambda settings: None),
         (recovery, "server_identity", lambda config: identity),

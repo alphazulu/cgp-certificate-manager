@@ -6,7 +6,7 @@ Automatic Let's Encrypt certificate management for CommuniGate Pro on Linux usin
 
 [Русская документация](README.ru.md)
 
-This branch develops **2.2.0.dev2**. The stable production release is **2.1.0**.
+This branch develops **2.2.0.dev3**. The stable production release is **2.1.0**.
 See [ROADMAP.md](ROADMAP.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for completed work,
 test evidence and the next checkpoint. The development branch is not a release.
 
@@ -24,6 +24,7 @@ A mail server can host many domains and aliases. Renewing certificates manually 
 - Verify hostname, trust, and complete ordered TLS chain over HTTPS/SNI by default. Installation and recovery verify captured certificate snapshots; `--verify` compares the live installation with the current Certbot lineage.
 - Durably journal prior and intended settings before deployment, recover interrupted transactions, and verify restoration by readback and live TLS. Prune older backups only after a completed installation, retaining five recent backups per domain.
 - Validate private configuration, credentials, state, history, backups and lock files; reject unsafe ownership, permissions, links and file types before use.
+- Inspect explicit/effective certificate-field readiness without state writes; block incomplete, inherited, empty, unreadable or changing snapshots before ordinary issuance and deployment.
 - Separate retry backoff for issuance and deployment, optional SMTP error notifications, JSON status and history, systemd scheduling.
 
 ## Requirements
@@ -50,7 +51,7 @@ For an existing installation, retain its configuration instead of copying the ex
 
 Configure the CommuniGate HTTP CLI on loopback (example http://127.0.0.1:8100/CLI/) and grant the service account permission to read and update managed domain settings. Restrict CLI access; the manager rejects non-loopback URLs and HTTP redirects. Verify the chosen HTTPS listener supports SNI for the managed names.
 
-By default discovered domains are enabled and receive the apex plus first-level wildcard; eligible aliases are included as SANs. Use domains entries to override enabled, wildcard, extra_names, exclude_names, cert_name and tls. Missing Cloudflare zones are skipped; an unavailable primary domain is not issued. A new installation without all four readable previous CGP fields is deliberately blocked by the backup safety guard: bootstrap a working certificate manually in WebAdmin first, then verify before automation. Never paste a CA certificate into the leaf certificate field.
+By default discovered domains are enabled and receive the apex plus first-level wildcard; eligible aliases are included as SANs. Use domains entries to override enabled, wildcard, extra_names, exclude_names, cert_name and tls. Missing Cloudflare zones are skipped; an unavailable primary domain is not issued. The development version requires all four previous certificate fields to be explicit, readable, nonempty and consistent with effective settings before ordinary issuance or installation. Inspect this with `--bootstrap-check`; automatic bootstrap remains disabled. A new domain needs a working certificate prepared by its administrator and verified before automation. Never paste a CA certificate into the leaf certificate field.
 
 For multiple accounts use cloudflare_accounts as an array of objects with credentials paths. For optional SMTP alerts configure notifications (to, from, host, port), using a trusted local relay. For non-default TLS listeners specify tls as an array of host, port, sni and optional starttls values globally or per domain; the default is loopback HTTPS 443.
 
@@ -72,6 +73,7 @@ Replace example.com with a managed domain. Review the plan before enabling autom
 |---|---|
 | --list, --sync, --show-domains | Discover and inspect domains |
 | --doctor, --plan, --status | Dependencies, planned actions and status |
+| --bootstrap-check [--domain DOMAIN] [--json] | Inspect explicit/effective field readiness without state writes, Cloudflare, Certbot or recovery |
 | --verify | Verify deployed certificates and TLS chains |
 | --discover-listeners, --verify-listeners | Diagnose recognized CGServer TLS ports |
 | --dry-run | Test issuance against ACME staging |
@@ -87,7 +89,28 @@ Replace example.com with a managed domain. Review the plan before enabling autom
 
 ## Architecture and storage
 
-Recover pending work → CGP discovery → Cloudflare zone selection → Certbot DNS-01 → captured certificate validation → backup and durable journal → CGP CLI deployment → readback and TLS verification → commit or verified restoration.
+Recover pending work → CGP discovery → Cloudflare zone selection → explicit snapshot readiness → Certbot DNS-01 → captured certificate validation → backup and durable journal → CGP CLI deployment → readback and TLS verification → commit or verified restoration.
+
+### Bootstrap readiness
+
+```sh
+cgp-letsencrypt --bootstrap-check --domain example.com --json
+```
+
+This development-only command reads the configured loopback CGP without creating
+manager state or a lock. It distinguishes fields present explicitly, present
+only in effective settings, absent from both replies, inconsistent, and unknown.
+It prints field names and fixed reasons, never their values. Invalid or changing
+replies do not become claims of absence. Exit status is 1 when any domain is
+blocked; an empty or fully eligible list returns 0.
+
+Normal issuance, installation and plan/doctor results require readiness; force
+and retry flags cannot bypass it. Direct deployment repeats the checks around
+durable transitions and readbacks. A complete expired snapshot is not blocked
+merely for expiry, and readiness does not prove live TLS. `--dry-run` keeps its
+existing staging/DNS behavior. Automatic first installation remains disabled
+pending a disposable-CGP validation of field removal and restoration semantics.
+See [bootstrap contract and remaining experiments](docs/BOOTSTRAP.md).
 
 - /opt/cgp-certificate-manager/: application
 - /usr/local/sbin/cgp-letsencrypt: CLI launcher

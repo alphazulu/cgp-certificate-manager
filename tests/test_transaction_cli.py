@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import call, patch
 
-from cgp_cert_manager import cli, core, storage
+from cgp_cert_manager import cli, core, storage, bootstrap
 from cgp_cert_manager.transactions import Journal
 
 
@@ -49,6 +49,7 @@ class TransactionCLITests(unittest.TestCase):
             'discover_listeners': [], 'cli': '(example.com)',
         }.items():
             self.mocks[name] = self.stack.enter_context(patch.object(cli, name, return_value=value))
+        self.stack.enter_context(patch.object(bootstrap, 'inspect', side_effect=self.inspect_current))
         self.recover = self.stack.enter_context(patch.object(cli.deployment, 'recover_pending', return_value=[]))
         self.status = self.stack.enter_context(patch.object(cli.deployment, 'transaction_status', return_value=[]))
 
@@ -57,6 +58,12 @@ class TransactionCLITests(unittest.TestCase):
         self.out.truncate()
         with patch.object(cli.sys, 'argv', ['cgp-letsencrypt', *args]):
             return cli.main()
+
+    def inspect_current(self, cfg, name):
+        settings = cli.current(cfg, name)
+        complete = set(settings) == set(core.FIELDS)
+        return bootstrap.Inspection({'domain': name, 'deployment_ready': complete,
+                                     'blocking_reason': None if complete else 'missing_effective_fields'}, settings)
 
     def test_status_json_is_scoped_and_does_not_recover_or_discover(self):
         rows = [{'domain': self.name, 'phase': 'applying', 'state': 'intended', 'server_matches': True}]

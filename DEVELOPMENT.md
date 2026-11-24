@@ -2,7 +2,123 @@
 
 Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 5
+## Current handoff — checkpoint 6
+
+- Development version: **`2.2.0.dev3`**; draft PR [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
+- Completed strict CGP response parsing, explicit/effective readiness diagnostics,
+  early issuance refusal and repeated provenance checks for new deployments and
+  their in-process recovery. **Automatic bootstrap writes remain disabled**:
+  field-specific removal/cascade and restoration semantics need a disposable
+  CGP instance. The diagnostic is useful independently of that remaining work.
+- Observed complete local suite: **542 tests passed**, Python 3.12.14 / coverage
+  7.10.7; **2434 statements, 1012 branches, zero missing or partial, 100%**.
+  There are 87 additional tests, including strict/adversarial response handling,
+  256 presence combinations within table-driven tests, CLI side-effect checks,
+  provenance changes around fsync/TLS and a real expired-certificate fixture.
+  The complete suite retains 22 process-death/restart tests and now includes
+  10 real OpenSSL/TLS fixture tests. Python compile, installer shell syntax and
+  `git diff --check` passed. No coverage exclusions or lowered thresholds.
+- Implementation CI is not yet observed for this working checkpoint. Record its
+  exact commit and run in a follow-up after tests, both installer baselines and
+  package complete. Local results do not establish Docker installer success;
+  Docker is unavailable in this workspace.
+- Starting HEAD: `be8e2a2ec4c26c32c025a131dfd4785b2efb64f4`, clean on resume.
+  [CI 45370875060](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45370875060)
+  passed all four jobs for that previous checkpoint, with 455 tests and
+  2073 statements / 844 branches / 100%. Historical CI does not validate new code.
+- Stable `main` remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / 2.1.0.
+  The development branch is not a production installation or release.
+
+### Checkpoint 6 contract
+
+1. `--bootstrap-check [--domain DOMAIN] [--json]` securely reads configuration
+   and CGP without state/lock creation, fsync, configuration migration,
+   Cloudflare, Certbot, TLS, recovery, notifications or history. A malformed
+   explicit domain is refused before config/remote access. Without a domain,
+   the complete `LISTDOMAINS` array and all identifiers are validated before
+   reading any domain. Output is metadata only; exit 1 means a blocked/error
+   report, exit 0 means every reported domain is eligible (or the list is empty).
+2. CGP HTTP acquisition and object parsing are bounded. The parser requires a
+   complete object, validates typed values and nested unique keys, and rejects
+   truncated, duplicate, trailing or unsupported data. Core effective readbacks
+   now use it instead of a regex that could match nested/string/error text.
+   XML/custom objects and ambiguous non-ASCII decimal escapes fail closed.
+3. Read explicit/effective/explicit/effective and compare the four typed field
+   projections, including unsupported values. Unrelated settings changes do not
+   cause a false race. On invalid, unavailable or changed replies, origins are
+   unknown and missing-field lists are null. Never print response bodies or
+   upstream error text. `effective_only` does not identify a default source.
+4. Readiness requires all four explicit, nonempty, supported fields to match the
+   effective snapshot. Missing, empty, unsupported, inconsistent and changed
+   states remain distinct. Strict Base64 and safe string representation are
+   required; `default` is not treated as a storable previous value. Readiness is
+   not DER/key matching, expiry, trust, PKI activation, write authorization or
+   TLS proof. A complete expired snapshot remains structurally eligible.
+5. Ordinary issuance/install/repair and plan/doctor check readiness before
+   certificate readers and Certbot. Force/retry/shrink flags cannot bypass it.
+   Disabled/unavailable skip policy and status/verify purposes remain intact.
+   Dry-run remains Certbot staging with DNS side effects and no deployment;
+   it is not the pure read-only bootstrap diagnostic.
+6. Direct deployment checks before LIVE/crypto; shared apply checks before
+   backup/journal, after preparation and applying fsync, on write readback and
+   after TLS. Lost readiness retains pending evidence without effective-only
+   automatic recovery. Other failure recovery also uses the stricter readback
+   after restoring fsync, rollback write and rollback TLS. Default readback for
+   standalone schema-2 recovery is unchanged; old evidence is not reinterpreted.
+7. No bootstrap write, deletion sentinel, full-domain replacement, schema-3
+   journal, absence mask or relaxed operator acknowledgement has been added.
+   The vendor evidence and remaining server experiments are recorded in
+   [docs/BOOTSTRAP.md](docs/BOOTSTRAP.md), with English/Russian README guidance.
+
+### Review issues addressed in checkpoint 6
+
+- Effective values alone do not preserve explicit presence. Reject known
+  effective-only snapshots before issuance rather than installing overrides.
+- A regex omission cannot prove absence. Require a complete structured reply
+  and reject duplicate/nested/text matches before classifying certificate state.
+- A permissive CSV parser can accept a truncated domain list. The new diagnostic
+  parses the full array and validates every name before per-domain reads.
+- Initial provenance checks are insufficient across fsync. Re-read before
+  forward and rollback writes, and after TLS. Tests remove raw fields while
+  effective bytes remain unchanged and assert retained evidence/no extra write.
+- A detected provenance error must not fall into legacy automatic recovery and
+  overwrite an inherited value. Use a distinct readiness error and pass the
+  strict readback through the in-process recovery path.
+- Keep reports and exceptions free of values, including upstream transport
+  errors. Cap response bytes before decoding, not only inside the parser.
+
+### Resume from checkpoint 6
+
+1. Fetch actual branch HEAD, draft PR #2 and current-head CI. Inspect newer
+   changes before editing. Confirm tests, installer (2.0.1), installer (2.1.0)
+   and package, then record exact commit/run and observed counts. A historical
+   run does not validate later commits, including documentation follow-ups.
+2. For bootstrap writes, first obtain a disposable CGP test instance and record
+   its exact build. Use only synthetic domains and keys. Establish field-level
+   `default` removal, cascades, raw/effective presence restoration, restricted
+   account behavior and actual SNI/chain behavior. Do not run deletion probes
+   on production or infer them from the generic CLI reference.
+3. Design a new journal snapshot kind only from those results: explicit presence,
+   effective context, narrow set/remove operations, unknown-state refusal and
+   unresolved TLS outcomes. Existing schema-2 journals/audits keep their
+   effective-value meaning. The current acknowledgement cannot accept absence.
+4. If no disposable CGP is available, leave bootstrap blocked and continue the
+   independent DNS CAA/DNSSEC/delegation/propagation scope. Add meaningful unit
+   tests with every implementation change and retain the strict 100% gate.
+5. Finish review, upgrade validation, docs and RC before proposing production
+   work. Merge/release still requires explicit maintainer approval, with a
+   separate production validation window. No automatic deployment is authorized.
+
+Repeated reads are not server-side CAS and cannot prevent every concurrent or
+ABA change. Schema 2 has no historical presence bits; a later standalone
+recovery still follows effective values. Synthetic replies prove our reader
+and guards, not live CGP acceptance of future removal operations. Process-death
+tests do not simulate storage power loss; application installation retains its
+separate handled-error rollback boundary.
+
+## Checkpoint 5 — operator resolution (historical)
+
+For current work and continuation use checkpoint 6 above.
 
 - Development version: **`2.2.0.dev2`**; draft PR [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
 - Completed explicit, audited operator acknowledgement of exact previous
@@ -102,7 +218,7 @@ handled-error rollback boundary.
 
 ## Checkpoint 4 — private storage (historical)
 
-For current work and resume steps use checkpoint 5 above.
+For current work and resume steps use checkpoint 6 above.
 
 - Development version: **`2.2.0.dev1`**; draft PR [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
 - Completed ownership, permissions and path checks for private state, config,
@@ -200,7 +316,7 @@ remote-concurrency and power-loss limits below still apply.
 ## Checkpoint 3 — integration (historical)
 
 The following records the preceding implementation. For current results and
-next actions use checkpoint 4 above.
+next actions use checkpoint 6 above.
 
 - Development version: `2.2.0.dev0`; draft PR [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2). Stable `main` and release 2.1.0 remain the production baseline.
 - Deployment and manual rollback now use the journal/recovery engine. New code was implemented with unit tests in the same working change; no coverage exclusions or weakened thresholds were introduced.

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.0.dev3 — unreleased
+
+- Add `--bootstrap-check [--domain DOMAIN] [--json]` with private-key-free field provenance, completeness and refusal reports. It reads only configuration and CGP, with no state/lock creation, fsync, Cloudflare, Certbot, recovery or notification.
+- Parse complete bounded CGP objects instead of extracting certificate fields with a regular expression. Reject duplicate keys, malformed/truncated replies, trailing content, unsupported values and excessive input; ignore field-like text inside strings or nested objects. Cap HTTP response acquisition before decoding.
+- Compare repeated explicit/effective certificate projections. Require complete, explicit, nonempty supported snapshots before ordinary issuance, installation, manual rollback and plan/doctor results; force/retry/shrink flags do not bypass the gate. Preserve status/TLS inspection and staging-only dry-run behavior.
+- Repeat provenance checks around durable preparation, the applying transition, readback and TLS. Retain pending evidence without effective-only automatic recovery if readiness is lost; also guard recovery after other in-process failures. Existing schema-2 standalone recovery and operator evidence keep their original semantics.
+- Keep expiry, cryptographic checks and TLS separate from structural readiness. Add unit/integration tests with synthetic CGP responses and a real expired-certificate fixture together with implementation. Automatic bootstrap stays disabled pending a field-specific write/restore contract on a disposable CGP instance.
+- Document the report, compatibility limits, vendor evidence and required lab experiments in [docs/BOOTSTRAP.md](docs/BOOTSTRAP.md). Exact observed test and CI evidence is recorded in DEVELOPMENT.md.
+- Complete local validation: 542 tests, 2434 measured statements and 1012 branches at 100%, with Python compile, shell syntax and diff checks passing. CI execution evidence is tracked separately in DEVELOPMENT.md.
+
 ## 2.2.0.dev2 — unreleased
 
 - Add explicit `--acknowledge-restored --domain` preview and exact-token/reason confirmation for previous settings that cannot pass TLS verification. Limit it to `prepared`/`restoring` with matching server identity and all four previous CGP fields; refuse unknown states and stale journal instances.

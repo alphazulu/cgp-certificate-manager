@@ -63,6 +63,7 @@ def timer_status():
         return 'unavailable'
 
 def row_status(row):
+    if row.get('action')=='BLOCKED' and row.get('tls')!='failed': return 'BLOCKED'
     if row.get('error') or row.get('tls')=='failed': return 'ERROR'
     if row.get('status')=='blocked': return 'BLOCKED'
     if row.get('status') in ('disabled','unavailable'): return 'SKIPPED'

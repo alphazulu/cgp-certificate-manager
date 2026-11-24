@@ -53,6 +53,7 @@ class DeploymentTests(unittest.TestCase):
                 stack.enter_context(patch.object(c,'cert_info',return_value={'names':d['names'],'days':80,'fingerprint':'abc'}))
                 stack.enter_context(patch.object(c,'run',side_effect=fake_run))
                 stack.enter_context(patch.object(c,'current',side_effect=lambda *_:dict(actual)))
+                stack.enter_context(patch.object(c,'cli',side_effect=lambda *_:'{'+''.join(k+'='+v+';' for k,v in actual.items())+'}'))
                 stack.enter_context(patch.object(c,'validate_backup'))
                 stack.enter_context(patch.object(recovery,'server_identity',return_value='server'))
                 update=stack.enter_context(patch.object(c,'update',side_effect=write))

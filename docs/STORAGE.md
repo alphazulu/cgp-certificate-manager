@@ -1,7 +1,10 @@
 # Private storage policy
 
 This policy describes the checks introduced in **2.2.0.dev1** and extended in
-**2.2.0.dev2**. The stable production release
+**2.2.0.dev2**. Version **2.2.0.dev3** adds a separate `--bootstrap-check`
+diagnostic: it securely reads configuration, but creates no state or operation
+lock and performs no fsync. Other command locking remains as documented here.
+The stable production release
 remains 2.1.0. The implementation is in
 [storage.py](../cgp_cert_manager/storage.py); its callers include the CLI,
 configuration wizard, transaction journal and installer.

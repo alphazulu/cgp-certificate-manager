@@ -32,6 +32,8 @@ class TransactionDeploymentTests(unittest.TestCase):
         self.verify = stack.enter_context(patch.object(recovery, "verify_snapshot"))
         self.actual = dict(OLD)
         self.current = stack.enter_context(patch.object(core, "current", side_effect=lambda *_: copy.deepcopy(self.actual)))
+        stack.enter_context(patch.object(core, "cli", side_effect=lambda *_:
+            "{" + "".join(k + "=" + v + ";" for k, v in self.actual.items()) + "}"))
         self.update = stack.enter_context(patch.object(core, "update", side_effect=self.remote_write))
         self.journal = Journal(self.root / "transactions")
 

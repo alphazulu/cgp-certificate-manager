@@ -36,10 +36,23 @@ class CoreExtraTests(unittest.TestCase):
             response=opener.return_value.open.return_value.__enter__.return_value
             response.read.return_value=b'(example.com)'
             self.assertEqual(c.cli(cfg,'LISTDOMAINS'),'(example.com)')
+            response.read.assert_called_once_with(1024*1024+1)
             req=opener.return_value.open.call_args.args[0]
             self.assertEqual(req.data,b'command=LISTDOMAINS')
             self.assertEqual(req.get_header('Authorization'),'Basic '+base64.b64encode(b'user:dummy').decode())
         self.assertIsNotNone(c.opener())
+
+    def test_cgp_response_size_and_encoding_are_bounded(self):
+        cfg={'communigate':{'url':'http://127.0.0.1:8100/CLI/','username':'user','password':'dummy'}}
+        with patch.object(c,'opener') as opener:
+            response=opener.return_value.open.return_value.__enter__.return_value
+            response.read.return_value=b'a'*(1024*1024)
+            self.assertEqual(len(c.cli(cfg,'LISTDOMAINS')),1024*1024)
+            response.read.return_value=b'a'*(1024*1024+1)
+            with self.assertRaisesRegex(c.Error,'size limit'): c.cli(cfg,'LISTDOMAINS')
+            response.read.return_value=b'PRIVATE_SENTINEL\xff'
+            with self.assertRaisesRegex(c.Error,'response encoding') as caught: c.cli(cfg,'LISTDOMAINS')
+            self.assertNotIn('PRIVATE_SENTINEL',str(caught.exception))
 
     def test_invalid_array(self):
         with self.assertRaises(c.Error): c.array('bad')
@@ -99,7 +112,7 @@ class CoreExtraTests(unittest.TestCase):
         self.assertEqual(info['expiry'],'2099-11-24T10:00:00+00:00')
 
     def test_current_installed_local(self):
-        with patch.object(c,'cli',return_value='SecureCertificate=[YQ==];'):
+        with patch.object(c,'cli',return_value='{SecureCertificate=[YQ==];}'):
             self.assertEqual(c.current({},'example.com'),{'SecureCertificate':'[YQ==]'})
         self.assertIsNone(c.installed_info({}))
         with patch.object(c,'run',return_value=b'pem'),patch.object(c,'cert_info',return_value={'days':10}) as info:
@@ -192,6 +205,7 @@ class DeploymentExtraTests(unittest.TestCase):
         self.run=stack.enter_context(patch.object(c,'run',side_effect=lambda *a,**kw:pem(b'key') if a[1]=='rsa' else b'pub'))
         self.actual=dict(self.old)
         self.current=stack.enter_context(patch.object(c,'current',side_effect=lambda *_:dict(self.actual)))
+        stack.enter_context(patch.object(c,'cli',side_effect=lambda *_:'{'+''.join(k+'='+v+';' for k,v in self.actual.items())+'}'))
         self.update=stack.enter_context(patch.object(c,'update',side_effect=lambda cfg,name,value:setattr(self,'actual',dict(value))))
         self.verify=stack.enter_context(patch.object(recovery,'verify_snapshot'))
         self.validate=stack.enter_context(patch.object(c,'validate_backup'))
@@ -223,9 +237,10 @@ class DeploymentExtraTests(unittest.TestCase):
         self.update.assert_not_called()
 
     def test_incomplete_previous_settings(self):
-        self.current.side_effect=[{}]
-        with self.assertRaisesRegex(c.Error,'Cannot back up'): c.deploy({},self.d)
+        self.actual={}
+        with self.assertRaisesRegex(c.Error,'bootstrap-check'): c.deploy({},self.d)
         self.update.assert_not_called()
+        self.run.assert_not_called()
 
     def test_update_error_but_readback_success(self):
         def lost_reply(cfg,name,settings):

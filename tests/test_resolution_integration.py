@@ -27,6 +27,8 @@ class ResolutionIntegrationTests(unittest.TestCase):
         self.journal = Journal(self.root / "transactions")
         self.journal.prepare(self.name, self.previous, self.intended, self.endpoints, "server")
         self.current = self.stack.enter_context(patch.object(core, "current", return_value=self.previous))
+        self.stack.enter_context(patch.object(core, "cli", side_effect=lambda *_:
+            "{" + "".join(k + "=" + v + ";" for k, v in self.previous.items()) + "}"))
         self.update = self.stack.enter_context(patch.object(core, "update"))
         self.verify = self.stack.enter_context(patch.object(recovery, "verify_snapshot"))
         self.reason = "Expired previous certificate; administrator accepts the unverified state"

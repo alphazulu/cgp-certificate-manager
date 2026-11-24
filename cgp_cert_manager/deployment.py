@@ -1,6 +1,6 @@
 """Certificate transactions. Callers must hold the global operation lock."""
 
-from . import core, recovery, resolution
+from . import bootstrap, core, recovery, resolution
 from .transactions import Journal, JournalError, classify
 
 
@@ -85,18 +85,21 @@ def apply(cfg, domain, previous, intended, endpoints, previous_endpoints):
     """Install a snapshot, or restore the saved snapshot after a failed check.
 
     Both snapshots and their verification endpoints reach durable storage
-    before UPDATEDOMAINSETTINGS. Unknown remote changes are never overwritten.
+    before UPDATEDOMAINSETTINGS. Detected third states or ambiguous provenance
+    block writes; these repeated checks are not a server-side compare-and-swap.
     A journal is retained if recovery, verification or durability is uncertain.
     """
     assert_no_pending()
     journal = Journal(core.STATE / "transactions")
     identity = recovery.server_identity(cfg)
     core.validate_backup(intended)
-    if not core.same(core.current(cfg, domain), previous):
+    # Effective-only values would become explicit overrides on restoration.
+    # Refuse to start a new transaction without a stable explicit snapshot.
+    if not core.same(bootstrap.require_ready(cfg, domain), previous):
         raise JournalError("CGP changed before deployment; refusing write")
     if core.certificate_settings_match(previous, intended):
         recovery.verify_snapshot(intended, endpoints)
-        if not core.same(core.current(cfg, domain), previous):
+        if not core.same(bootstrap.require_ready(cfg, domain), previous):
             raise JournalError("CGP changed during snapshot verification")
         return "unchanged"
     saved = core.backup(domain, previous)
@@ -104,29 +107,38 @@ def apply(cfg, domain, previous, intended, endpoints, previous_endpoints):
                     previous_endpoints=previous_endpoints)
     try:
         # Recheck after the potentially slow fsync, before marking any write.
-        if not core.same(core.current(cfg, domain), previous):
+        if not core.same(bootstrap.require_ready(cfg, domain), previous):
             raise JournalError("CGP changed after transaction preparation")
         journal.transition(domain, "applying")
-        if not core.same(core.current(cfg, domain), previous):
+        if not core.same(bootstrap.require_ready(cfg, domain), previous):
             raise JournalError("CGP changed before transaction write")
         try:
             core.update(cfg, domain, intended)
         except Exception:
             core.LOG.warning("%s: update returned error; checking readback", domain)
-        if not core.same(core.current(cfg, domain), intended):
+        if not core.same(bootstrap.require_ready(cfg, domain), intended):
             raise JournalError("CGP readback mismatch")
         journal.transition(domain, "applied")
         journal.transition(domain, "verifying")
         recovery.verify_snapshot(intended, endpoints)
-        if not core.same(core.current(cfg, domain), intended):
+        if not core.same(bootstrap.require_ready(cfg, domain), intended):
             raise JournalError("CGP changed during TLS verification")
+    except bootstrap.ReadinessError:
+        # A legacy effective-only recovery must not erase newly observed
+        # ambiguity about explicit settings. Preserve evidence for inspection.
+        raise JournalError("CRITICAL: certificate snapshot readiness lost; transaction unresolved; "
+                           "inspect --transactions and --bootstrap-check; backup " + str(saved)) from None
     except (Exception, KeyboardInterrupt):
         try:
+            # An unrelated verification error can coincide with a manual unset.
+            # Check provenance before invoking the existing recovery engine.
+            bootstrap.require_ready(cfg, domain)
             record = journal.read(domain)
             if record["phase"] == "prepared":
-                recovery.recover(journal, domain, cfg, identity)
+                recovery.recover(journal, domain, cfg, identity, readback=bootstrap.require_ready)
             else:
-                recovery.restore(journal, domain, cfg, record, recovery.verify_snapshot)
+                recovery.restore(journal, domain, cfg, record, recovery.verify_snapshot,
+                                 readback=bootstrap.require_ready)
         except (Exception, KeyboardInterrupt):
             raise JournalError("CRITICAL: transaction unresolved; inspect --transactions; backup "
                                + str(saved)) from None

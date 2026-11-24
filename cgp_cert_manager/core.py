@@ -39,11 +39,15 @@ def identifier(s):
     return s
 
 def cli(cfg, command):
+    from .cgpdata import MAX_INPUT
     c=cfg['communigate']; url=c['url']
     if not re.fullmatch(r'http://127\.0\.0\.1:\d+/CLI/',url,re.I): raise Error('CGP URL must be loopback')
     auth=base64.b64encode((c['username']+':'+c['password']).encode()).decode()
     req=urllib.request.Request(url, data=urllib.parse.urlencode({'command':command}).encode(), headers={'Authorization':'Basic '+auth,'Content-Type':'application/x-www-form-urlencoded'})
-    with opener().open(req, timeout=60) as r: return r.read().decode('utf-8')
+    with opener().open(req, timeout=60) as r: data=r.read(MAX_INPUT+1)
+    if len(data)>MAX_INPUT: raise Error('CGP response exceeds size limit')
+    try: return data.decode('utf-8')
+    except UnicodeError: raise Error('Invalid CGP response encoding') from None
 
 def array(s):
     s=s.strip()
@@ -178,11 +182,9 @@ def certificate_settings_match(old, new):
 def payload(pem): return b''.join(x.strip() for x in pem.splitlines() if not x.startswith(b'-----')).decode('ascii')
 def fp(value): return hashlib.sha256(base64.b64decode(value,validate=True)).hexdigest()
 def fields(text):
-    out={}
-    for k in FIELDS:
-        m=re.search(r'(?m)(?<![\w])'+k+r'\s*=\s*(\[[A-Za-z0-9+/=\s]*\]|[A-Za-z][A-Za-z0-9_-]*|"[A-Za-z][A-Za-z0-9_-]*")\s*;',text)
-        if m: out[k]=re.sub(r'\s+','',m[1])
-    return out
+    from .bootstrap import certificate_fields
+    from .cgpdata import parse_dictionary
+    return certificate_fields(parse_dictionary(text))
 
 def current(cfg,name): return fields(cli(cfg,'GETDOMAINEFFECTIVESETTINGS '+identifier(name)))
 def current_fp(f): return fp(f['SecureCertificate'][1:-1]) if f.get('SecureCertificate','').startswith('[') and len(f['SecureCertificate'])>2 else None
@@ -306,17 +308,17 @@ def discover_listeners():
     return [{'port':p,'starttls':LISTENER_MODES[p]} for p in sorted(ports) if p in LISTENER_MODES]
 
 def deploy(cfg,d):
-    from . import deployment
-    name=d['cgp_domain']; p=LIVE/d['cert_name']; cert=p/'cert.pem'; key=p/'privkey.pem'; chain=p/'chain.pem'
+    from . import bootstrap, deployment
+    name=d['cgp_domain']
+    # Snapshot eligibility is checked again here, independently of CLI planning.
+    old=bootstrap.require_ready(cfg,name)
+    p=LIVE/d['cert_name']; cert=p/'cert.pem'; key=p/'privkey.pem'; chain=p/'chain.pem'
     # Validate and install the same captured leaf, even if Certbot changes LIVE.
     cert_pem=cert.read_bytes(); info=cert_info(cert_pem)
     if not info or set(info['names'])!=set(d['names']) or info['days']<1: raise Error('Local certificate SAN/expiry mismatch')
     # CGP accepts concatenated DER in a single Base64 DataBlock.
     # deployment.apply validates the captured key, leaf and chain together.
     new={'PrivateSecureKey':'['+payload(run('openssl','rsa','-in',str(key),'-traditional'))+']','SecureCertificate':'['+payload(cert_pem)+']','CAChain':'['+chain_payload(chain.read_bytes())+']','CertificateType':'YES'}
-    old=current(cfg,name)
-    # A first installation with no readable old settings is not safely reversible.
-    if set(old)!=set(FIELDS): raise Error('Cannot back up all CGP certificate fields; refusing automatic update')
     return deployment.apply(cfg,name,old,new,tls_endpoints(d),deployment.snapshot_endpoints(d,old))
 
 def validate_backup(settings):
