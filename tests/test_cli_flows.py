@@ -269,6 +269,39 @@ class CLIFlowTests(unittest.TestCase):
         with self.assertRaisesRegex(core.Error,'expired'):
             self.invoke('--rollback',NAME)
 
+    def test_hook_entry_dispatch(self):
+        with patch.object(cli,'hook') as hook:
+            self.assertEqual(self.invoke('--hook-auth'),0)
+            hook.assert_called_once_with(self.cfg,False)
+            self.assertEqual(self.invoke('--hook-cleanup'),0)
+            self.assertEqual(hook.call_args.args,(self.cfg,True))
+
+    def test_backup_symlink_refused(self):
+        path,old=self.make_backup()
+        other=self.root/'outside.json'
+        core.atomic(other,old)
+        path.unlink()
+        path.symlink_to(other)
+        with self.assertRaisesRegex(core.Error,'Invalid backup path'):
+            self.invoke('--rollback',NAME)
+        with self.assertRaisesRegex(core.Error,'not found'):
+            self.invoke('--rollback',NAME,'--backup-file',path.name)
+
+    def test_incomplete_current_settings(self):
+        self.make_backup()
+        self.m['current'].return_value={}
+        with patch.object(cli,'validate_backup'),patch.object(cli,'update') as update:
+            with self.assertRaisesRegex(core.Error,'Cannot back up'):
+                self.invoke('--rollback',NAME)
+            update.assert_not_called()
+
+    def test_rollback_recovery_readback_mismatch(self):
+        path,old=self.make_backup()
+        self.m['current'].side_effect=[dict(FIELDS),dict(FIELDS),old]
+        with patch.object(cli,'validate_backup'),patch.object(cli,'update'):
+            with self.assertRaisesRegex(core.Error,'CRITICAL'):
+                self.invoke('--rollback',NAME)
+
 class HookNotifyTests(unittest.TestCase):
     def test_auth_and_cleanup(self):
         z={'example.com':{'id':'a'*32,'credentials':'one.ini'}}

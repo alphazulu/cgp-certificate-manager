@@ -229,6 +229,31 @@ class ScreenTests(unittest.TestCase):
             getattr(s,name).assert_called_once()
         self.assertEqual((s.sort_mode,s.filter_mode),(1,1))
 
+    def test_verify_timeout_preserves_other_domain(self):
+        s=self.screen
+        s.all_rows.append(dict(row('other.com'),tls='verified'))
+        s.view=Mock()
+        with patch.object(c,'capture',side_effect=OSError()):
+            s.verify(NAME)
+        self.assertEqual(s.all_rows[1]['tls'],'verified')
+
+    def test_domain_removed_after_verify_or_restore(self):
+        s=self.screen
+        for choice,method in ((1,'verify'),(8,'choose_backup')):
+            s.all_rows=[row('other.com'),row()]
+            s.apply_view(NAME)
+            s.menu=Mock(side_effect=[choice,None])
+            setattr(s,method,Mock(side_effect=lambda *args: s.all_rows.clear()))
+            s.domain_menu()
+            getattr(s,method).assert_called_once_with(NAME)
+
+    def test_unknown_key_ignored(self):
+        s=self.screen
+        s.refresh_data=Mock()
+        self.keys(0,27)
+        s.loop()
+        self.assertEqual(self.w.getch.call_count,2)
+
 class ConsoleHelperTests(unittest.TestCase):
     def test_capture(self):
         with patch.object(c.subprocess,'run',return_value=Mock(returncode=7,stdout='out',stderr='err')):
@@ -271,3 +296,15 @@ class ConsoleHelperTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as e:
                 runpy.run_module('cgp_cert_manager.console',run_name='__main__')
         self.assertEqual(e.exception.code,1)
+
+    def test_unchecked_matching_identity(self):
+        r=row()
+        c.verified_rows([r],[dict(r)])
+        self.assertNotIn('tls',r)
+
+    def test_wrapper_callback(self):
+        w=Mock()
+        with patch.object(c.os,'geteuid',return_value=0),patch.object(c.sys.stdin,'isatty',return_value=True),patch.object(c.sys.stdout,'isatty',return_value=True),patch.object(c,'Screen') as screen,patch.object(c.curses,'wrapper',side_effect=lambda fn:fn(w)):
+            self.assertEqual(c.entry(),0)
+        screen.assert_called_once_with(w)
+        screen.return_value.loop.assert_called_once()

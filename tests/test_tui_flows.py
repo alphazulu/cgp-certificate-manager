@@ -169,6 +169,10 @@ class WizardTests(unittest.TestCase):
         self.assertEqual(self.edit('7','9'),t.CANCELLED)
         self.assertEqual(self.message.call_args.args[0],'Operation failed: OSError')
 
+    def test_unknown_menu_choice(self):
+        self.assertEqual(self.edit('unexpected','9'),t.CANCELLED)
+        self.assertEqual(self.saved(),self.cfg)
+
 class WizardHelpers(unittest.TestCase):
     def test_dialog_output_and_buttons(self):
         def fake(args,pass_fds):

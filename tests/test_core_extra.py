@@ -267,3 +267,14 @@ class SmallModuleTests(unittest.TestCase):
                 runpy.run_module('cgp_cert_manager.console_cli',run_name='__main__')
         self.assertEqual(e.exception.code,7)
         runpy.run_module('cgp_cert_manager.console_cli',run_name='test_import')
+
+    def test_excluded_domain_alias(self):
+        cfg={'domains':[{'cgp_domain':'example.com','exclude_names':['alias.com']}]}
+        with patch.object(c,'cli',side_effect=['(example.com)','(alias.com)']):
+            result=c.discover(cfg,{'example.com':{},'alias.com':{}})[0]
+        self.assertEqual(result['skipped_names']['alias.com'],'excluded_manually')
+        self.assertNotIn('alias.com',result['names'])
+
+    def test_malformed_listener_port(self):
+        with patch.object(c,'run',return_value=b'LISTEN 0 100 127.0.0.1:invalid users:(("CGServer",pid=1))\n'):
+            self.assertEqual(c.discover_listeners(),[])
