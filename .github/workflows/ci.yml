@@ -46,3 +46,19 @@ jobs:
               cp -a /baseline /tmp/baseline-writable
               bash /candidate/tests/integration/installer.sh
             '
+  package:
+    needs: [tests, installer]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build release archive and SHA-256
+        run: |
+          version=$(python3 -c 'from cgp_cert_manager import __version__; print(__version__)')
+          name="cgp-certificate-manager-v$version"
+          mkdir -p dist
+          git archive --format=tar --prefix="$name/" HEAD | gzip -n > "dist/$name.tar.gz"
+          (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256" && sha256sum -c "$name.tar.gz.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: dist/
