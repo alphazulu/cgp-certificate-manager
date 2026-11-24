@@ -61,10 +61,42 @@ Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; 
   configuration validator accepts the supplied example with monitor, sending
   policy and all four channels disabled. Application and plugin metadata both
   report `2.2.0.dev10`.
-- Implementation CI is pending publication of this commit. All eleven gates
-  remain required; native Docker installer, promtool and CodeQL validation are
-  not available locally and will be checked on the exact CI revision. Update
-  the handoff and draft PR with observed results rather than forecasting them.
+- Implementation
+  [`5910bde`](https://github.com/alphazulu/cgp-certificate-manager/commit/5910bdea4e3d4a9052b39b635ccc21f4e53edf70)
+  passed [PR CI 45510870363](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45510870363),
+  **all eleven jobs**, and push CI 45510864744. Both complete native Python jobs
+  retained **1199 tests / 5979 statements / 2236 branches / 100%**, with zero
+  missing/partial paths: compat **34.928 seconds**, current **32.316 seconds**.
+  No new CI finding, fixture conflict or gate relaxation was needed.
+- Native CodeQL CLI **2.27.5** completed analysis, upload and processing. Its
+  policy reports **1 SARIF report / 1 run / 0 findings / 0 errors**, complete and
+  passed. The current dependency audit was complete at **22/22/22** expected,
+  reported and audited packages, with no findings and exits **0/0/0** for
+  inventory/scanner/policy. The historical compatibility profile was complete
+  at **23/23/23**, with **23 raw records / 15 package-advisory-ID pairs / 4
+  historical packages**, exits **0/1/0**, under the existing explicit
+  `informational-findings` policy. Missing/skipped/unexpected packages,
+  mismatches and diagnostic problems were empty in both. These fixture audits
+  do not assess a production installation or distribution backports.
+- All four Ubuntu 24.04 / Debian 13 x baseline 2.0.1 / 2.1.0 installer jobs
+  passed **13 scenario sections and 36 unsafe-path/metadata refusals each**,
+  including fresh monitor imports, lock exclusion, preservation, rollback and
+  timer behavior under mock systemd. Native Certbot was **2.9.0** on Ubuntu and
+  **4.0.0** on Debian. Native promtool **3.16.0** accepted all **19 rules** and
+  both alert/dashboard-expression fixtures.
+- Packaging built two byte-identical source artifact sets, verified the archive
+  checksum and uploaded archive/checksum/provenance. Archive SHA-256:
+  `c991e57470261e71a15c7db0e6e74e52075ed70400051bdfa98d451afe79e37b`.
+  The provenance records tested PR merge preview
+  `35653da876d548c00f98ca6384a8ab26c373be83` and tree
+  `d33e9050ebe2f44ae57ce0ebe18044cc1d63cf44`, equal to the implementation tree.
+  Six CI artifacts retain both coverage reports, both audits, CodeQL and the
+  source package; this is not a published release.
+- This documentation-only follow-up records the observed implementation run.
+  Inspect its own exact current-head checks on resume rather than attributing
+  earlier CI to a future revision. All eleven gates remain required. Native
+  Docker, promtool and CodeQL were unavailable locally; their evidence above
+  comes from the named CI revision.
 - Stable main remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / **2.1.0**.
   No destination, schedule, real server, merge, tag or release was activated.
 
@@ -72,10 +104,11 @@ Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; 
 
 1. Inspect current HEAD, worktree and draft PR. Preserve in-progress files and
    read this handoff, ROADMAP.md, EXTERNAL_MONITORING.md and NOTIFICATION_CHANNELS.md.
-2. The implementation, protocol/cross-channel review and both complete local
-   100% suites are complete. Inspect all eleven native CI jobs for the exact
-   published revision, investigate any failure without relaxing gates, and
-   update this handoff and the draft PR with observed evidence.
+2. The implementation, protocol/cross-channel review, both complete local 100%
+   suites and all eleven implementation CI jobs are complete. Inspect all
+   eleven checks for the documentation follow-up's actual current HEAD before
+   claiming its status. Investigate any failure without relaxing gates and
+   keep the draft PR tied to observed results.
 3. Preserve explicit send opt-in, per-channel durable intent and event IDs,
    Telegram channel cooldown, strict acknowledgement parsing, secret projection
    and unchanged schema-1 compatibility in subsequent work. Existing SMTP and

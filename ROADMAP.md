@@ -35,8 +35,14 @@ non-retained event JSON. Code, unit/loopback tests and the
 new runtime dependencies. Both complete local profiles passed **1199 tests /
 5979 statements / 2236 branches / 100%**, zero missing/partial/excluded, with
 **59 new tests**. Review fixed an HTTP 2xx/API 429 response that initially lost
-the provider retry interval. Implementation CI is pending publication; see the
-active handoff in DEVELOPMENT.md for exact evidence and resume steps. Both
+the provider retry interval. Implementation
+[`5910bde`](https://github.com/alphazulu/cgp-certificate-manager/commit/5910bdea4e3d4a9052b39b635ccc21f4e53edf70)
+passed [CI 45510870363](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45510870363),
+all eleven jobs, and push CI 45510864744. Both native Python profiles retained
+the same counts; all installer combinations, complete dependency audits, zero
+CodeQL findings, native monitoring and reproducible packaging passed. This
+follow-up records that observed implementation run; inspect its own exact-head
+checks on resume. See DEVELOPMENT.md for evidence and continuation. Both
 independent 100% coverage gates and all eleven CI jobs remain required. All
 real VM/server/recipient/broker acceptance remains deferred. The next
 independent scope after this checkpoint is authenticated, explicitly approved
