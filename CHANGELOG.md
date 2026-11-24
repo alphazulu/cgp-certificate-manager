@@ -1,6 +1,12 @@
 # Changelog
 
-## 2.1.0 (development)
+## 2.1.0 RC1
+
+- Shared UI language and expanded Russian navigation translations.
+- Invalidate stale TLS results before verification.
+- Preserve failed inspection rows in JSON output.
+- Clean up staged credential files on failed configuration commit.
+- Check application syntax before installation.
 
 - Color-coded console status, session TLS results, filters, sorting, help, per-domain history and backup selection.
 

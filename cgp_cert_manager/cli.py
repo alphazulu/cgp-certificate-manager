@@ -152,7 +152,10 @@ def main():
                 result=deploy(cfg,d); item.update(result=result,failures=0,retry_at=0,last_success=time.time(),backoff={}); item.pop('alert',None); item.pop('alert_at',None); history(name,result); LOG.info('%s: %s',name,result)
         except Exception as e:
             failures+=1; message=str(e) if isinstance(e,Error) else type(e).__name__; LOG.error('%s: %s',name,message)
-            if row is not None: row['error']=message; row['tls']='failed' if a.verify else row.get('tls','not checked')
+            if row is None:
+                row={'domain':name,'action':'SKIP','status':'error','installed':None,'local':None,'desired':d.get('names',[]),'blocked':[]}
+                rows.append(row)
+            row['error']=message; row['tls']='failed' if a.verify else row.get('tls','not checked')
             if not (a.dry_run or a.status or a.plan or a.doctor or a.verify or a.verify_listeners):
                 stage=item.setdefault('backoff',{}).setdefault(phase,{}); count=stage.get('failures',0)+1; stage.update(failures=count,retry_at=time.time()+min(86400,900*2**min(count,7))); item.update(result=message,failures=count,retry_at=stage['retry_at']); notify(cfg,state,name,message); history(name,'failure: '+message)
         finally:

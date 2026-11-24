@@ -2,6 +2,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 [[ $EUID == 0 ]] || { echo 'Run as root'; exit 1; }
+[[ $(pwd -P) != /opt/cgp-certificate-manager ]] || { echo "Extract into /tmp first"; exit 1; }
+python3 -m compileall -q cgp_cert_manager
 mode=${1:---auto}
 case "$mode" in
   --auto|--tui|--non-interactive|--upgrade) ;;
@@ -27,11 +29,14 @@ fi
 test -f /etc/cgp-letsencrypt/config.json || { echo 'Create configuration or run install.sh --tui'; exit 1; }
 [[ $(pwd -P) != /opt/cgp-certificate-manager ]] || { echo "Extract into /tmp first"; exit 1; }
 umask 077
-b=/root/cgp-manager-backup-$(date +%Y%m%d-%H%M%S)
+b=$(mktemp -d /root/cgp-manager-backup-XXXXXXXX)
 mkdir -p "$b"
 for f in /usr/local/sbin/cgp-letsencrypt /etc/cgp-letsencrypt/config.json /etc/systemd/system/cgp-letsencrypt.{service,timer}; do [[ ! -e $f ]] || cp -a "$f" "$b/"; done
 if [[ -d /opt/cgp-certificate-manager ]]; then cp -a /opt/cgp-certificate-manager "$b/opt"; fi
-systemctl stop cgp-letsencrypt.timer || true
+if systemctl is-active --quiet cgp-letsencrypt.service; then echo 'Service running; retry after completion'; exit 1; fi
+if systemctl list-unit-files cgp-letsencrypt.timer --no-legend | grep -q '^cgp-letsencrypt.timer'; then
+    systemctl stop cgp-letsencrypt.timer
+fi
 if systemctl is-active --quiet cgp-letsencrypt.service; then echo 'Service running; retry after completion'; exit 1; fi
 install -d -m 755 /opt/cgp-certificate-manager
 cp -a cgp_cert_manager /opt/cgp-certificate-manager/

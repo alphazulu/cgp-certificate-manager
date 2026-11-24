@@ -113,3 +113,7 @@ Run `sudo cgp-letsencrypt --console` after installation, or `sudo python3 -m cgp
 ### Console status and backups
 
 F1 opens help. S cycles sorting and F cycles filters. Colors distinguish ready, verified, expiring, blocked and error states. F8 or the domain verification action records actual TLS results for this console session; refreshing status clears them. Domain history is available in the domain menu. Select a specific backup before confirming rollback, or use `--rollback DOMAIN --backup-file FILENAME`. Backup selection does not change the existing rollback trust model: readback is verified, but live TLS must be checked separately.
+
+### Release candidate checks
+
+Both terminal interfaces use the saved UI language for common navigation and prompts; technical status codes and some diagnostic text remain English. Run the full test suite, verify the live certificates, and review the installation backup before enabling the timer. The installer checks Python syntax before changing application files. This candidate is not yet a production release.

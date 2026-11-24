@@ -74,3 +74,9 @@ class TUITests(unittest.TestCase):
         with patch.object(core,'load',return_value=tui.default_config()), patch.object(tui,'main_menu',side_effect=['11','9','9']), patch.object(tui,'dialog',return_value='ru'), patch.object(tui,'yes',side_effect=[False,True]), patch.object(tui,'save_config') as save:
             self.assertEqual(tui.edit(),tui.CANCELLED)
             save.assert_not_called()
+
+    def test_localization(self):
+        from cgp_cert_manager.localization import translate
+        self.assertEqual(translate('Back','ru'),'Назад')
+        self.assertEqual(translate('Manage example.com automatically?','ru'),'Обслуживать example.com автоматически?')
+        self.assertEqual(translate('Back','en'),'Back')

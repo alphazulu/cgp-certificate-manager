@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from . import __version__, core
+from .localization import language, translate
 
 # The module path must refer to the same checkout, even when testing from /tmp.
 ROOT = Path(__file__).resolve().parent.parent
@@ -154,6 +155,7 @@ def safe_text(value):
 class Screen:
     def __init__(self, window):
         self.w = window
+        self.lang=language()
         self.rows = []
         self.selected = 0
         self.offset = 0
@@ -184,7 +186,7 @@ class Screen:
         if y<0 or y>=h or x<0 or x>=w-1:
             return
         try:
-            self.w.addnstr(y,x,safe_text(value),w-x-1,attr)
+            self.w.addnstr(y,x,safe_text(translate(str(value),getattr(self,'lang','en'))),w-x-1,attr)
         except curses.error:
             pass
 
@@ -288,6 +290,9 @@ class Screen:
         return self.menu('Confirm: '+label,['Cancel / No','Proceed / Yes'])==1
 
     def verify(self,domain=None):
+        for row in self.all_rows:
+            if domain is None or row['domain']==domain:
+                row.pop('tls',None); row.pop('verified_at',None)
         cmd=CLI+['--verify','--json']+(['--domain',domain] if domain else [])
         self.w.erase()
         self.put(0,0,'TLS verification',curses.A_BOLD)
@@ -363,6 +368,7 @@ class Screen:
             self.w.clearok(True)
             self.w.clear()
             self.w.refresh()
+        self.lang=language()
         self.refresh_data()
 
     def domain_menu(self):

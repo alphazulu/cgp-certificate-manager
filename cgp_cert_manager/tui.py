@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 
 from . import core
+from .localization import translate
 
 LANGUAGE='en'
 
@@ -64,7 +65,7 @@ RU={
 }
 
 def tr(text):
-    return RU.get(text,text) if LANGUAGE=='ru' else text
+    return RU.get(text,translate(text,LANGUAGE)) if LANGUAGE=='ru' else text
 
 class Cancel(Exception):
     pass
@@ -78,6 +79,8 @@ def dialog(kind, *args, main_menu=False):
             buttons = ['--ok-button', tr('Select'), '--cancel-button', tr('Exit' if main_menu else 'Back')]
         elif kind == '--inputbox':
             buttons = ['--ok-button', tr('OK'), '--cancel-button', tr('Back')]
+        elif kind == '--yesno':
+            buttons = ['--yes-button',tr('Yes'),'--no-button',tr('No')]
         p = subprocess.run(['whiptail', '--title', 'CGP Certificate Manager', *buttons,
                             '--output-fd', str(output.fileno()), kind, *[tr(str(a)) if i==0 or (kind=='--menu' and i>=5 and i%2==1) else str(a) for i,a in enumerate(args)]],
                            pass_fds=(output.fileno(),))
@@ -182,12 +185,24 @@ def save_config(cfg, pending, active):
     if core.CONFIG.exists():
         shutil.copy2(core.CONFIG,backup/'config.json')
         (backup/'config.json').chmod(0o600)
-    for path, stage in pending.items():
-        if path not in active: continue
-        target=Path(path)
-        if target.exists(): raise ValueError('Credential path already exists')
-        write_token(target,core.token(stage))
-    core.atomic(core.CONFIG,cfg)
+    created=[]
+    try:
+        for path, stage in pending.items():
+            if path not in active: continue
+            target=Path(path)
+            if target.exists(): raise ValueError('Credential path already exists')
+            write_token(target,core.token(stage))
+            created.append(target)
+        core.atomic(core.CONFIG,cfg)
+    except BaseException:
+        # Do not delete credentials if the configuration commit already happened.
+        try:
+            committed=core.load(core.CONFIG,{})==cfg
+        except (OSError,ValueError):
+            committed=True
+        if not committed:
+            for target in created: target.unlink(missing_ok=True)
+        raise
 
 def setup():
     if os.geteuid() != 0 or not sys.stdin.isatty() or not sys.stdout.isatty():
@@ -358,7 +373,7 @@ def edit():
             except Exception as exc:
                 # API exceptions may contain sensitive request data; show type only.
                 try:
-                    msg('Operation failed: '+(str(exc) if isinstance(exc,ValueError) else type(exc).__name__))
+                    msg(('Ошибка: ' if LANGUAGE=='ru' else 'Operation failed: ')+(tr(str(exc)) if isinstance(exc,ValueError) else type(exc).__name__))
                 except Cancel:
                     pass
 
