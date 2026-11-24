@@ -26,7 +26,27 @@
 - [x] Implement operator-assisted resolution: exact-preview confirmation, private authorization/completion evidence, incomplete-decision guard and explicit retry without claiming TLS success. See docs/RESOLUTION.md and checkpoint 5 evidence below.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 10 (`2.2.0.dev7`) adds Prometheus alert rules, a Grafana
+Checkpoint 11 (`2.2.0.dev8`) implements the independent release-preparation and
+security-scanning scope. New repository tools build deterministic source
+archives with provenance, enforce complete dependency-audit evidence and check
+CodeQL SARIF together with the native analysis outcome. The reusable CI now has
+eleven jobs; package creation depends on both dependency profiles, all four
+installer combinations, native monitoring checks and all three security jobs.
+The manual release workflow requires an existing stable/RC tag on the default
+branch, reuses that CI and prepares attestations plus an unpublished draft.
+It creates no tags, overwrites no release and performs no production update.
+Current dependency findings block; complete historical compatibility findings
+remain explicitly informational. Missing or warning-bearing audit evidence
+blocks both profiles, including a reproduced pip metadata omission regression.
+Both complete local profiles passed **950 tests / 4507 statements / 1746 branches
+/ 100%**, zero missing/partial, with 99 new tests. Fresh-cache PyPI audits were
+complete: current 22/22 packages with zero findings; compatibility 23/23 with
+23 records / 15 package-advisory-ID pairs across four historical dependencies.
+Native implementation CI is pending; see the active handoff in DEVELOPMENT.md
+and the contract in docs/RELEASING.md. All real
+VM/server acceptance and actual privileged release preparation remain deferred.
+
+Previous checkpoint 10 (`2.2.0.dev7`) adds Prometheus alert rules, a Grafana
 dashboard and a Zabbix 7.0 HTTP template with executable synthetic tests. All
 three integrations distinguish source failure, missing data, stale/future
 snapshots and local certificate expiry. CI gains a required monitoring-assets
@@ -138,7 +158,7 @@ passed tests, both installer baselines and package. Each installer job passed
 18 new unsafe-path refusal cases and preserved pending journals. This follow-up
 documentation commit records the observed result; inspect current-head checks
 when resuming. See DEVELOPMENT.md for exact next steps and remaining limits.
-Operator-assisted resolution was completed in checkpoint 5; checkpoint 10 is active above.
+Operator-assisted resolution was completed in checkpoint 5; checkpoint 11 is active above.
 This remains a development checkpoint, not a production release.
 
 ## 2.3 — Monitoring
@@ -159,6 +179,7 @@ Separate server identities, least privilege, centralized visibility, independent
 ## Repository maintenance
 - [ ] License decision by owner; do not assume permission.
 - [x] SECURITY.md and CONTRIBUTING.md with actual reporting/trust boundaries and isolated test commands.
-- [ ] Release automation and dependency/security scanning.
+- [ ] Release preparation automation and dependency/source-security scanning, with strict helper/workflow tests and observed native CI (checkpoint 11 in progress).
+- [ ] Execute the manual attestation/draft workflow on a separately approved eligible release tag, inspect provenance and retained artifacts, and obtain publication approval.
 - [x] Verify the expanded installer CI matrix on Ubuntu 24.04 and Debian 13 for both upgrade baselines; container checks do not establish full deployment support.
 - [x] Refresh GitHub Actions to verified stable Node 24 revisions pinned by commit SHA; retain both strict dependency profiles and all upgrade baselines.

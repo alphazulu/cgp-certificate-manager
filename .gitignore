@@ -19,3 +19,4 @@ backups/
 .coverage
 .coverage.*
 coverage.xml
+dist/

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.0.dev8 — unreleased
+
+- Add a deterministic source-archive builder with safe version/metadata parsing, exact commit/tree provenance, existing-tag checks, default-branch ancestry checks and refusal of unsafe entries or overwrites. Test the builder with real temporary Git repositories.
+- Add complete-inventory dependency auditing with pinned pip-audit and explicit current/compatibility policies. Current findings block packaging; historical compatibility findings stay visible. Missing, skipped, malformed or failed audits block both profiles. Update isolated bootstrap pip to verified 26.3.
+- Add CodeQL Python analysis and a tested SARIF gate that refuses findings and incomplete reports. Preserve raw scanner reports and summaries as CI artifacts; expand the strict coverage source to include repository tooling.
+- Reuse the complete CI for manual release-tag preparation, reproduce archive bytes before upload, attest artifact provenance and prepare an unpublished GitHub draft. Do not create tags, overwrite an existing release or publish automatically.
+- Keep real VM/server acceptance, release authorization and production deployment separate. Record exact observed validation and continuation in DEVELOPMENT.md and ROADMAP.md.
+
 ## 2.2.0.dev7 — unreleased
 
 - Add optional Prometheus alert rules, a Grafana classic dashboard and a Zabbix 7.0 HTTP template for local monitoring. Keep collection failure, missing data, stale/future snapshots and local certificate state distinct; do not imply current deployed TLS health.

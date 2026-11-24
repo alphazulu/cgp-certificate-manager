@@ -1,0 +1,4 @@
+name: CGP manager and repository tooling
+paths:
+  - cgp_cert_manager
+  - repo_tools

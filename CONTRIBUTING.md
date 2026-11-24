@@ -31,8 +31,10 @@ task resumable without relying on chat history.
 
 ## Isolated test environments
 
-Use Linux, Python **3.12** with its `venv` module, **Node.js 24.22.3**, Bash and
-the OpenSSL command-line tools. Node runs the exact Zabbix preprocessing scripts;
+Use Linux, Python **3.12** with its `venv` module, **Node.js 24.22.3**, Bash, Git,
+`jq`, GNU coreutils (including `sha256sum`) and the OpenSSL command-line tools.
+Workflow fixtures execute the exact YAML shell blocks with fake external
+commands but real JSON/checksum validation. Node runs the exact Zabbix preprocessing scripts;
 its absence is a test failure, not a reason to skip the checks. The suite includes POSIX file/lock checks, subprocess recovery and local
 TLS tests. Run it as an ordinary development user, with synthetic fixtures and
 temporary state, rather than against an installed server.
@@ -45,8 +47,9 @@ command selects its interpreter explicitly.
 
 ```sh
 python3.12 -m venv .venv/compat
+.venv/compat/bin/python -m pip install --upgrade pip==26.3
 .venv/compat/bin/python -m pip install -r requirements-test-compat.txt
-COVERAGE_FILE=.coverage.compat .venv/compat/bin/python -m coverage run --branch --source=cgp_cert_manager -m unittest discover -s tests -v
+COVERAGE_FILE=.coverage.compat .venv/compat/bin/python -m coverage run --branch --source=cgp_cert_manager,repo_tools -m unittest discover -s tests -v
 COVERAGE_FILE=.coverage.compat .venv/compat/bin/python -m coverage report -m --fail-under=100
 ```
 
@@ -54,8 +57,9 @@ COVERAGE_FILE=.coverage.compat .venv/compat/bin/python -m coverage report -m --f
 
 ```sh
 python3.12 -m venv .venv/current
+.venv/current/bin/python -m pip install --upgrade pip==26.3
 .venv/current/bin/python -m pip install -r requirements-test-current.txt
-COVERAGE_FILE=.coverage.current .venv/current/bin/python -m coverage run --branch --source=cgp_cert_manager -m unittest discover -s tests -v
+COVERAGE_FILE=.coverage.current .venv/current/bin/python -m coverage run --branch --source=cgp_cert_manager,repo_tools -m unittest discover -s tests -v
 COVERAGE_FILE=.coverage.current .venv/current/bin/python -m coverage report -m --fail-under=100
 ```
 
@@ -63,13 +67,13 @@ The compatibility requirements reproduce an older distribution generation for
 API testing; they are not production dependency pins. Keep production packages
 on maintained security updates. The current profile tests a separate dependency
 set. Both profiles must independently reach **100% measured statement and branch
-coverage**. Do not combine their data, lower the gate or add artificial coverage
+coverage** for both `cgp_cert_manager` and `repo_tools`. Do not combine their data, lower the gate or add artificial coverage
 exclusions to hide an untested path.
 
 Also run the repository checks:
 
 ```sh
-.venv/current/bin/python -m compileall -q cgp_cert_manager tests
+.venv/current/bin/python -m compileall -q cgp_cert_manager repo_tools tests
 bash -n install.sh scripts/install-locked.sh tests/integration/installer.sh
 git diff --check
 ```
@@ -117,6 +121,10 @@ Preserve the contracts described in these documents:
   Prometheus expressions with real promtool and exact Zabbix JavaScript with
   synthetic input. Assert missing, stale, future, disabled and cross-host cases;
   an empty/disappearing series must not become a healthy zero or empty discovery.
+- [Release preparation and security checks](docs/RELEASING.md): test immutable
+  source construction, exact tag/context validation, complete audit evidence,
+  native-analysis status and the actual workflow refusal paths. Missing evidence
+  must fail; tests must never create a real tag, attestation or release.
 
 Automated tests must not contact production CGP, Cloudflare or ACME services,
 use production credentials, or alter real DNS. Use synthetic domains, isolated
@@ -128,18 +136,28 @@ proof for every real deployment.
 
 ## CI and installer integration
 
-The [workflow](.github/workflows/ci.yml) is configured for eight jobs:
+The [workflow](.github/workflows/ci.yml) is configured for eleven jobs, including
+the three jobs in the reusable [security workflow](.github/workflows/security.yml):
 
 | Jobs | Scope |
 |---|---|
-| `tests (compat)` and `tests (current)` | Python 3.12, separate dependencies, strict 100% application coverage and executed Zabbix preprocessing under pinned Node.js |
+| `tests (compat)` and `tests (current)` | Python 3.12, separate dependencies, strict 100% manager/tooling coverage and executed Zabbix preprocessing under pinned Node.js |
 | Four `installer` combinations | Ubuntu 24.04 and Debian 13, each upgrading source-pinned 2.0.1 and 2.1.0 baselines |
 | `monitoring assets` | Pinned promtool validates/evaluates alert rules and the actual dashboard expressions with synthetic timelines |
-| `package` | Archive and SHA-256 verification after both test profiles, all installer combinations and monitoring-assets checks succeed |
+| Two `dependency audit` profiles | Full resolved inventory, known-vulnerability lookup and tested current/compatibility policy; incomplete scans fail both |
+| `CodeQL Python` | Default Python security suite over manager/tooling, native analysis and a tested complete-report/no-findings gate |
+| `package` | Deterministic source archive, provenance and SHA-256; byte-for-byte reproduction after every preceding gate succeeds |
 
 The package job uploads a CI artifact; it does not publish a release. Action
 versions are pinned to full commit SHAs with version comments. Verify a changed
 pin against the upstream release, tag reference and action manifest.
+
+The separate [manual release workflow](.github/workflows/release.yml) is
+dispatched on an existing release tag. It validates the exact tag/commit and
+default-branch ancestry, calls this same CI, and then prepares provenance and
+an unpublished GitHub draft. See [RELEASING.md](docs/RELEASING.md) for the exact
+artifact, audit, permission and later publication contract. Do not dispatch it
+as part of ordinary development or substitute a release draft for real acceptance.
 
 The installer harness writes system paths and requires root. Run it only in
 the disposable container setup defined by the workflow, never directly on a

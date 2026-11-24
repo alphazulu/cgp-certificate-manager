@@ -2,7 +2,120 @@
 
 Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 10
+## Current handoff — checkpoint 11
+
+- Development version: **`2.2.0.dev8`**, continuing in draft PR
+  [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
+- Starting HEAD: `10ebff469b8fc6bef121211e4346131815347fe4`, clean on resume.
+  Its [CI 45399220791](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45399220791)
+  passed all eight previous jobs. That historical 851-test / 3936-statement /
+  1566-branch / 100% result does not validate the new tooling below.
+- Authorized independent scope: release preparation automation and dependency /
+  source security scanning. Every new helper has unit tests; the full measured
+  coverage source now includes both `cgp_cert_manager` and `repo_tools`.
+  All real VM/server/provider acceptance stays deferred. No tag, release,
+  privileged release-workflow dispatch, merge or production change is authorized
+  by this development checkpoint.
+- `repo_tools.release` constructs deterministic source archives from immutable
+  Git blobs without importing candidate code. It verifies version/plugin
+  metadata, supported regular-file paths/modes and blob identity; normalizes
+  archive metadata; and writes an archive, checksum and provenance manifest.
+  Dirty/staged/untracked files are not inputs. Existing artifacts are not
+  overwritten; unsafe output paths and incomplete source objects are refused.
+  Real temporary Git repositories exercise SHA-1/SHA-256 objects, annotated and
+  lightweight tags, exact source context and failure cleanup.
+- A reusable security workflow audits each resolved test environment with
+  pip-audit 2.10.1 in a separate scanner environment. Bootstrap pip is pinned to
+  26.3. The current profile blocks findings; complete historical compatibility
+  findings are explicitly informational and remain in raw artifacts. Missing,
+  skipped, mismatched, malformed or failed audits block both profiles.
+- Independent review reproduced a false clean result when pip omitted damaged
+  distribution metadata with a warning before both inventory and audit. The
+  adapter now requires inventory/scanner logs plus both exit statuses and
+  rejects warning/error diagnostics. The exact workflow shell block is tested
+  through the real adapter for this regression in both profiles. Readers reject
+  nonregular/symlink inputs and bound JSON and diagnostic sizes; summaries do
+  not repeat raw diagnostic text. Oversized JSON integers are normalized into
+  fixed invalid-JSON summaries, with report/inventory CLI regressions.
+- CodeQL uses the default Python suite over manager and repository tooling.
+  Its tested SARIF gate requires a successful native analyze step, valid reports
+  and zero findings; reported execution/configuration warnings and missing
+  evidence fail. The native CodeQL result is pending for this implementation,
+  not inferred from synthetic SARIF tests.
+- CI now expands to **eleven jobs**: two full coverage profiles, four installer
+  combinations, native monitoring checks, two dependency audits, CodeQL and
+  packaging. Package creation depends on every preceding gate and compares two
+  complete builds byte for byte before checksum verification and artifact upload.
+- The separate manual release workflow is dispatched only on an existing stable
+  or RC tag contained in the default branch. It validates exact tag/HEAD/workflow
+  commit and version, reuses the same full CI, downloads the same-run artifact,
+  checks remote tag identity/existing releases twice, creates GitHub provenance
+  attestations and prepares an unpublished draft. RC drafts are prereleases;
+  drafts are not selected as latest. The privileged final job checks out no
+  candidate code. No tag creation, overwrite, automatic publication or updater
+  is implemented. The real attestation/draft path remains unexecuted.
+- Independent workflow review made both remote commit lookups explicitly use
+  the `tags/` namespace, avoiding ambiguity with a same-named branch. Actual
+  shell-block regressions cover both preflights and stable/RC draft flags.
+- New external action pins were checked against primary release/tag/manifests:
+  CodeQL v4.39.4 `1bd86f2fdb4b86187fa4059f16f31a3202acc9ea`,
+  attest v4.2.2 `1e69f48acb82d1966a394da916b4c1698aa569d6`, and
+  download-artifact v8.0.2 `9000827ccba6bdab643e8b6fd33ac0654aef8333`.
+  Existing checkout/setup/upload/Node/promtool pins are retained. The new
+  security schedule becomes active only after the workflow reaches the default
+  branch: Monday 03:31 UTC / 13:31 Asia/Vladivostok.
+- Local live PyPI auditing first identified vulnerable bootstrap pip 25.0.1.
+  Updating test-environment bootstrap to the verified 26.3 release removed those
+  current-profile findings. Fresh-cache reruns with the strengthened log policy
+  passed: current audited all **22/22** packages, with zero findings and exit
+  statuses inventory/scanner/policy **0/0/0**. Compatibility audited **23/23**,
+  with **23 raw records / 15 package-advisory-ID pairs / 4 affected packages**
+  and statuses **0/1/0** under the explicit informational-findings policy.
+  Affected historical packages are cryptography 41.0.7, dnspython 2.6.1,
+  pyOpenSSL 23.2.0 and setuptools 78.1.1. Both inventories and reports were
+  complete, with no diagnostics/skips/mismatches. Original reports, logs and
+  statuses were retained locally; they assess PyPI test environments, not the
+  installed mail server or distribution backports. Native CI remains pending.
+- Documentation: [docs/RELEASING.md](docs/RELEASING.md) defines artifact identity,
+  audit policy, permissions, failure behavior and deferred release execution.
+  READMEs, CONTRIBUTING.md, SECURITY.md, CHANGELOG.md and the roadmap are updated
+  with the implementation. Workflow fixtures require `jq` in addition to Bash,
+  Git, coreutils and the existing Python/Node/OpenSSL test prerequisites.
+- Both complete local dependency profiles passed **950 tests / 4507 statements
+  / 1746 branches / 100%**, zero missing statements and zero partial branches.
+  Each independently passed `--fail-under=100` with the expanded manager/tooling
+  source. Compat took 26.876 seconds and current 26.568 seconds. There are **99
+  new tests**: 21 release-builder, 38 dependency-policy, 27 CodeQL-policy and
+  13 workflow-contract tests. The latter execute actual YAML shell blocks with
+  controlled external commands and real JSON/checksum/policy adapters.
+- Python compilation, installer shell syntax, all 21 workflow run-block shell
+  syntax checks and `git diff --check` passed. Documentation validation passed
+  110 relative links and 28 shell examples across 17 Markdown files.
+- Stable main remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / **2.1.0**.
+  Native CodeQL, installer/monitoring checks and exact implementation CI must
+  be observed before this checkpoint is marked complete. Docker, promtool and
+  the native CodeQL runner remain unavailable locally.
+
+### Resume from checkpoint 11
+
+1. Inspect actual HEAD, working tree, draft PR and current checks; read this
+   handoff and ROADMAP.md. The candidate requires all eleven CI jobs.
+2. Inspect the exact implementation CI with the expanded source scope and
+   complete audit evidence. Both full local coverage profiles passed above.
+   Preserve the strict 100% gate and all audit/refusal regressions. Investigate
+   actual CodeQL results rather than disabling the gate or hiding findings.
+3. Record the observed implementation commit/run, then update roadmap and PR.
+   A documentation follow-up needs its own current-head CI inspection.
+4. After the repository automation checkpoint, the next independent roadmap
+   scope is separately scheduled external TLS probes and explicit notification
+   configuration, developed with local fixtures and unit tests. Do not silently
+   enable a production schedule or destination.
+5. Keep real VM/server/provider/import acceptance, bootstrap write enablement,
+   license decision, tag preparation, privileged draft trial, merge and release
+   publication as explicit remaining work. Synthetic workflow tests are not
+   evidence of a real release or production qualification.
+
+## Checkpoint 10 — monitoring integrations (historical)
 
 - Development version: **`2.2.0.dev7`**, continuing in draft PR
   [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).

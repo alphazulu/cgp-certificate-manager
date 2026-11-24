@@ -97,6 +97,30 @@ third-party plugins, services and surrounding tools maintain their own logs.
 The manager does not promise that every third-party log is secret-free. Review
 and minimize any excerpt before sharing it; do not publish production logs.
 
+## Dependency and source scanning
+
+The development CI audits complete resolved test environments with pip-audit
+and analyzes `cgp_cert_manager` plus `repo_tools` with CodeQL. Current dependency
+findings and CodeQL findings block packaging. The deliberately historical
+compatibility profile keeps its findings visible under an explicit informational
+policy; incomplete, skipped, warning-bearing or failed dependency audits fail
+both profiles. Raw reports, inventory, diagnostics and policy summaries are
+preserved as CI artifacts. This is not a scan of the installed server or its
+distribution-maintained packages.
+
+The security workflow is also manual and weekly once present on the default
+branch. New advisories can change a previously clean result. Neither audit
+policy applies automatic fixes or silently ignores findings. See
+[release and security checks](docs/RELEASING.md) for scope, exact gates and
+failure behavior.
+
+Manual release preparation binds an existing reviewed tag to the checked source
+and prepares artifact provenance plus an unpublished draft. Checksums and
+provenance manifests alone are not trusted signatures. An attestation identifies
+the workflow/source of an artifact; it does not itself establish maintainer
+approval or production readiness. The workflow does not publish automatically
+or replace the deferred real-environment acceptance.
+
 ## Validation limits
 
 The project requires tests for new behavior and strict 100% measured statement
