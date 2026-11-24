@@ -32,8 +32,14 @@ discovery. Unknown sources and measurements remain explicit, incomplete LLD
 emits no list, and local expiry makes no claim about current deployed TLS.
 Both complete local dependency profiles passed **827 tests / 3936 statements /
 1566 branches / 100%**, zero missing/partial, with **87 new tests**. Python compile,
-shell syntax, documentation and diff checks passed. Exact current-revision CI
-will be recorded after publication. All real VM/server testing is deferred by
+shell syntax, documentation and diff checks passed. Implementation
+[`d997885`](https://github.com/alphazulu/cgp-certificate-manager/commit/d9978854ec309d74dce9482e34c5637a93f1c481)
+passed [CI 45389786314](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45389786314):
+both dependency profiles with the same counts, all four installer combinations
+and package. The installer checks include installed monitoring, preservation
+of private state/evidence and 24 unsafe-path refusals per combination. This
+follow-up records that observed run; inspect its current-head checks on resume.
+All real VM/server testing is deferred by
 the maintainer's decision; continue independent monitoring/template/alert work.
 See DEVELOPMENT.md for the next steps and docs/MONITORING.md for the contract.
 
@@ -110,7 +116,7 @@ passed tests, both installer baselines and package. Each installer job passed
 18 new unsafe-path refusal cases and preserved pending journals. This follow-up
 documentation commit records the observed result; inspect current-head checks
 when resuming. See DEVELOPMENT.md for exact next steps and remaining limits.
-Operator-assisted resolution was completed in checkpoint 5; checkpoint 8 is active above.
+Operator-assisted resolution was completed in checkpoint 5; checkpoint 9 is active above.
 This remains a development checkpoint, not a production release.
 
 ## 2.3 — Monitoring

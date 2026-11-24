@@ -53,16 +53,33 @@ Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 
   atomic-publication failures. No exclusions or lowered thresholds.
 - Python compilation, installer shell syntax and `git diff --check` passed.
   Documentation validation passed 81 relative links and 24 shell blocks across
-  15 Markdown files. Current-revision CI is pending publication of this change;
-  record its actual result after execution rather than borrowing an earlier run.
+  15 Markdown files. Exact implementation CI evidence is recorded below.
 - The installer harness now invokes the installed monitoring commands after
   clean installation and upgrade in each existing container combination. It
   guards provider/network/Certbot/notification/recovery calls, checks incomplete
   JSON/metrics/LLD behavior and mode-0644 failure-metrics publication, and compares
   private configuration/state bytes and metadata plus the systemctl log before
-  and after. Local shell syntax and embedded Python compilation passed; actual
-  container execution is pending this revision's CI. Docker is unavailable
-  locally. These checks do not execute the deferred real VM/server acceptance.
+  and after. Local shell syntax and embedded Python compilation passed, and all
+  four container combinations passed in the implementation CI below. Docker is
+  unavailable locally. These checks do not execute the deferred real VM/server
+  acceptance.
+- Implementation commit:
+  [`d9978854ec309d74dce9482e34c5637a93f1c481`](https://github.com/alphazulu/cgp-certificate-manager/commit/d9978854ec309d74dce9482e34c5637a93f1c481).
+  [CI 45389786314](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45389786314)
+  **passed all seven jobs**. Both dependency logs confirm **827 tests / 3936
+  statements / 1566 branches / 100%**, zero missing/partial, with successful
+  `--fail-under=100` (compat 16.840 seconds; current 16.378 seconds).
+  All four Ubuntu 24.04 / Debian 13 × baseline 2.0.1 / 2.1.0 installer jobs
+  reached the final success marker after the installed monitoring checks,
+  evidence preservation, handled rollback and 24 unsafe-path refusals each.
+  Native Certbot remained 2.9.0 on Ubuntu and 4.0.0 on Debian. Package creation,
+  SHA-256 verification and artifact upload passed; this is a CI artifact, not
+  a published release. Inspected logs contain no GitHub warning/error, deprecation or
+  traceback markers.
+- The PR workflow checked merge preview `e1a5c0016ad2f20361d6c979bc05b556c01180fc`
+  of that implementation head with unchanged stable main. This follow-up only
+  records the observed result in the handoff and roadmap. Inspect its own
+  current-head checks on resume; the external acceptance cases remain deferred.
 - Stable main remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / **2.1.0**.
   No merge, release, real VM/server test or production deployment was performed.
 
