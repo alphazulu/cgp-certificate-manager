@@ -38,10 +38,15 @@ is not enabled by installation. Installer locking, preservation and handled
 rollback include the new wrapper/units and independent monitor state.
 Both complete local profiles passed **1140 tests / 5665 statements / 2094 branches
 / 100%**, zero missing/partial/excluded, with **190 new tests**. Initial native CI
-found a fresh-import installer-fixture conflict and one public-output flow
-finding; fixes and regression tests are included. The fixed revision's native
-CI remains pending publication/observation; all eleven jobs are still required.
-See DEVELOPMENT.md for observed evidence and
+findings led to tested fixes for a fresh-import installer-fixture conflict and
+explicit public-boolean output. Fixed implementation
+[`102b007`](https://github.com/alphazulu/cgp-certificate-manager/commit/102b007e35b4bf4254b4e9aae991344bdd0d9a4d)
+passed [CI 45422616787](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45422616787),
+all eleven jobs: both full profiles with the same counts, all four installer
+combinations with 36 unsafe-path refusals each, complete dependency audits,
+native monitoring, zero CodeQL findings and reproducible packaging. This
+follow-up records that observed implementation run; inspect its own exact
+current-head checks on resume. See DEVELOPMENT.md for evidence and
 docs/EXTERNAL_MONITORING.md for the contract. Optional Telegram/MQTT channels are
 the next independent scope. Real VM/server/observer/receiver/systemd acceptance
 remains deferred; no schedule, destination, merge or release has been activated.

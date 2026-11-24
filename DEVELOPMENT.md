@@ -130,10 +130,46 @@ Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; 
   inputs and checks all four enabled-policy combinations, exact JSON/text,
   boolean types, absence of credentials/routes and unchanged files. No finding
   suppression or security-policy change was made.
-- The follow-up's **current-revision native CI remains pending observation**
-  until publication. Docker, native promtool and CodeQL are unavailable locally.
-  All eleven jobs remain required; native installer and CodeQL results must be
-  observed on the fixed revision before this checkpoint is marked complete.
+- The fixed implementation
+  [`102b007`](https://github.com/alphazulu/cgp-certificate-manager/commit/102b007e35b4bf4254b4e9aae991344bdd0d9a4d)
+  passed [CI 45422616787](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45422616787),
+  **all eleven jobs**, and push CI 45422600243. Both complete Python jobs retained
+  **1140 tests / 5665 statements / 2094 branches / 100%** with no missing/partial
+  paths (compat **27.876 seconds**, current **38.038 seconds**). The tests and
+  unchanged native gates confirm the two fixes above.
+- Native CodeQL CLI **2.27.5** completed analysis, upload and processing. Its
+  policy summary is **1 SARIF report / 1 run / 0 findings / 0 errors**, complete
+  and passed. Both dependency audits and native monitoring checks passed;
+  promtool **3.16.0** accepted all **19 rules** and both alert/dashboard fixtures.
+- Both native dependency audits were complete: current expected/reported/audited
+  **22/22/22 packages**, no findings and inventory/scanner/policy exits **0/0/0**;
+  compatibility **23/23/23**, **23 raw records / 15 package-advisory-ID pairs /
+  4 historical packages**, with exits **0/1/0** under the explicit
+  `informational-findings` policy. Affected historical fixtures remain
+  cryptography 41.0.7, dnspython 2.6.1, pyOpenSSL 23.2.0 and setuptools 78.1.1.
+  Missing/skipped/unexpected dependencies, version mismatches and problems were
+  all empty; required diagnostic checks passed. These are test-environment
+  inventories, not an audit of the installed server or distribution backports.
+- All four Ubuntu 24.04 / Debian 13 x baseline 2.0.1 / 2.1.0 installer jobs
+  passed the final success marker. Each executed 13 scenario sections and
+  **36 unsafe-path/metadata refusals**, including fresh monitor help/version,
+  both locks/services, config/state/evidence preservation, handled rollback,
+  previous timer restoration and both timers stopped on successful upgrade.
+  Native Certbot was **2.9.0** on Ubuntu and **4.0.0** on Debian. No new network
+  guard violation, unexpected traceback or fixture conflict remained.
+- Packaging built two byte-identical artifact sets, verified the source archive
+  checksum and uploaded archive/checksum/provenance. The archive SHA-256 is
+  `d30eac83042492f5c07516c60064b8daaf25a8a8c5ef492b6a338a8b9cf6307b`.
+  Its manifest correctly records PR merge preview
+  `f0e4e668eb8a5db23cba496730ba734c586ed517` and source tree
+  `eb2e6683d2af9521e9a526ab3f177eb3ec31f425`, equal to the fixed implementation
+  tree. Six CI artifacts retain both coverage reports, both dependency audits,
+  CodeQL evidence and the source package; none is a published release.
+- This documentation-only follow-up records observed fixed-implementation CI.
+  Inspect its own exact current-head checks on resume; it does not assert a
+  future run's result. Docker, native promtool and CodeQL are unavailable locally;
+  the native evidence above comes from the named CI revision. All eleven gates
+  remain required, with no suppressed findings or relaxed coverage.
 - Stable main remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / **2.1.0**.
   Existing production installation and timer settings have not been changed.
 
@@ -143,10 +179,11 @@ Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; 
    Read this handoff, ROADMAP.md and docs/EXTERNAL_MONITORING.md before editing.
    Preserve any in-progress changes and distinguish local/previous CI evidence
    from the exact current revision.
-2. Complete publication/CI observation if still pending. Investigate a real
-   failing gate rather than reducing coverage, audit completeness or security
-   checks. Record exact commit/run, test counts and native installer results in
-   this handoff, roadmap and PR after they have been observed.
+2. Preserve all eleven gates and the new native-CI regressions. Investigate a
+   real failing gate rather than reducing coverage, audit completeness or
+   security checks. The fixed-implementation evidence above is historical for
+   that exact revision; inspect the documentation follow-up's own current-head
+   CI before claiming it passed. Keep PR and handoff tied to observed results.
 3. Keep external probe/delivery state separate from renewal and local-exporter
    snapshots. Preserve explicit send opt-in, durable intent, uncertain outcomes,
    retry IDs, bounded workers and tests with every new path.
