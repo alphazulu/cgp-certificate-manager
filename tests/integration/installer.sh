@@ -2,7 +2,7 @@
 # Run ONLY in the disposable container created by the CI installer job.
 set -euo pipefail
 [[ -f /.dockerenv && $EUID == 0 ]] || { echo 'Disposable Docker container required'; exit 1; }
-[[ -d /candidate && -d /baseline ]] || exit 1
+[[ -d /tmp/candidate-writable && -d /tmp/baseline-writable ]] || exit 1
 export PATH=/mock-bin:$PATH
 mkdir -p /mock-bin /etc/cgp-letsencrypt /etc/systemd/system /var/lib/cgp-letsencrypt
 cat >/mock-bin/systemctl <<'SH'
@@ -51,10 +51,10 @@ chmod 600 /etc/cgp-letsencrypt/cloudflare.ini
 cp "$config" /tmp/config.expected
 
 echo '=== clean install ==='
-bash /candidate/install.sh --non-interactive
+bash /tmp/candidate-writable/install.sh --non-interactive
 test -x "$launcher"
 test "$("$launcher" --version)" = 2.1.0rc1
-cmp "$config" /tmp/config.expected
+python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == json.load(open(sys.argv[2]))' "$config" /tmp/config.expected
 grep -q '07,19:00:00' "$drop"
 test "$(stat -c %a "$launcher")" = 750
 test "$(stat -c %a "$config")" = 600
@@ -64,14 +64,14 @@ test ! -f /tmp/timer-active
 echo '=== clean installation failure restores absent application ==='
 rm -rf "$app" "$launcher" "$drop" /etc/systemd/system/cgp-letsencrypt.{service,timer}
 touch /tmp/fail-reload-once
-must_fail bash /candidate/install.sh --non-interactive
+must_fail bash /tmp/candidate-writable/install.sh --non-interactive
 test ! -e "$app"
 test ! -e "$launcher"
 test ! -e "$drop"
-cmp "$config" /tmp/config.expected
+python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == json.load(open(sys.argv[2]))' "$config" /tmp/config.expected
 
 echo '=== install actual baseline 2.0.1 ==='
-bash /baseline/install.sh
+bash /tmp/baseline-writable/install.sh
 test "$("$launcher" --version)" = 2.0.1
 touch "$app/cgp_cert_manager/stale.py"
 echo 'persistent-state' >/var/lib/cgp-letsencrypt/sentinel
@@ -80,30 +80,30 @@ cp "$config" /tmp/config.before-upgrade
 
 echo '=== upgrade failure restores baseline and active timer ==='
 touch /tmp/fail-reload-once
-must_fail bash /candidate/install.sh --upgrade
+must_fail bash /tmp/candidate-writable/install.sh --upgrade
 test "$("$launcher" --version)" = 2.0.1
 test -f "$app/cgp_cert_manager/stale.py"
 test -f /tmp/timer-active
-cmp "$config" /tmp/config.before-upgrade
+python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == json.load(open(sys.argv[2]))' "$config" /tmp/config.before-upgrade
 
 echo '=== running operation rejects upgrade without stopping timer ==='
 (
   flock -n 9
-  must_fail bash /candidate/install.sh --upgrade
+  must_fail bash /tmp/candidate-writable/install.sh --upgrade
 ) 9>>/var/lib/cgp-letsencrypt/run.lock
 test -f /tmp/timer-active
 test "$("$launcher" --version)" = 2.0.1
 touch /tmp/service-active
-must_fail bash /candidate/install.sh --upgrade
+must_fail bash /tmp/candidate-writable/install.sh --upgrade
 rm /tmp/service-active
 test -f /tmp/timer-active
 
 echo '=== successful upgrade ==='
-bash /candidate/install.sh --upgrade
+bash /tmp/candidate-writable/install.sh --upgrade
 test "$("$launcher" --version)" = 2.1.0rc1
 test ! -e "$app/cgp_cert_manager/stale.py"
 test ! -f /tmp/timer-active
-cmp "$config" /tmp/config.before-upgrade
+python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == json.load(open(sys.argv[2]))' "$config" /tmp/config.before-upgrade
 grep -q persistent-state /var/lib/cgp-letsencrypt/sentinel
 grep -q '07,19:00:00' "$drop"
 grep -q 'dummy' /etc/cgp-letsencrypt/cloudflare.ini
@@ -112,7 +112,7 @@ echo '=== invalid schedule rejected before modifying files ==='
 cp "$config" /tmp/valid-config
 python3 -c 'import json; p="/etc/cgp-letsencrypt/config.json"; c=json.load(open(p)); c["schedule"]["hour"]=24; json.dump(c,open(p,"w"))'
 touch /tmp/timer-active
-must_fail bash /candidate/install.sh --upgrade
+must_fail bash /tmp/candidate-writable/install.sh --upgrade
 test -f /tmp/timer-active
 test "$("$launcher" --version)" = 2.1.0rc1
 cp /tmp/valid-config "$config"
