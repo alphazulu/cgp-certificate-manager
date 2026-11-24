@@ -22,10 +22,12 @@
 - [ ] Define safe operator-assisted resolution for invalid/expired previous certificates; current behavior retains the journal when TLS proof is unavailable.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 3: local full suite passed 303 tests with 100% measured statements and
-branches. CI now includes installer upgrades from stable 2.0.1 and 2.1.0 and
-pending-journal preservation. See DEVELOPMENT.md for observed CI results and
-the exact resume steps; do not treat local success as a production release.
+Checkpoint 3: local and GitHub suites passed 303 tests with 100% measured
+statements and branches. [CI 45363794396](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45363794396)
+passed for implementation commit `458c840`: tests, installer upgrades from stable
+2.0.1 and 2.1.0 (including pending-journal preservation), and package. See
+DEVELOPMENT.md for exact resume steps and remaining limits. This is still a
+development checkpoint, not a production release.
 
 ## 2.3 — Monitoring
 Zabbix discovery/template; Prometheus textfile; Grafana; external TLS probes; SMTP/webhooks and optional Telegram/MQTT.

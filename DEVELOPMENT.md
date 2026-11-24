@@ -8,7 +8,8 @@ Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 
 - Deployment and manual rollback now use the journal/recovery engine. New code was implemented with unit tests in the same working change; no coverage exclusions or weakened thresholds were introduced.
 - Last completed pre-integration CI: [45350993726](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45350993726), commit `e5e2d007dd5a64939bb7d124df236fc339553bbb`: 215 tests, 100% coverage, installer and package success.
 - Current local complete suite: **303 tests passed**, Python 3.12.14 / coverage 7.10.7; **1506 statements, 652 branches, zero missing statements or partial branches, 100%**. Includes 11 process-death tests and 8 real OpenSSL/loopback TLS tests. `compileall`, `bash -n` for installer and integration script, and `git diff --check` passed.
-- The changed installer matrix needs a successful GitHub run after this checkpoint is pushed. Docker is unavailable in the current workspace, so no local installer execution is claimed. Record exact CI run/commit once observed.
+- Integration commit: [`458c840771722b7c0c94e9fd5f1b93ebde25dd37`](https://github.com/alphazulu/cgp-certificate-manager/commit/458c840771722b7c0c94e9fd5f1b93ebde25dd37). Observed GitHub CI [45363794396](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45363794396): **success** for tests, installer (2.0.1), installer (2.1.0) and package. The test log confirms **303 tests**, **1506 statements / 652 branches / 100%**. Both container upgrade paths checked journal preservation. Docker is unavailable in the local workspace, so installer execution evidence comes from CI.
+- The follow-up checkpoint commit changes only ROADMAP.md and this file to record that observed run. Inspect its own current checks on resume; the CI link above identifies the exact tested implementation commit.
 
 ### Implemented in this checkpoint
 
@@ -31,7 +32,7 @@ Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 
 ### Resume from here
 
 1. Read ROADMAP.md and this handoff; fetch actual branch HEAD, draft PR #2 and associated CI. Inspect any newer changes before editing. Never assume a historical CI result validates a later commit.
-2. Confirm the checkpoint's tests, both installer matrix jobs and package job. Fix any failures with regression tests, retaining the 100% branch/statement gate.
+2. Confirm current-head tests, both installer matrix jobs and package job. The implementation checkpoint passed all four jobs; a later commit still needs its own successful checks. Fix any failures with regression tests, retaining the 100% branch/statement gate.
 3. Address the remaining reliability boundaries before an RC: parent state/lock/config/backup permissions; invalid/expired-prior operator resolution; bootstrap semantics; DNS checks and propagation. Keep code and tests together, and update these notes with each substantive change.
 4. Run final review and upgrade validation, prepare an RC, then obtain explicit maintainer approval for merge/release and a separate production validation window. Do not install this branch on the stable server as part of development.
 
