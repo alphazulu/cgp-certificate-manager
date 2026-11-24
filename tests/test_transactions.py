@@ -91,3 +91,9 @@ class JournalTests(unittest.TestCase):
         path.rename(target)
         path.symlink_to(target)
         with self.assertRaises(OSError): self.j.read("example.com")
+
+    def test_endpoint_validation(self):
+        r=self.prepare()
+        for ep in ([],[None],[{"port":443,"sni":"example.com","extra":1}],[{"port":0,"sni":"example.com"}],[{"port":443,"sni":"*.example.com"}],[{"port":443,"sni":"example.com","host":"bad host"}],[{"port":443,"sni":"example.com","starttls":"bad"}]):
+            with self.subTest(ep=ep),self.assertRaises(JournalError):
+                validate(dict(r,endpoints=ep),"example.com")

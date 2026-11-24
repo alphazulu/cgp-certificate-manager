@@ -17,3 +17,9 @@ Recovery must use recorded TLS endpoints and the recorded certificate chain, ind
 - Added tests/test_transactions.py for lifecycle, corruption, permissions, symlink, failed writes and state classification.
 - No deployment or CLI integration yet; existing production behavior unchanged. CI/coverage not yet observed for these additions.
 - Next: inspect CI, fix any uncovered branches, tighten endpoint/schema validation and server identity binding, then integrate journal with deployment and recovery under existing lock. Do not enable production recovery until fault-injection and TLS tests pass.
+
+## Checkpoint 2 — recovery engine
+- Checkpoint 1 CI run 45338136105: 199 tests, 100% measured coverage, installer and package passed.
+- Added recovery.py: classify remote state, resume verification or restore previous snapshot, refuse unexpected or changed state, retain unresolved journal on readback or TLS failure. Verify recorded DER chain independently of Certbot. Added local machine/CLI endpoint identity helper and stricter endpoint validation.
+- Added recovery and malformed endpoint tests. New CI not yet observed. Recovery engine is not yet called by production deployment or CLI; no mutation behavior changed.
+- Known next issues: bind identity to machine-id on integration, choose previous-specific TLS endpoints where SAN changed, ensure terminal-state cleanup handles identical snapshots, add true crash subprocess tests and real OpenSSL fixtures. Review before integration. Keep 100% CI gate.

@@ -58,8 +58,23 @@ def validate(record, domain):
         raise JournalError("Invalid transaction identity or phase")
     validate_settings(record.get("previous"))
     validate_settings(record.get("intended"))
-    if not isinstance(record.get("endpoints"), list):
+    endpoints = record.get("endpoints")
+    if not isinstance(endpoints, list) or not endpoints:
         raise JournalError("Invalid transaction endpoints")
+    for ep in endpoints:
+        if not isinstance(ep, dict) or not set(ep) <= {"host", "port", "sni", "starttls"}:
+            raise JournalError("Invalid transaction endpoint")
+        port = ep.get("port")
+        if type(port) is not int or not 1 <= port <= 65535:
+            raise JournalError("Invalid transaction TLS port")
+        sni = ep.get("sni")
+        if not isinstance(sni, str) or not core.dns_name(sni)[0] or sni.startswith("*."):
+            raise JournalError("Invalid transaction SNI")
+        host = ep.get("host", "127.0.0.1")
+        if not isinstance(host, str) or not re.fullmatch(r"[A-Za-z0-9.:-]+", host):
+            raise JournalError("Invalid transaction TLS host")
+        if ep.get("starttls") not in (None, "smtp", "imap", "pop3", "ldap", "xmpp", "xmpp-server"):
+            raise JournalError("Invalid transaction STARTTLS protocol")
     if not isinstance(record.get("config_identity"), str) or not record["config_identity"]:
         raise JournalError("Missing server identity")
     return record
