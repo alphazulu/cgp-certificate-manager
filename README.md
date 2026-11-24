@@ -6,12 +6,15 @@ Automatic Let's Encrypt certificate management for CommuniGate Pro on Linux usin
 
 [Русская документация](README.ru.md)
 
-This branch develops **2.2.0.dev5**. The stable production release is **2.1.0**.
+This branch develops **2.2.0.dev6**. The stable production release is **2.1.0**.
 See [ROADMAP.md](ROADMAP.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for completed work,
 test evidence and the next checkpoint. The development branch is not a release.
 Contributor commands and test boundaries are in [CONTRIBUTING.md](CONTRIBUTING.md).
 See [SECURITY.md](SECURITY.md) for reporting and trust boundaries, and the
 [staging acceptance plan](docs/STAGING.md) for external validation before RC.
+Real VM/server tests are deferred to a later session; independent development
+and automated checks continue. The new [local monitoring interface](docs/MONITORING.md)
+exports saved state and local certificate expiry without contacting external services.
 
 ## Why this project exists
 
@@ -81,6 +84,9 @@ Replace example.com with a managed domain. Review the plan before enabling autom
 | --list, --sync, --show-domains | Discover and inspect domains |
 | --doctor, --plan, --status | Dependencies, planned actions and status |
 | --bootstrap-check [--domain DOMAIN] [--json] | Inspect explicit/effective field readiness without state writes, Cloudflare, Certbot or recovery |
+| --monitoring | Read-only local JSON snapshot, with explicit missing/error/busy sources |
+| --metrics [--metrics-file /absolute/path/cgp-manager.prom] | Prometheus local metrics; optional atomic publication of readable metadata |
+| --zabbix-discovery | Zabbix domain discovery; fail without a discovery list if local collection is incomplete |
 | --verify | Verify deployed certificates and TLS chains |
 | --discover-listeners, --verify-listeners | Diagnose recognized CGServer TLS ports |
 | --dry-run | Test issuance against ACME staging |
@@ -95,6 +101,14 @@ Replace example.com with a managed domain. Review the plan before enabling autom
 | --force-renew, --allow-shrink | Explicit overrides; use with caution |
 
 ## Architecture and storage
+
+Monitoring reads existing local sources under a nonblocking shared operation
+lock and does not perform discovery, recovery or live TLS probes. Unknown
+measurements are omitted from Prometheus output; collection failures and source
+freshness are explicit. Local leaf expiry does not prove which certificate CGP
+serves. See [docs/MONITORING.md](docs/MONITORING.md) for the metric contract,
+atomic textfile permissions and discovery failure behavior. No monitoring timer,
+Zabbix template or Grafana dashboard is enabled by installation.
 
 Recover pending work → CGP discovery → Cloudflare zone selection → explicit snapshot readiness → Certbot DNS-01 → captured certificate validation → backup and durable journal → CGP CLI deployment → readback and TLS verification → commit or verified restoration.
 

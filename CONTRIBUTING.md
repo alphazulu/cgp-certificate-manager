@@ -108,6 +108,10 @@ Preserve the contracts described in these documents:
   contracts, bounded DNS observations, uncertain provider replies, record
   ownership, process lifetime and cleanup after interruption. Borrowed or
   changed records must not be deleted as owned records.
+- [Local monitoring](docs/MONITORING.md): preserve unknown measurements, reject
+  unsafe local paths and incomplete discovery, and test publication failure
+  before and after atomic replacement. Monitoring must not query providers,
+  perform recovery or expose private source contents.
 
 Automated tests must not contact production CGP, Cloudflare or ACME services,
 use production credentials, or alter real DNS. Use synthetic domains, isolated
@@ -139,6 +143,9 @@ It does not boot systemd or prove real timer execution, service lifecycle or
 live CGP compatibility. Container success is not production qualification of a
 distribution. If Docker is unavailable locally, record that limit and inspect
 the exact revision's CI results before marking integration checks complete.
+The installed monitoring checks use the candidate's native interpreter/launcher,
+forbid external calls and compare private state before and after observation.
+Explicit export writes only the dedicated synthetic public metrics destination.
 
 ## Pull request and handoff
 

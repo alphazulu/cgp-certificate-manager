@@ -5,6 +5,12 @@ This is an executable-by-an-operator test plan for the unreleased 2.2 branch.
 their status pending until evidence from the exact candidate and lab is recorded
 in [DEVELOPMENT.md](../DEVELOPMENT.md) and [ROADMAP.md](../ROADMAP.md).
 
+**Maintainer scheduling decision, 2026-11-24:** all tests on a real VM or server
+are deferred until a later, separately scheduled acceptance session. Continue
+independent implementation, unit tests and isolated CI in the meantime. This
+deferral does not turn pending external scenarios into passed checks or enable
+automatic bootstrap writes before the CGP semantics have been verified.
+
 The test suite covers synthetic provider/DNS responses, real local TLS, real
 Certbot interfaces and process termination. The installer containers use a
 systemctl stub. Those results do not establish real Cloudflare behavior, public

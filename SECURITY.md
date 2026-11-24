@@ -51,6 +51,23 @@ under the same trusted UID, audit all ACL/mount/security-label behavior, or
 detect earlier disclosure. Certbot's standard `live` symlinks are outside the
 manager's private-storage policy and remain Certbot's responsibility.
 
+## Monitoring metadata
+
+The local monitoring collector runs under the identity allowed to read private
+manager sources, then exports an explicit allowlist. Domain and lineage names,
+numeric saved state, public leaf expiry, source status and retained-artifact
+counts are monitoring metadata. Raw configuration, messages, credentials, keys,
+receipt values and operator evidence are not exported. Local leaf expiry and a
+saved success time do not prove current deployed TLS.
+
+Only an explicit `--metrics --metrics-file` command publishes a readable `0644`
+textfile, in a pre-existing trusted directory outside manager private/Certbot
+trees. Existing private or unsafe targets are refused. node_exporter needs only
+that exported file, not access to private sources or privileged manager commands.
+Missing/failed collection is visible; unknown measurements are not zeroes, and
+incomplete Zabbix discovery emits no list. See [MONITORING.md](docs/MONITORING.md)
+for filesystem, freshness and publication failure semantics.
+
 ## External services and recovery
 
 - **CommuniGate:** the configured HTTP CLI is restricted to loopback URLs and

@@ -47,10 +47,19 @@ def main():
     os.umask(0o077)
     p=argparse.ArgumentParser(); p.add_argument('--version',action='version',version=__version__); p.add_argument('--domain'); p.add_argument('--backup-file'); p.add_argument('--json',action='store_true'); p.add_argument('--allow-shrink',action='store_true'); p.add_argument('--force-renew',action='store_true'); p.add_argument('--retry-now',action='store_true')
     p.add_argument('--confirm-transaction'); p.add_argument('--reason')
+    p.add_argument('--metrics-file',metavar='PATH')
     g=p.add_mutually_exclusive_group()
-    for x in ('sync','list','show-domains','status','plan','verify','doctor','dry-run','install-only','history','hook-auth','hook-cleanup','reset-backoff','discover-listeners','verify-listeners','repair-chain','tui','apply-schedule','console','transactions','recover','acknowledge-restored','bootstrap-check','dns-check','dns-transactions','dns-cleanup'): g.add_argument('--'+x,action='store_true')
+    for x in ('sync','list','show-domains','status','plan','verify','doctor','dry-run','install-only','history','hook-auth','hook-cleanup','reset-backoff','discover-listeners','verify-listeners','repair-chain','tui','apply-schedule','console','transactions','recover','acknowledge-restored','bootstrap-check','dns-check','dns-transactions','dns-cleanup','monitoring','metrics','zabbix-discovery'): g.add_argument('--'+x,action='store_true')
     g.add_argument('--backups',metavar='DOMAIN'); g.add_argument('--rollback',metavar='DOMAIN'); g.add_argument('--migrate',action='store_true')
     a=p.parse_args()
+    monitoring_action=a.monitoring or a.metrics or a.zabbix_discovery
+    if a.metrics_file is not None and not a.metrics: p.error('--metrics-file requires --metrics')
+    if monitoring_action:
+        if a.domain is not None: p.error('Monitoring actions are global; omit --domain')
+        if (a.force_renew or a.retry_now or a.allow_shrink or a.backup_file is not None
+                or a.confirm_transaction is not None or a.reason is not None):
+            p.error('Monitoring actions do not accept mutation options')
+        if a.metrics and a.json: p.error('--metrics does not accept --json')
     if a.backup_file and not a.rollback: p.error('--backup-file requires --rollback')
     if (a.dns_transactions or a.dns_cleanup) and a.domain is not None:
         p.error('--dns-transactions and --dns-cleanup are global operations; omit --domain')
@@ -67,6 +76,28 @@ def main():
         if not a.reason.isprintable() or not 1<=len(a.reason.strip())<=500:
             p.error('Reason must contain 1 to 500 printable characters without controls')
         a.reason=a.reason.strip()
+    if monitoring_action:
+        try:
+            from . import monitoring, monitoring_formats
+            snapshot=monitoring.collect()
+            complete=snapshot['complete']
+            if a.zabbix_discovery and not complete:
+                print('Monitoring snapshot incomplete; Zabbix discovery not emitted',file=sys.stderr)
+                return 1
+            if a.metrics:
+                output=monitoring_formats.prometheus(snapshot)
+                if a.metrics_file is not None:
+                    from . import metrics_file
+                    metrics_file.write(a.metrics_file,output)
+                    return int(not complete)
+            else:
+                result=monitoring_formats.zabbix_discovery(snapshot) if a.zabbix_discovery else snapshot
+                output=json.dumps(result,indent=2,ensure_ascii=False,allow_nan=False)+'\n'
+            sys.stdout.write(output)
+            return int(not complete)
+        except Exception:
+            print('Monitoring observation failed',file=sys.stderr)
+            return 1
     if a.dns_transactions:
         from . import dnsauth
         rows=dnsauth.status(load(CONFIG))

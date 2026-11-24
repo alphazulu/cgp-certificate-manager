@@ -2,7 +2,89 @@
 
 Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 8
+## Current handoff — checkpoint 9
+
+- Development version: **`2.2.0.dev6`**, continuing in draft PR
+  [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
+- Starting HEAD: `1e27e2ee9443f3d65190ade66ca2b6c447f56885`, clean on resume.
+  Its [CI 45386355463](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45386355463)
+  was inspected and all seven jobs passed. That historical run does not validate
+  this checkpoint's changes.
+- **Maintainer direction, 2026-11-24: defer all tests on a real VM or server
+  until later.** Independent development, unit tests and isolated CI continue.
+  External Cloudflare/ACME/CGP acceptance remains pending in docs/STAGING.md;
+  it is not a prerequisite for the independent monitoring foundation below.
+  Bootstrap write enablement still requires verified CGP field semantics.
+- Scope: the monitoring foundation from roadmap 2.3, developed on the current
+  unreleased branch. Add `--monitoring` local JSON, `--metrics` Prometheus text,
+  explicit atomic `--metrics-file` publication and safe `--zabbix-discovery`.
+  No remote observation, notification, recovery, HTTP endpoint or new schedule
+  is part of these commands. Current live TLS remains a separate observation.
+- The collector reads existing state under a nonblocking shared lock without
+  creating it. Missing, busy, unsafe or corrupt sources make the snapshot
+  incomplete; unknown measurements are not exported as zero. Current config
+  determines domain policy, the saved inventory supplies cached domain names,
+  and only validated numeric state fields and retained-artifact counts escape.
+  Raw source contents and exception messages are not part of the public schema.
+- Public local certificate inspection is bounded, uses the normal Certbot
+  live/archive leaf layout and refuses unsafe targets. It reads no private key
+  for expiry and distinguishes known absence, read failure and an expired leaf.
+- The Prometheus renderer groups fixed gauge families, escapes labels, omits
+  unknown samples and provides collection/source status and freshness. The LLD
+  renderer refuses an incomplete snapshot rather than returning an empty or
+  partial discovery list. Disabled domains remain explicitly discoverable.
+- Textfile publication uses an existing trusted directory, a new temporary
+  inode, explicit mode 0644, file fsync, atomic replacement and directory fsync.
+  Private targets and private manager/Certbot trees are refused. Incomplete
+  collection publishes failure metrics; publication failure before replacement
+  preserves old output, while post-replacement fsync failure reports uncertainty.
+- Documentation: docs/MONITORING.md defines the schema, metric meanings,
+  source/freshness limits, publication permissions and LLD failure behavior.
+  English/Russian READMEs, CONTRIBUTING.md, CHANGELOG.md, ROADMAP.md and the
+  staging deferral are updated together. App-local Certbot metadata moves with
+  the manager version and remains covered by the real discovery regression.
+- Both complete local dependency profiles passed **827 tests / 3936 statements
+  / 1566 branches / 100%**, with zero missing statements and zero partial
+  branches. Compat took 20.934 seconds; current took 20.374 seconds. The strict
+  `--fail-under=100` gate passed independently in both profiles. **87 new tests**
+  accompany the implementation: 25 collection, 24 public certificate, 9 format,
+  16 publication and 13 CLI tests. Tests include real flocks, real valid/expired
+  OpenSSL certificates, source mutation, finite JSON parsing, unsafe path and
+  atomic-publication failures. No exclusions or lowered thresholds.
+- Python compilation, installer shell syntax and `git diff --check` passed.
+  Documentation validation passed 81 relative links and 24 shell blocks across
+  15 Markdown files. Current-revision CI is pending publication of this change;
+  record its actual result after execution rather than borrowing an earlier run.
+- The installer harness now invokes the installed monitoring commands after
+  clean installation and upgrade in each existing container combination. It
+  guards provider/network/Certbot/notification/recovery calls, checks incomplete
+  JSON/metrics/LLD behavior and mode-0644 failure-metrics publication, and compares
+  private configuration/state bytes and metadata plus the systemctl log before
+  and after. Local shell syntax and embedded Python compilation passed; actual
+  container execution is pending this revision's CI. Docker is unavailable
+  locally. These checks do not execute the deferred real VM/server acceptance.
+- Stable main remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / **2.1.0**.
+  No merge, release, real VM/server test or production deployment was performed.
+
+### Resume from checkpoint 9
+
+1. Inspect actual branch HEAD, working tree, draft PR and the seven current-head
+   CI jobs; read this handoff and the roadmap before making further changes.
+2. Preserve local-only observation, nonblocking lock behavior, unknown values,
+   no-secret output, atomic-publication failure tests and safe discovery refusal.
+   Run both complete coverage profiles as described in CONTRIBUTING.md.
+3. Continue the independent monitoring work: Zabbix template, Grafana dashboard
+   and alert-rule tests with explicit collection/freshness/missing-data semantics.
+   Do not add privileged agent execution or enable schedules implicitly.
+4. Keep all real VM/server acceptance deferred until the maintainer schedules
+   it. Record each later case against the exact candidate/build rather than
+   treating local or container tests as external validation.
+5. Keep bootstrap writes blocked until the documented CGP field-removal and
+   restoration experiments establish the required semantics. Remaining release
+   automation/security scanning can proceed independently of those experiments.
+6. Merge, release and production deployment remain separate maintainer decisions.
+
+## Checkpoint 8 — recovery and validation hardening (historical)
 
 - Development version: **`2.2.0.dev5`**, draft PR
   [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).

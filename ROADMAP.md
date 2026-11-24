@@ -5,6 +5,7 @@
 - Develop 2.2 in feature/transactional-deployment, draft PR. Never merge or publish a release until explicit maintainer approval and successful CI.
 - Read this file and DEVELOPMENT.md at the start of every resumed session; inspect actual branch HEAD, PR and CI before edits. Update checkboxes and handoff in the same commit as substantive changes. Mark tests passed only from observed results.
 - Do not commit real domains, configuration, credentials, private keys or production logs. Use synthetic fixtures. Keep strict 100% coverage gate; no artificial exclusions.
+- Maintainer decision, 2026-11-24: defer all tests on a real VM or server until later. Continue independent development and automated tests; keep external acceptance pending rather than blocking unrelated roadmap work.
 
 ## 2.2 — Reliability (in progress)
 - [x] Define transaction design and safety invariants.
@@ -25,7 +26,18 @@
 - [x] Implement operator-assisted resolution: exact-preview confirmation, private authorization/completion evidence, incomplete-decision guard and explicit retry without claiming TLS success. See docs/RESOLUTION.md and checkpoint 5 evidence below.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 8 (`2.2.0.dev5`) addresses a reproduced incomplete-pagination recovery
+Checkpoint 9 (`2.2.0.dev6`) implements the independent local monitoring foundation:
+JSON snapshots, Prometheus text/atomic textfile publication and Zabbix domain
+discovery. Unknown sources and measurements remain explicit, incomplete LLD
+emits no list, and local expiry makes no claim about current deployed TLS.
+Both complete local dependency profiles passed **827 tests / 3936 statements /
+1566 branches / 100%**, zero missing/partial, with **87 new tests**. Python compile,
+shell syntax, documentation and diff checks passed. Exact current-revision CI
+will be recorded after publication. All real VM/server testing is deferred by
+the maintainer's decision; continue independent monitoring/template/alert work.
+See DEVELOPMENT.md for the next steps and docs/MONITORING.md for the contract.
+
+Previous checkpoint 8 (`2.2.0.dev5`) addresses a reproduced incomplete-pagination recovery
 defect, process/signal/descriptor review findings, and explicit staging selection
 for manager dry-run despite a custom Certbot server setting, with tests
 accompanying each change. The workflow now defines two dependency profiles, four
@@ -102,7 +114,10 @@ Operator-assisted resolution was completed in checkpoint 5; checkpoint 8 is acti
 This remains a development checkpoint, not a production release.
 
 ## 2.3 — Monitoring
-Zabbix discovery/template; Prometheus textfile; Grafana; external TLS probes; SMTP/webhooks and optional Telegram/MQTT.
+- [x] Read-only local monitoring snapshot, Prometheus textfile output and Zabbix domain discovery, with unit tests (checkpoint 9; observed validation above).
+- [ ] Zabbix template and Grafana dashboard with alerting based on explicit freshness and collection health.
+- [ ] Separately scheduled external TLS probes and notification delivery (SMTP/webhooks and optional Telegram/MQTT).
+- [ ] Real monitoring deployment acceptance on the later VM/server test session; local certificate observations must not be presented as live TLS verification.
 
 ## 2.4 — Updates
 Explicit administrator-approved update, authenticity verification (signed manifests/trusted keys), safe extraction, rollback and version checks.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.0.dev6 — unreleased
+
+- Add offline `--monitoring` JSON, Prometheus `--metrics` and Zabbix `--zabbix-discovery`, with unit tests for source failures, missing measurements and no private-data output. Read saved manager state under an existing nonblocking shared lock; do not create state, contact services or perform recovery.
+- Observe only the public local leaf certificate through a bounded, validated path. Keep absent, unreadable and expired certificates distinct, and never present local expiry or a saved success timestamp as current deployed TLS verification.
+- Add explicit `--metrics-file` atomic publication of readable metadata to a trusted existing directory. Refuse private/unsafe targets, publish collection failure metrics instead of retaining healthy-looking output, and cover publication failure paths with unit tests.
+- Keep incomplete Zabbix collections from becoming empty discovery arrays. Document metric meanings, freshness, retained-artifact counts, path permissions and integration limits in docs/MONITORING.md.
+- Record the maintainer's decision to defer all real VM/server tests while independent development and isolated automated validation continue. Keep external acceptance and automatic bootstrap prerequisites pending. Exact observed coverage and CI are recorded in DEVELOPMENT.md.
+- Both complete local dependency profiles passed 827 tests, 3936 statements and 1566 branches at 100%, including 87 new tests and no missing/partial paths. Python compilation, shell syntax, documentation and diff checks passed; current-revision CI is recorded separately after execution.
+
 ## 2.2.0.dev5 — unreleased
 
 - Require a complete, stable provider listing with unique valid record IDs before reconciling an uncertain TXT creation. Inconsistent or truncated pagination retains the intent without deleting a record or retiring its receipt; add regression tests with the fix.

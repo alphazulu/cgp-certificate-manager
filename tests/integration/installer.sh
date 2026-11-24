@@ -90,6 +90,119 @@ JSON
 must_fail() {
     if "$@"; then echo "Expected failure: $*" >&2; exit 1; fi
 }
+assert_monitoring_cli() {
+    local before_log metrics_dir
+    before_log=$(sha256sum /tmp/systemctl.log)
+    metrics_dir=$(mktemp -d /tmp/cgp-monitoring-export-XXXXXXXX)
+    chmod 755 "$metrics_dir"
+    # Execute the installed launcher with its real native interpreter/imports.
+    # The absent inventory/state and intentionally retained recovery fixtures
+    # must produce partial observations, never trigger discovery or repairs.
+    python3 - "$app" "$launcher" "$metrics_dir" <<'MONITORING_CHECK'
+from contextlib import ExitStack, redirect_stdout, redirect_stderr
+import hashlib
+import io
+import json
+from pathlib import Path
+import runpy
+import smtplib
+import socket
+import stat
+import subprocess
+import sys
+from unittest.mock import Mock, patch
+
+application, launcher, destination = (Path(value) for value in sys.argv[1:])
+sys.path.insert(0, str(application))
+from cgp_cert_manager import cli, core, deployment, dnsauth, resolution, storage
+assert Path(cli.__file__).resolve().parent == application / 'cgp_cert_manager'
+
+def private_snapshot():
+    captured = {}
+    for root in (core.CONFIG.parent, core.STATE):
+        for path in (root, *sorted(root.rglob('*'))):
+            info = path.lstat()
+            content = hashlib.sha256(path.read_bytes()).hexdigest() if stat.S_ISREG(info.st_mode) else None
+            captured[str(path)] = (info.st_mode, info.st_uid, info.st_gid, info.st_nlink,
+                                   info.st_size, info.st_mtime_ns, info.st_ctime_ns, content)
+    return captured
+
+def invoke(*args):
+    stdout, stderr = io.StringIO(), io.StringIO()
+    with patch.object(sys, 'argv', [str(launcher), *args]), redirect_stdout(stdout), redirect_stderr(stderr):
+        try:
+            runpy.run_path(str(launcher), run_name='__main__')
+        except SystemExit as result:
+            code = result.code
+        else:
+            raise AssertionError('Installed launcher did not return an exit code')
+    return code, stdout.getvalue(), stderr.getvalue()
+
+assert not (core.STATE / 'domains.json').exists()
+assert not (core.STATE / 'state.json').exists()
+before = private_snapshot()
+guards = []
+with ExitStack() as stack:
+    targets = [(module, name) for module in (core, cli)
+               for name in ('cli', 'cf', 'zones', 'discover', 'token', 'run', 'atomic', 'issue', 'deploy')]
+    targets += [(cli, 'notify'), (cli, 'history'), (storage, 'operation_lock'),
+                (storage, 'atomic_json'), (storage, 'ensure_private_directory'),
+                (dnsauth, 'cleanup_pending'), (deployment, 'recover_pending'),
+                (resolution, 'acknowledge'), (socket, 'socket'),
+                (subprocess, 'run'), (subprocess, 'Popen'), (smtplib, 'SMTP')]
+    for module, name in targets:
+        guard = Mock(side_effect=AssertionError('Installed monitoring attempted a forbidden side effect'))
+        stack.enter_context(patch.object(module, name, guard))
+        guards.append(guard)
+    code, observed, error = invoke('--monitoring', '--json')
+    assert code == 1 and error == '', (code, error)
+    snapshot = json.loads(observed)
+    assert set(snapshot) == {'schema', 'generated_at', 'complete', 'sources', 'pending', 'domains'}
+    assert snapshot['schema'] == 1 and snapshot['complete'] is False and snapshot['domains'] == []
+    source_names = {'config', 'inventory', 'state', 'transactions', 'resolutions', 'dns_challenges', 'lock'}
+    assert set(snapshot['sources']) == source_names
+    for source in snapshot['sources'].values():
+        assert set(source) <= {'status', 'mtime'}
+        assert source['status'] in ('ok', 'missing', 'error', 'busy')
+    assert snapshot['sources']['config']['status'] == 'ok'
+    assert snapshot['sources']['lock']['status'] == 'ok'
+    assert snapshot['sources']['inventory']['status'] == 'missing'
+    assert snapshot['sources']['state']['status'] == 'missing'
+    assert set(snapshot['pending']) == {'transactions', 'resolutions', 'dns_challenges'}
+    for kind in snapshot['pending']:
+        # The legacy-shaped journal and foreign DNS identity may be invalid for
+        # observation, but must never be silently counted as a healthy zero.
+        if snapshot['sources'][kind]['status'] == 'ok':
+            assert snapshot['pending'][kind] == 1, (kind, snapshot['pending'][kind])
+        else:
+            assert snapshot['sources'][kind]['status'] == 'error'
+            assert snapshot['pending'][kind] is None
+    code, metrics, error = invoke('--metrics')
+    assert code == 1 and error == '', (code, error)
+    assert 'cgp_manager_collection_success 0\n' in metrics and metrics.endswith('\n')
+    code, discovery, error = invoke('--zabbix-discovery', '--json')
+    assert code == 1 and discovery == ''
+    assert error == 'Monitoring snapshot incomplete; Zabbix discovery not emitted\n'
+    public_file = destination / 'cgp.prom'
+    code, published_stdout, error = invoke('--metrics', '--metrics-file', str(public_file))
+    assert code == 1 and published_stdout == '' and error == '', (code, error)
+    assert stat.S_IMODE(public_file.stat().st_mode) == 0o644
+    published = public_file.read_text()
+    assert 'cgp_manager_collection_success 0\n' in published and published.endswith('\n')
+    for text in (observed, metrics, published):
+        for private in ('PrivateSecureKey', 'SecureCertificate', 'CAChain', 'dummy',
+                        'b2xkLWtleQ==', 'bmV3LWtleQ==', 'A' * 43,
+                        '/etc/cgp-letsencrypt/cloudflare.ini', 'Synthetic installer preservation test'):
+            assert private not in text, 'Monitoring disclosed private source data'
+    for guard in guards:
+        guard.assert_not_called()
+assert private_snapshot() == before, 'Installed monitoring mutated configuration or recovery data'
+assert not (core.STATE / 'domains.json').exists()
+assert not (core.STATE / 'state.json').exists()
+MONITORING_CHECK
+    test "$(sha256sum /tmp/systemctl.log)" = "$before_log"
+    assert_pending_journal
+}
 write_config
 echo 'dns_cloudflare_api_token = dummy' >/etc/cgp-letsencrypt/cloudflare.ini
 chmod 600 /etc/cgp-letsencrypt/cloudflare.ini
@@ -182,6 +295,7 @@ test "$(stat -c %a "$config")" = 600
 test "$(stat -c %a /var/lib/cgp-letsencrypt)" = 700
 test ! -f /tmp/timer-active
 assert_pending_journal
+assert_monitoring_cli
 
 echo '=== clean installation failure restores absent application ==='
 rm -rf "$app" "$launcher" "$certbot_launcher" "$drop" /etc/systemd/system/cgp-letsencrypt.{service,timer}
@@ -241,6 +355,7 @@ grep -q persistent-state /var/lib/cgp-letsencrypt/sentinel
 grep -q '07,19:00:00' "$drop"
 grep -q 'dummy' /etc/cgp-letsencrypt/cloudflare.ini
 assert_pending_journal
+assert_monitoring_cli
 
 echo '=== invalid schedule rejected before modifying files ==='
 cp "$config" /tmp/valid-config
