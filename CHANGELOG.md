@@ -1,21 +1,14 @@
 # Changelog
 
-## 2.1.0 RC1
+## 2.1.0
 
-- Shared UI language and expanded Russian navigation translations.
-- Invalidate stale TLS results before verification.
-- Preserve failed inspection rows in JSON output.
-- Clean up staged credential files on failed configuration commit.
-- Check application syntax before installation.
-
-- Color-coded console status, session TLS results, filters, sorting, help, per-domain history and backup selection.
-
-- Optional curses administration console with domain details, certificate operations, journal and timer controls.
-
-- Optional whiptail setup and post-install configuration editor.
-- Explicit domain opt-in for new installations.
-- Stage credentials and settings before save; read-only connectivity tests.
-
+- Optional whiptail setup and curses administration console with shared Russian/English navigation, domain details, TLS verification, sorting, filters, history, backup selection and timer controls.
+- Explicit domain opt-in for new interactive installations, staged credentials and atomic configuration save.
+- Configurable TLS endpoints, SMTP notifications and twice-daily renewal schedule.
+- Validate rollback backup PKI, key matching, DER chain and trust before writes; improve recovery on handled errors and interruption.
+- Serialize configuration loading and installation with the global lock; restore previous application, configuration and units on handled upgrade failures.
+- Keep read-only diagnostics free from notification and state writes; preserve failure rows and invalidate stale TLS results.
+- 188 unit tests, strict 100% line/branch coverage gate, isolated installer integration checks against 2.0.1.
 
 ## 2.0.1
 
