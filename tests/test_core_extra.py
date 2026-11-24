@@ -278,3 +278,8 @@ class SmallModuleTests(unittest.TestCase):
     def test_malformed_listener_port(self):
         with patch.object(c,'run',return_value=b'LISTEN 0 100 127.0.0.1:invalid users:(("CGServer",pid=1))\n'):
             self.assertEqual(c.discover_listeners(),[])
+
+    def test_truncated_listener_line(self):
+        data=b'"CGServer"\nLISTEN "CGServer"\nLISTEN 0 100 127.0.0.1:443 users:(("CGServer",pid=1))\n'
+        with patch.object(c,'run',return_value=data):
+            self.assertEqual(c.discover_listeners(),[{'port':443,'starttls':None}])
