@@ -18,13 +18,29 @@
 - [x] Add strict explicit/effective readiness diagnostics, bounded full-response parsing and refusal before issuance; repeat provenance checks around new deployment and in-process rollback writes. See docs/BOOTSTRAP.md.
 - [ ] Enable safe bootstrap when previous fields are missing/inherited/empty only after field-specific deletion/cascade, restoration and TLS semantics are verified on a disposable CGP instance. Current diagnostics do not enable bootstrap writes.
 - [x] Implement CAA/DNSSEC-evidence/delegation checks, read-only DNS diagnostics and opt-in adaptive propagation with a proper Certbot authenticator, server-bound TXT ownership receipts and supervised cleanup. See docs/DNS.md.
+- [x] Review DNS recovery uniqueness and process lifetime, add regression tests for incomplete reconciliation and interrupted supervision, and define separate DNS/CGP staging acceptance evidence. See checkpoint 8 and docs/STAGING.md.
 - [ ] Validate the new DNS path against disposable Cloudflare/ACME staging accounts and lab domains, including renewal migration, before RC/production use.
 - [x] Detect unknown/manual certificate changes, block all subsequent domain mutations while any transaction remains pending, and keep pending snapshots outside backup pruning.
 - [x] Complete ownership/permission validation for private state, lock, configuration, credentials, history, journals and existing backups. Reject unsafe paths before normal CLI/TUI/installer side effects; no automatic permission repair. See docs/STORAGE.md.
 - [x] Implement operator-assisted resolution: exact-preview confirmation, private authorization/completion evidence, incomplete-decision guard and explicit retry without claiming TLS success. See docs/RESOLUTION.md and checkpoint 5 evidence below.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 7 (`2.2.0.dev4`): **726 tests passed in each of two local dependency
+Checkpoint 8 (`2.2.0.dev5`) addresses a reproduced incomplete-pagination recovery
+defect, process/signal/descriptor review findings, and explicit staging selection
+for manager dry-run despite a custom Certbot server setting, with tests
+accompanying each change. The workflow now defines two dependency profiles, four
+installer
+combinations (Ubuntu 24.04 / Debian 13 × baseline 2.0.1 / 2.1.0), and package,
+using stable Node 24 Actions pinned by full commit SHA. CONTRIBUTING.md,
+SECURITY.md and docs/STAGING.md record test commands, boundaries and exact
+external acceptance cases. Both complete local profiles passed **740 tests /
+3544 statements / 1430 branches / 100%**, with **14 additional tests** and zero
+missing/partial. Python compile, shell syntax and diff checks passed. All seven
+implementation CI jobs are still pending for this revision; record the exact
+commit/run after observing their results. DNS-only staging needs no live CGP,
+but still requires allocated lab zones/credentials. Automatic bootstrap remains blocked.
+
+Previous checkpoint 7 (`2.2.0.dev4`): **726 tests passed in each of two local dependency
 profiles**, with **3511 statements / 1422 branches / 100%**, zero missing/partial.
 There are **184 additional tests**. Read-only DNS diagnostics, two HTTPS
 validators, actual parent referrals, CAA wildcard/account rules, opt-in adaptive
@@ -78,7 +94,7 @@ passed tests, both installer baselines and package. Each installer job passed
 18 new unsafe-path refusal cases and preserved pending journals. This follow-up
 documentation commit records the observed result; inspect current-head checks
 when resuming. See DEVELOPMENT.md for exact next steps and remaining limits.
-Operator-assisted resolution was completed in checkpoint 5; checkpoint 7 is active above.
+Operator-assisted resolution was completed in checkpoint 5; checkpoint 8 is active above.
 This remains a development checkpoint, not a production release.
 
 ## 2.3 — Monitoring
@@ -95,6 +111,7 @@ Separate server identities, least privilege, centralized visibility, independent
 
 ## Repository maintenance
 - [ ] License decision by owner; do not assume permission.
-- [ ] SECURITY.md, CONTRIBUTING.md, release automation, dependency/security scanning.
-- [ ] CI matrix for supported Ubuntu/Debian versions; verify before claiming support.
-- [ ] Refresh GitHub Actions versions after the observed Node 20/24 deprecation warnings; retain all five validation jobs.
+- [x] SECURITY.md and CONTRIBUTING.md with actual reporting/trust boundaries and isolated test commands.
+- [ ] Release automation and dependency/security scanning.
+- [ ] Verify the expanded installer CI matrix on Ubuntu 24.04 and Debian 13; container checks do not establish full deployment support.
+- [x] Refresh GitHub Actions to verified stable Node 24 revisions pinned by commit SHA; retain both strict dependency profiles and all upgrade baselines.

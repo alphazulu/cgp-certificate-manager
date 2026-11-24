@@ -279,7 +279,7 @@ def issue(cfg,d,z,args):
         cmd+=['--manual','--preferred-challenges','dns','--manual-auth-hook','/usr/local/sbin/cgp-letsencrypt --hook-auth','--manual-cleanup-hook','/usr/local/sbin/cgp-letsencrypt --hook-cleanup']
     cmd+=['--force-renewal' if changed or args.force_renew else '--keep-until-expiring']
     for n in d['names']: cmd+=['-d',n]
-    if args.dry_run: cmd+=['--dry-run']
+    if args.dry_run: cmd+=['--dry-run','--server','https://acme-staging-v02.api.letsencrypt.org/directory']
     if options['mode']=='adaptive':
         from . import certbot_runner
         certbot_runner.run(cmd,cfg,lock_fd=getattr(args,'operation_lock_fd',None))

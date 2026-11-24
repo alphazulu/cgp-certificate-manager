@@ -1,8 +1,9 @@
 """Run adaptive Certbot under the manager lock and supervise its process group."""
 import argparse
-import fcntl
+from contextlib import contextmanager
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -22,7 +23,15 @@ def _check_lock(fd):
         actual = os.fstat(fd)
         if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
             raise core.Error('Adaptive Certbot requires the manager operation lock')
-    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    # Linux fdinfo reports locks associated with this open file description.
+    # Acquiring flock here would also accept a fresh, previously unlocked FD.
+    try:
+        information = Path('/proc/self/fdinfo/' + str(fd)).read_text(encoding='ascii')
+    except (OSError, UnicodeError):
+        raise core.Error('Cannot verify the manager lock through Linux procfs') from None
+    if not re.search(r'^lock:\s+\d+:\s+FLOCK\s+ADVISORY\s+WRITE\s+\d+\s+'
+                     r'[0-9a-fA-F]+:[0-9a-fA-F]+:\d+\s+0\s+EOF$', information, re.M):
+        raise core.Error('Adaptive Certbot requires an already held exclusive manager lock')
 
 
 def require_context():
@@ -81,8 +90,42 @@ def _quiesce(process):
     raise core.Error('Adaptive Certbot did not stop; DNS cleanup remains pending')
 
 
-def _interrupted(signum, frame):
-    raise KeyboardInterrupt
+class _Interrupts:
+    def __init__(self):
+        self.received = False
+
+    def __call__(self, signum, frame):
+        self.received = True
+
+
+@contextmanager
+def _signals():
+    # Never raise asynchronously during child creation or teardown.  Normal
+    # waiting observes this flag within one short pulse and exits safely.
+    interrupts = _Interrupts()
+    previous_term = signal.signal(signal.SIGTERM, interrupts)
+    try:
+        previous_int = signal.signal(signal.SIGINT, interrupts)
+        try:
+            yield interrupts
+        finally:
+            signal.signal(signal.SIGINT, previous_int)
+    finally:
+        signal.signal(signal.SIGTERM, previous_term)
+
+
+def _wait(process, interrupts):
+    deadline = time.monotonic() + 3600
+    while True:
+        if interrupts.received:
+            raise KeyboardInterrupt
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(process.args, 3600)
+        try:
+            return process.wait(timeout=min(0.1, remaining))
+        except subprocess.TimeoutExpired:
+            pass
 
 
 def run(cmd, cfg, lock_fd=None, config_path=None):
@@ -99,25 +142,25 @@ def run(cmd, cfg, lock_fd=None, config_path=None):
     from . import dnsauth
     env = dict(os.environ, CGP_CERTBOT_CONFIG=str(path),
                PYTHONPATH=str(Path(__file__).resolve().parents[1]))
-    previous_handler = signal.signal(signal.SIGTERM, _interrupted)
-    try:
-        process = subprocess.Popen(
-            [sys.executable, '-m', 'cgp_cert_manager.certbot_runner',
-             '--manager-lock-fd', str(lock_fd), *cmd[1:]],
-            env=env, pass_fds=(lock_fd,), stdin=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+    with _signals() as interrupts:
         try:
-            code = process.wait(timeout=3600)
-        finally:
-            _quiesce(process)
-            dnsauth.cleanup_pending(cfg)
-        if code:
-            raise core.Error('Adaptive Certbot failed (' + str(code) + ')')
-    except subprocess.TimeoutExpired:
-        raise core.Error('Adaptive Certbot timed out') from None
-    finally:
-        signal.signal(signal.SIGTERM, previous_handler)
+            process = subprocess.Popen(
+                [sys.executable, '-m', 'cgp_cert_manager.certbot_runner',
+                 '--manager-lock-fd', str(lock_fd), *cmd[1:]],
+                env=env, pass_fds=(lock_fd,), stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            try:
+                code = _wait(process, interrupts)
+            finally:
+                _quiesce(process)
+                dnsauth.cleanup_pending(cfg)
+            if interrupts.received:
+                raise KeyboardInterrupt
+            if code:
+                raise core.Error('Adaptive Certbot failed (' + str(code) + ')')
+        except subprocess.TimeoutExpired:
+            raise core.Error('Adaptive Certbot timed out') from None
 
 
 def _invoke(args, path, fd):

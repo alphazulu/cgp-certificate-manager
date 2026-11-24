@@ -11,8 +11,8 @@ jobs:
       matrix:
         dependencies: [compat, current]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
       - run: python -m compileall -q cgp_cert_manager tests
@@ -22,25 +22,26 @@ jobs:
         if: always()
       - run: python -m coverage xml -o coverage.xml
         if: always()
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: coverage-${{ matrix.dependencies }}
           path: coverage.xml
       - run: bash -n install.sh scripts/install-locked.sh tests/integration/installer.sh
   installer:
-    name: installer (${{ matrix.baseline.version }})
+    name: installer (${{ matrix.image }}, ${{ matrix.baseline.version }})
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
+        image: ['ubuntu:24.04', 'debian:13']
         baseline:
           - version: '2.0.1'
             sha: e335c7cd3a836ae1fa8fdeeaac018f1b79bbaf53
           - version: '2.1.0'
             sha: fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Export baseline ${{ matrix.baseline.version }} and candidate
@@ -50,12 +51,14 @@ jobs:
           mkdir -p "$RUNNER_TEMP/cgp-baseline" "$RUNNER_TEMP/cgp-candidate"
           git archive "$BASELINE_SHA" | tar -x -C "$RUNNER_TEMP/cgp-baseline"
           git archive HEAD | tar -x -C "$RUNNER_TEMP/cgp-candidate"
-      - name: Test installer in disposable Ubuntu container
+      - name: Test installer in disposable ${{ matrix.image }} container
+        env:
+          INSTALLER_IMAGE: ${{ matrix.image }}
         run: |
           docker run --rm \
             -v "$RUNNER_TEMP/cgp-baseline:/baseline:ro" \
             -v "$RUNNER_TEMP/cgp-candidate:/candidate:ro" \
-            ubuntu:24.04 bash -ec '
+            "$INSTALLER_IMAGE" bash -ec '
               apt-get update -qq
               DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-dnspython python3-certbot util-linux
               cp -a /candidate /tmp/candidate-writable
@@ -66,7 +69,7 @@ jobs:
     needs: [tests, installer]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build release archive and SHA-256
         run: |
           version=$(python3 -c 'from cgp_cert_manager import __version__; print(__version__)')
@@ -74,7 +77,7 @@ jobs:
           mkdir -p dist
           git archive --format=tar --prefix="$name/" HEAD | gzip -n > "dist/$name.tar.gz"
           (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256" && sha256sum -c "$name.tar.gz.sha256")
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-package
           path: dist/

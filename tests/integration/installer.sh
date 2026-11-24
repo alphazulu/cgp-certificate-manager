@@ -162,10 +162,17 @@ test -x "$certbot_launcher"
 test "$(stat -c %a "$certbot_launcher")" = 750
 "$certbot_launcher" --version
 python3 - "$app" <<'PLUGIN_DISCOVERY'
+import importlib.metadata
 import sys
 sys.path.insert(0, sys.argv[1])
 from certbot._internal.plugins.disco import PluginsRegistry
+from cgp_cert_manager import __version__, certbot_runner, core, storage
 assert 'cgp-dns' in PluginsRegistry.find_all()
+assert importlib.metadata.version('cgp-certbot-dns') == __version__
+# Exercise the installed interpreter's actual procfs/descriptor contract without
+# starting Certbot or touching the pending provider/CGP recovery fixtures.
+with storage.operation_lock(core.STATE) as lock:
+    certbot_runner._check_lock(lock.fileno())
 PLUGIN_DISCOVERY
 test "$("$launcher" --version)" = "$candidate_version"
 python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == json.load(open(sys.argv[2]))' "$config" /tmp/config.expected

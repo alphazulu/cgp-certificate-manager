@@ -1,6 +1,6 @@
 # DNS preflight and adaptive DNS-01
 
-This describes the unreleased `2.2.0.dev4` development checkpoint. Stable
+This describes the unreleased `2.2.0.dev5` development checkpoint. Stable
 production remains `2.1.0`. The DNS checks do not enable CGP bootstrap writes
 or remove any certificate transaction/readiness gate.
 
@@ -69,6 +69,12 @@ Force renewal, retry and staging do not bypass an enabled DNS gate. Install-only
 and certificate repair do not issue and therefore do not need DNS preflight.
 The gate runs before Certbot, after credential-file validation. It may detect
 DNS faults even when a certificate is not yet due for renewal.
+
+Manager `--dry-run` explicitly supplies the Let's Encrypt staging directory to
+Certbot, so a global `cli.ini` server setting does not redirect this manager test
+to another CA. It still creates DNS challenges and may run configured Certbot
+hooks. The standalone `cgp-certbot` wrapper preserves the server/options supplied
+by its caller; the staging lab commands select their endpoint explicitly.
 
 The installer never changes existing renewal configuration files or forces a
 renewal to select a different plugin. A not-yet-due result does not prove that
@@ -187,7 +193,9 @@ ownership/link/path checks and atomic file/directory fsync rules.
 Intent is durable **before POST**. The returned record ID is durable before
 proceeding. A pre-existing identical TXT is borrowed and never deleted. A lost
 create response is recovered only by finding the exact name/value/ownership
-comment; no blind second POST occurs. A definite validated provider rejection
+comment in a complete, stable listing with unique record IDs; no blind second
+POST occurs. Missing or contradictory pagination cannot establish unique
+ownership and leaves the intent pending. A definite validated provider rejection
 can retire an unused intent; transport failures, ambiguous/server errors and
 an absent result after an uncertain POST keep the receipt pending.
 
@@ -216,11 +224,23 @@ ownership or silence a refusal.
 
 The installed `cgp-certbot` wrapper and manager adaptive launch use the same
 Python/Certbot environment and hold the manager lock. The internal child must
-prove its inherited descriptor names that lock; an environment flag cannot
-bypass locking. The parent starts a separate process group with closed stdin,
-terminates it with bounded TERM/KILL handling on failure, and performs final
-recovery only after the group is gone. If quiescence cannot be established,
-cleanup evidence remains pending. Exact help/version invocations are read-only.
+prove that its descriptor names the private lock file and already carries an
+exclusive whole-file flock. Verification reads Linux `/proc/self/fdinfo`; it
+does not acquire a new lock for a previously unlocked descriptor. Shared,
+unlocked or separately opened descriptors and unavailable procfs are refused.
+This is coordination, not parent authentication against trusted root/same-UID
+code. An environment flag alone cannot establish the context.
+
+The parent starts a separate process group with closed stdin and terminates it
+with bounded TERM/KILL handling on failure. SIGINT/SIGTERM handlers record a
+pending interruption; the ordinary wait observes it within a 0.1-second pulse
+under the existing one-hour budget. They do not raise asynchronously during
+process creation, group shutdown or final cleanup. After cleanup the pending
+interruption is reported, and both prior signal handlers are restored. Repeated
+signals cannot skip quiescence. Final recovery runs only after the group is gone;
+if that cannot be established, cleanup evidence remains pending. SIGKILL and
+power loss still rely on retained evidence and later recovery. Exact help/version
+invocations are read-only.
 
 For standalone renewal of a lineage configured with `cgp-dns`, use the installed
 `cgp-certbot renew` wrapper. The app-local plugin metadata does not install into
@@ -247,6 +267,8 @@ with 100% measured statements and branches. The compatibility requirements file
 is a test fixture, not a recommendation to pin old packages in production.
 Use maintained distribution security updates. Exact observed counts, commits
 and CI runs are recorded in [DEVELOPMENT.md](../DEVELOPMENT.md).
+The [staging acceptance plan](STAGING.md) separates DNS-only lab validation from
+the CGP experiments and records which external cases still need evidence.
 
 - [RFC 8659: CAA](https://www.rfc-editor.org/rfc/rfc8659.html)
 - [RFC 8657: account and method bindings](https://www.rfc-editor.org/rfc/rfc8657.html)
@@ -259,3 +281,4 @@ and CI runs are recorded in [DEVELOPMENT.md](../DEVELOPMENT.md).
 - [Certbot renewal/reconfiguration](https://eff-certbot.readthedocs.io/en/stable/using.html)
 - [Cloudflare denied-response envelope](https://developers.cloudflare.com/changelog/post/2026-08-20-contextual-403s/)
 - [Cloudflare TXT representation](https://developers.cloudflare.com/dns/manage-dns-records/reference/dns-record-types/#txt)
+- [Linux descriptor and lock information](https://docs.kernel.org/filesystems/proc.html): `/proc/self/fdinfo` verifies the held flock.

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.0.dev5 — unreleased
+
+- Require a complete, stable provider listing with unique valid record IDs before reconciling an uncertain TXT creation. Inconsistent or truncated pagination retains the intent without deleting a record or retiring its receipt; add regression tests with the fix.
+- Harden the adaptive Certbot supervisor against SIGINT/SIGTERM during process creation and repeated interruption during shutdown. Require evidence of an existing exclusive lock on the supplied descriptor, with real subprocess/lock regressions and fail-closed Linux procfs checks.
+- Make manager `--dry-run` explicitly select the Let's Encrypt staging directory, including when Certbot's global configuration specifies another server. Test both authenticator paths and actual argument parsing; standalone wrapper commands keep their explicit server semantics.
+- Pin GitHub Actions to reviewed stable Node 24 revisions and extend installer CI to Ubuntu 24.04 and Debian 13 for both upgrade baselines. Preserve both dependency profiles and the strict 100% statement/branch gate; exact observed CI results are recorded in DEVELOPMENT.md.
+- Keep app-local Certbot metadata and the manager version consistent, checked by the real discovery test.
+- Add CONTRIBUTING.md, SECURITY.md and a separate DNS/CGP staging acceptance plan with explicit pending external evidence. Update the roadmap and continuation notes; automatic bootstrap and production release remain separate open steps.
+- Both complete local dependency profiles passed 740 tests, 3544 statements and 1430 branches at 100%, with 14 additional tests and no missing/partial paths. Python compilation, shell syntax and diff checks passed; exact CI evidence is recorded in DEVELOPMENT.md after execution.
+
 ## 2.2.0.dev4 — unreleased
 
 - Add read-only `--dns-check`, including Let's Encrypt CAA parent/alias/wildcard policy, explicit DNSSEC evidence from two HTTPS validators and actual parent/child/challenge delegation checks. Refuse ambiguous, unavailable or conflicting identifiers before Certbot.

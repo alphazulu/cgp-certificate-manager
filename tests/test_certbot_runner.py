@@ -1,6 +1,7 @@
 """Adaptive Certbot lock context and process cleanup ordering."""
 import contextlib
 import ctypes
+import fcntl
 import io
 import os
 from pathlib import Path
@@ -41,6 +42,8 @@ class CertbotRunnerTests(unittest.TestCase):
         self.process = Mock(pid=87654)
         self.process.wait.return_value = 0
         self.process.poll.return_value = 0
+        self.real_popen = subprocess.Popen
+        self.real_group_exists = runner._group_exists
         self.popen = self.stack.enter_context(patch.object(runner.subprocess, 'Popen', return_value=self.process))
         self.group = self.stack.enter_context(patch.object(runner, '_group_exists', return_value=False))
 
@@ -80,6 +83,42 @@ class CertbotRunnerTests(unittest.TestCase):
         self.assertIn('operation lock', self.errors.getvalue())
         self.certbot.assert_not_called()
         self.cleanup.assert_not_called()
+
+    def test_unlocked_shared_and_separately_opened_fds_cannot_authorize_context(self):
+        storage.ensure_private_directory(self.state)
+        with storage.open_private(self.state / 'run.lock', 'a', create=True) as unlocked:
+            self.assertEqual(runner.main(['--manager-lock-fd', str(unlocked.fileno()), 'renew']), 1)
+            with storage.operation_lock(self.state):
+                with self.assertRaisesRegex(core.Error, 'already held'):
+                    runner._check_lock(unlocked.fileno())
+            fcntl.flock(unlocked, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            with self.assertRaisesRegex(core.Error, 'already held'):
+                runner._check_lock(unlocked.fileno())
+        self.certbot.assert_not_called()
+        self.cleanup.assert_not_called()
+
+    def test_unavailable_procfs_fails_closed_without_acquiring_lock(self):
+        with storage.operation_lock(self.state) as lock:
+            with patch.object(runner.Path, 'read_text', side_effect=OSError('PRIVATE_SENTINEL')):
+                with self.assertRaisesRegex(core.Error, 'Linux procfs') as error:
+                    runner._check_lock(lock.fileno())
+            self.assertNotIn('PRIVATE_SENTINEL', str(error.exception))
+            self.assert_locked()
+
+    def test_real_subprocess_verifies_inherited_exclusive_lock(self):
+        code = ('import sys\nfrom pathlib import Path\n'
+                'from cgp_cert_manager import core,certbot_runner\n'
+                'core.STATE=Path(sys.argv[1])\n'
+                'certbot_runner._check_lock(int(sys.argv[2]))\n'
+                'print("verified")\n')
+        with storage.operation_lock(self.state) as lock:
+            process = self.real_popen([sys.executable, '-c', code, str(self.state), str(lock.fileno())],
+                                      pass_fds=(lock.fileno(),), stdin=subprocess.DEVNULL,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            stdout, stderr = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 0, stderr)
+            self.assertEqual(stdout.strip(), 'verified')
+            self.assert_locked()
 
     def test_environment_and_inherited_process_state_do_not_authorize_plugin(self):
         with self.assertRaises(core.Error):
@@ -213,32 +252,137 @@ class CertbotRunnerTests(unittest.TestCase):
 
     def test_parent_restores_signal_handler_on_launch_failure(self):
         original_handler = signal.getsignal(signal.SIGTERM)
+        original_int = signal.getsignal(signal.SIGINT)
         self.popen.side_effect = OSError('launch failed')
         with self.assertRaises(OSError): runner.run(['certbot', 'renew'], self.cfg)
         self.assertIs(signal.getsignal(signal.SIGTERM), original_handler)
+        self.assertIs(signal.getsignal(signal.SIGINT), original_int)
         self.cleanup.assert_not_called()
         self.popen.reset_mock()
         with patch.object(runner.signal, 'signal', side_effect=ValueError('not main thread')):
             with self.assertRaises(ValueError): runner.run(['certbot', 'renew'], self.cfg)
         self.popen.assert_not_called()
 
+    def test_partial_signal_handler_setup_restores_previous_handler(self):
+        original_term = signal.getsignal(signal.SIGTERM)
+        original_int = signal.getsignal(signal.SIGINT)
+        real_signal = signal.signal
+        def refuse_int(signum, handler):
+            if signum == signal.SIGINT:
+                raise ValueError('handler setup failed')
+            return real_signal(signum, handler)
+        with patch.object(runner.signal, 'signal', side_effect=refuse_int):
+            with self.assertRaises(ValueError):
+                runner.run(['certbot', 'renew'], self.cfg)
+        self.assertIs(signal.getsignal(signal.SIGTERM), original_term)
+        self.assertIs(signal.getsignal(signal.SIGINT), original_int)
+        self.popen.assert_not_called()
+
     def test_nonzero_timeout_and_signal_wait_for_quiescence_before_cleanup(self):
         for outcome, expected in ((2, core.Error),
-                                  (subprocess.TimeoutExpired('certbot', 3600), core.Error),
                                   (KeyboardInterrupt(), KeyboardInterrupt)):
             with self.subTest(outcome=type(outcome).__name__):
                 self.process.wait.side_effect = [outcome, 0]
                 self.cleanup.reset_mock()
                 with self.assertRaises(expected): runner.run(['certbot', 'renew'], self.cfg)
                 self.cleanup.assert_called_once_with(self.cfg)
-        with self.assertRaises(KeyboardInterrupt): runner._interrupted(signal.SIGTERM, None)
+        self.cleanup.reset_mock()
+        self.process.wait.side_effect = None
+        with patch.object(runner.time, 'monotonic', side_effect=[0, 3601]):
+            with self.assertRaisesRegex(core.Error, 'timed out'):
+                runner.run(['certbot', 'renew'], self.cfg)
+        self.cleanup.assert_called_once_with(self.cfg)
+
+    def test_wait_pulses_preserve_total_deadline_and_normal_completion(self):
+        self.process.wait.side_effect = [subprocess.TimeoutExpired('certbot', 0.1), 0]
+        with patch.object(runner.time, 'monotonic', side_effect=[0, 0, 3599.98]):
+            self.assertEqual(runner._wait(self.process, runner._Interrupts()), 0)
+        self.assertAlmostEqual(self.process.wait.call_args_list[0].kwargs['timeout'], 0.1)
+        self.assertAlmostEqual(self.process.wait.call_args_list[1].kwargs['timeout'], 0.02)
+
+    def test_signal_during_cleanup_is_deferred_until_cleanup_completes(self):
+        original_term = signal.getsignal(signal.SIGTERM)
+        original_int = signal.getsignal(signal.SIGINT)
+        events = []
+        def cleanup(cfg):
+            events.append('cleanup started')
+            os.kill(os.getpid(), signal.SIGINT)
+            self.assert_locked()
+            events.append('cleanup finished')
+        self.cleanup.side_effect = cleanup
+        self.assertEqual(runner.main(['renew']), 130)
+        self.assertEqual(events, ['cleanup started', 'cleanup finished'])
+        self.assertIs(signal.getsignal(signal.SIGTERM), original_term)
+        self.assertIs(signal.getsignal(signal.SIGINT), original_int)
+
+    def test_signal_during_launch_keeps_real_child_supervised(self):
+        spawned = []
+        real_killpg = os.killpg
+        def launch_then_signal(command, **kwargs):
+            child = self.real_popen([sys.executable, '-c', 'import time; time.sleep(60)'],
+                                    start_new_session=True, stdin=subprocess.DEVNULL,
+                                    pass_fds=kwargs['pass_fds'])
+            spawned.append(child)
+            os.kill(os.getpid(), signal.SIGTERM)
+            return child
+        try:
+            with patch.object(runner.subprocess, 'Popen', side_effect=launch_then_signal), \
+                    patch.object(runner, '_group_exists', self.real_group_exists):
+                with self.assertRaises(KeyboardInterrupt):
+                    runner.run(['certbot', 'renew'], self.cfg)
+            self.assertIsNotNone(spawned[0].poll())
+            self.cleanup.assert_called_once_with(self.cfg)
+        finally:
+            for child in spawned:
+                if child.poll() is None:
+                    with contextlib.suppress(ProcessLookupError): real_killpg(child.pid, signal.SIGKILL)
+                child.wait(timeout=3)
+
+    def test_second_signal_cannot_abandon_real_term_ignoring_child(self):
+        ready = self.root / 'child-ready'
+        child = self.real_popen([sys.executable, '-c',
+                                'import signal,time,sys; from pathlib import Path; '
+                                'signal.signal(signal.SIGTERM,signal.SIG_IGN); '
+                                'Path(sys.argv[1]).touch(); time.sleep(60)', str(ready)],
+                               start_new_session=True, stdin=subprocess.DEVNULL)
+        original_wait = child.wait
+        real_killpg = os.killpg
+        first = True
+        def interrupted_wait(timeout):
+            nonlocal first
+            if first:
+                first = False
+                os.kill(os.getpid(), signal.SIGTERM)
+            return original_wait(timeout=timeout)
+        def interrupt_teardown(pid, sig):
+            real_killpg(pid, sig)
+            if sig == signal.SIGTERM:
+                os.kill(os.getpid(), signal.SIGTERM)
+        try:
+            deadline = time.monotonic() + 3
+            while not ready.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(ready.exists())
+            with patch.object(runner.subprocess, 'Popen', return_value=child), \
+                    patch.object(runner, '_group_exists', self.real_group_exists), \
+                    patch.object(runner.os, 'killpg', side_effect=interrupt_teardown), \
+                    patch.object(runner, '_STOP_TIMEOUT', 0.05), \
+                    patch.object(child, 'wait', side_effect=interrupted_wait):
+                with self.assertRaises(KeyboardInterrupt):
+                    runner.run(['certbot', 'renew'], self.cfg)
+            self.assertIsNotNone(child.poll())
+            self.cleanup.assert_called_once_with(self.cfg)
+        finally:
+            if child.poll() is None:
+                with contextlib.suppress(ProcessLookupError): real_killpg(child.pid, signal.SIGKILL)
+            original_wait(timeout=3)
 
     def test_normal_leader_exit_still_stops_live_process_group_before_cleanup(self):
         self.group.side_effect = [True, True, False]
         events = []
         self.cleanup.side_effect = lambda cfg: events.append('cleanup')
         with patch.object(runner.os, 'killpg', side_effect=lambda pid, sig: events.append(sig)), \
-                patch.object(runner.time, 'monotonic', side_effect=[0, 1]), \
+                patch.object(runner.time, 'monotonic', side_effect=[0, 0, 0, 1]), \
                 patch.object(runner.time, 'sleep') as sleep:
             runner.run(['certbot', 'renew'], self.cfg)
         self.assertEqual(events, [signal.SIGTERM, 'cleanup'])
@@ -247,14 +391,14 @@ class CertbotRunnerTests(unittest.TestCase):
     def test_term_ignored_escalates_to_kill_and_unresolved_group_preserves_ledger(self):
         self.group.side_effect = [True, True, False]
         with patch.object(runner.os, 'killpg') as kill, \
-                patch.object(runner.time, 'monotonic', side_effect=[0, 11, 12]):
+                patch.object(runner.time, 'monotonic', side_effect=[0, 0, 0, 11, 12]):
             runner.run(['certbot', 'renew'], self.cfg)
         self.assertEqual(kill.call_args_list, [call(self.process.pid, signal.SIGTERM), call(self.process.pid, signal.SIGKILL)])
         self.cleanup.assert_called_once()
         self.cleanup.reset_mock()
         self.group.side_effect = None
         self.group.return_value = True
-        with patch.object(runner.os, 'killpg'), patch.object(runner.time, 'monotonic', side_effect=[0, 11, 12, 23]):
+        with patch.object(runner.os, 'killpg'), patch.object(runner.time, 'monotonic', side_effect=[0, 0, 0, 11, 12, 23]):
             with self.assertRaisesRegex(core.Error, 'cleanup remains pending'):
                 runner.run(['certbot', 'renew'], self.cfg)
         self.cleanup.assert_not_called()

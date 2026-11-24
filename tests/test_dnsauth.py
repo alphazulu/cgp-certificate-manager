@@ -269,6 +269,110 @@ class DNSAuthTests(unittest.TestCase):
         self.assertEqual(self.only_receipt()[1]["phase"], "borrowed")
         self.assertEqual([item[4]["page"] for item in self.api.calls], [1, 2])
 
+    def test_uncertain_post_requires_complete_stable_filtered_lookup(self):
+        def lost_response(*args, **kwargs):
+            result = self.api(*args, **kwargs)
+            if kwargs.get("method") == "POST":
+                raise OSError("PRIVATE_RESPONSE")
+            return result
+        with patch.object(core, "cf", side_effect=lost_response):
+            self.assert_safe_error(self.create)
+        path, receipt = self.only_receipt()
+        before = path.read_bytes()
+        first = copy.deepcopy(next(iter(self.api.records.values())))
+        self.api.add(owner=receipt["owner"])
+        def truncated(credentials, endpoint, method="GET", params=None, data=None):
+            if params:
+                values = [first] if params["page"] == 1 else []
+                return {"result": values,
+                        "result_info": {"page": params["page"], "count": len(values),
+                                        "total_count": 2 if params["page"] == 1 else 1,
+                                        "total_pages": 2 if params["page"] == 1 else 1}}
+            return self.api(credentials, endpoint, method, params, data)
+        with patch.object(core, "cf", side_effect=truncated):
+            self.assert_safe_error(self.session.cleanup)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(len(self.api.records), 2)
+        self.assertFalse(any(item[3] == "DELETE" for item in self.api.calls))
+
+    def test_uncertain_post_rejects_missing_or_contradictory_listing_evidence(self):
+        def lost_response(*args, **kwargs):
+            response = self.api(*args, **kwargs)
+            if kwargs.get("method") == "POST":
+                raise OSError("PRIVATE_RESPONSE")
+            return response
+        with patch.object(core, "cf", side_effect=lost_response):
+            self.assert_safe_error(self.create)
+        path, _ = self.only_receipt()
+        before = path.read_bytes()
+        remote = copy.deepcopy(next(iter(self.api.records.values())))
+        info = {"page": 1, "count": 1, "total_count": 1, "total_pages": 1}
+        responses = [{"result": [remote]},
+                     *({"result": [remote], "result_info": {k: v for k, v in info.items() if k != missing}}
+                       for missing in info),
+                     *({"result": [remote], "result_info": dict(info, **change)} for change in
+                       ({"page": 2}, {"page": True}, {"count": True}, {"count": 0},
+                        {"total_count": None}, {"total_count": -1}, {"total_count": True},
+                        {"total_count": 0}, {"total_count": 2},
+                        {"total_pages": True}, {"total_pages": 0}, {"total_pages": 101})),
+                     {"result": [remote, remote],
+                      "result_info": dict(info, count=2, total_count=2)},
+                     {"result": [remote, {"id": "not-an-id"}],
+                      "result_info": dict(info, count=2, total_count=2)}]
+        for response in responses:
+            with self.subTest(response=response), patch.object(core, "cf", return_value=response) as requests:
+                self.assert_safe_error(self.session.cleanup)
+                requests.assert_called_once()
+                self.assertEqual(requests.call_args.kwargs["params"]["page"], 1)
+            self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(len(self.api.records), 1)
+        self.assertFalse(any(item[3] == "DELETE" for item in self.api.calls))
+
+    def test_uncertain_post_rejects_changed_page_totals_and_page_identity(self):
+        def lost_response(*args, **kwargs):
+            response = self.api(*args, **kwargs)
+            if kwargs.get("method") == "POST":
+                raise OSError("PRIVATE_RESPONSE")
+            return response
+        with patch.object(core, "cf", side_effect=lost_response):
+            self.assert_safe_error(self.create)
+        path, _ = self.only_receipt()
+        before = path.read_bytes()
+        remote = copy.deepcopy(next(iter(self.api.records.values())))
+        foreign = self.api.add(value=OTHER_VALUE)
+        for change in ({"total_pages": 1}, {"total_count": 3}, {"page": 1}):
+            def changing(credentials, endpoint, method="GET", params=None, data=None):
+                page = params["page"]
+                info = {"page": page, "count": 1, "total_count": 2, "total_pages": 2}
+                if page == 2:
+                    info.update(change)
+                return {"result": [remote if page == 1 else foreign], "result_info": info}
+            with self.subTest(change=change), patch.object(core, "cf", side_effect=changing) as requests:
+                self.assert_safe_error(self.session.cleanup)
+                self.assertEqual([call.kwargs["params"]["page"] for call in requests.call_args_list], [1, 2])
+            self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(len(self.api.records), 2)
+        self.assertFalse(any(item[3] == "DELETE" for item in self.api.calls))
+
+    def test_uncertain_post_recovers_unique_owner_from_complete_multiple_pages(self):
+        def lost_response(*args, **kwargs):
+            response = self.api(*args, **kwargs)
+            if kwargs.get("method") == "POST":
+                raise OSError("PRIVATE_RESPONSE")
+            return response
+        with patch.object(core, "cf", side_effect=lost_response):
+            self.assert_safe_error(self.create)
+        owned_key, owned = self.api.records.popitem()
+        foreign = [self.api.add(value=OTHER_VALUE), self.api.add(value=VALUE)]
+        self.api.records[owned_key] = owned
+        self.api.page_size = 1
+        self.api.calls.clear()
+        dnsauth.cleanup_pending(self.cfg)
+        self.assertEqual([item[4]["page"] for item in self.api.calls if item[4]], [1, 2, 3])
+        self.assertEqual([item[2] for item in self.api.calls if item[3] == "DELETE"], [owned["id"]])
+        self.assertEqual(list(self.api.records.values()), foreign)
+        self.assertEqual(self.receipts(), {})
+
     def test_invalid_list_responses_do_not_create_any_record(self):
         for response in ("PRIVATE_RESPONSE", {"result": {}}, {"result": [None]},
                          {"result": [], "result_info": None},

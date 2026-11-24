@@ -2,7 +2,90 @@
 
 Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 7
+## Current handoff — checkpoint 8
+
+- Development version: **`2.2.0.dev5`**, draft PR
+  [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
+- Starting HEAD: `2f89fe1d28595ed18808e1f5b163ad09bb17ea1c`, clean on resume.
+  Its [CI 45382611822](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45382611822)
+  passed all five previous jobs, with 726 tests / 3511 statements / 1422 branches
+  / 100% in both dependency profiles. That historical run does not validate the
+  changes in this checkpoint.
+- Targeted review found a concrete recovery defect: a changing/truncated filtered
+  Cloudflare listing could look like one uniquely owned record after an uncertain
+  POST. Recovery could then delete that record and retire the receipt while a
+  second owned record remained. Intent reconciliation now requires the same
+  complete, stable pagination and unique valid IDs as absence verification.
+  Four new regression tests cover refusal before deletion and successful
+  multi-page recovery. Borrow/create lookup retains its distinct non-deletion
+  contract.
+- Targeted process review reproduced interruption during Popen and repeated
+  interruption during shutdown leaving a child alive. The supervisor now
+  defers SIGINT/SIGTERM through creation, bounded quiescence and cleanup
+  while interrupting normal waiting. Descriptor validation now requires an existing
+  exclusive whole-file flock through Linux fdinfo rather than acquiring a new
+  lock for an unprotected internal invocation. Real process/signal/descriptor
+  tests accompany the fix. This is coordination, not authentication against
+  trusted root or same-UID code.
+- Staging-plan review found that a global Certbot custom-server setting can
+  override the staging default of `--dry-run`. Manager dry-run now explicitly
+  selects the Let's Encrypt staging directory for both authenticator paths;
+  command and real-parser regressions verify the selection without ACME calls.
+  Ordinary issuance and arbitrary standalone wrapper commands keep their prior
+  server-selection contract. Hook configuration remains an explicit lab concern.
+- CI is configured for **seven jobs**: two dependency profiles, four installer
+  combinations (Ubuntu 24.04 / Debian 13 × baseline 2.0.1 / 2.1.0), and package.
+  Actions are pinned to verified stable Node 24 commits: checkout v7.0.1
+  `3d3c42e5aac5ba805825da76410c181273ba90b1`, setup-python v7.1.0
+  `6d4fd22b20465ccc0f7354476588e8df7c9ca0e0`, upload-artifact v7.0.2
+  `cf430e030ddbb5b0abf93d22962f4752f3646cd9`. The full coverage gates and package
+  dependencies remain in place. Installed-context checks include the real
+  descriptor/procfs contract and metadata version. Actual container results are
+  pending CI; Docker is unavailable locally. The systemctl stub verifies installer
+  sequencing and recovery, not a live systemd or CGP deployment.
+- Added [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and
+  [docs/STAGING.md](docs/STAGING.md). The latter separates a DNS-only lab using
+  the supervised wrapper from the CGP experiments and keeps every external
+  acceptance case explicitly pending. No reporting address, enabled GitHub
+  security setting, support SLA or license has been invented.
+- App-local plugin metadata moves with version 2.2.0.dev5. The real entry-point
+  discovery test verifies one application distribution and matching manager /
+  metadata versions.
+- Both complete local profiles passed **740 tests / 3544 statements / 1430
+  branches / 100%**, zero missing statements and zero partial branches, with
+  successful `--fail-under=100`. Compat (Certbot/ACME 2.9.0, dnspython 2.6.1)
+  took 19.074 seconds; current (Certbot/ACME 5.10.0, dnspython 2.9.2) took 18.731
+  seconds. Both used Python 3.12 / coverage 7.10.7. **14 additional tests**
+  accompany the fixes, and the metadata regression is extended. Python
+  compilation, installer shell syntax, documentation shell examples/relative
+  links and `git diff --check` passed. No exclusions or lowered thresholds.
+- Implementation CI is **pending** for this source revision. Record the exact
+  implementation commit/run only after all seven jobs finish. Docker is not
+  available locally; external Cloudflare/ACME/CGP cases remain unexecuted.
+- Stable main remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / **2.1.0**.
+  No merge, release, production DNS/ACME/CGP probe or deployment is part of this
+  checkpoint. Automatic bootstrap still requires the disposable CGP experiments.
+
+### Resume from checkpoint 8
+
+1. Inspect actual branch HEAD, working tree, draft PR and checks. Require all
+   seven jobs for the current revision; do not infer a pass from checkpoint 7.
+2. Preserve the pagination refusal and process/descriptor regression tests.
+   Run complete compat/current coverage independently as described in
+   CONTRIBUTING.md. Keep unexecuted environment checks clearly separate.
+3. Execute the DNS-only staging track when a disposable VM, allocated test zones
+   and scoped Cloudflare credentials are available. Follow docs/STAGING.md;
+   do not collect live secrets or raw receipts in the repository. A real CGP
+   instance is not required for the standalone authenticator track.
+4. For manager discovery/deployment/bootstrap, provision the separate disposable
+   CGP lab and record its exact build and permissions. The field-removal and TLS
+   experiments in docs/BOOTSTRAP.md remain prerequisites for a new snapshot kind.
+5. Keep unknown POST outcomes pending. A future abandonment mechanism requires
+   an explicit evidence/authorization design; deleting a receipt is not recovery.
+6. Finish the remaining external evidence and release review, then record an
+   explicit maintainer decision for merge/release and production validation.
+
+## Checkpoint 7 — DNS implementation (historical)
 
 - Development version: **`2.2.0.dev4`**, draft PR [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
 - Starting HEAD: `f7c50dccf94aa4a8f00fa39ce5dbb47276a5188a`, clean on resume;

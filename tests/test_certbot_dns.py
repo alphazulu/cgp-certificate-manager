@@ -19,7 +19,7 @@ from certbot import errors
 from certbot._internal.auth_handler import AuthHandler
 from certbot._internal.plugins.disco import PluginsRegistry
 
-from cgp_cert_manager import caa, certbot_dns, certbot_runner, core, dnsauth, dnschecks, storage
+from cgp_cert_manager import __version__, caa, certbot_dns, certbot_runner, core, dnsauth, dnschecks, storage
 from test_dnsauth import FakeCloudflare, VALUE, OTHER_VALUE, ZONE, OTHER_ZONE
 
 
@@ -77,6 +77,11 @@ class CertbotDNSTests(unittest.TestCase):
         return handler, acme, order, poll
 
     def test_entrypoint_is_discovered_by_certbot_and_both_metadata_readers(self):
+        application = Path(certbot_dns.__file__).resolve().parents[1]
+        distributions = [distribution for distribution in importlib.metadata.distributions(path=[str(application)])
+                         if distribution.metadata["Name"] == "cgp-certbot-dns"]
+        self.assertEqual(len(distributions), 1)
+        self.assertEqual(distributions[0].version, __version__)
         entries = [entry for entry in importlib.metadata.entry_points(group="certbot.plugins")
                    if entry.name == "cgp-dns"]
         self.assertEqual(len(entries), 1)

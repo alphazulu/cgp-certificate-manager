@@ -115,7 +115,8 @@ def _matches(remote, receipt, owned=False):
             and (not owned or remote.get("comment") == receipt["owner"]))
 
 
-def _listed(receipt, exact_name=True):
+def _listed(receipt, exact_name=True, require_complete=False):
+    require_complete = require_complete or not exact_name
     records = []
     page = 1
     expected_pages = None
@@ -137,7 +138,7 @@ def _listed(receipt, exact_name=True):
                     or (info["page"], info["count"], info["total_count"]) != (1, 0, 0)):
                 raise DNSAuthError("Invalid empty DNS provider listing")
             pages = 1
-        if not exact_name:
+        if require_complete:
             count = info.get("total_count")
             if ("total_pages" not in info or type(info.get("page")) is not int
                     or type(info.get("count")) is not int
@@ -149,7 +150,7 @@ def _listed(receipt, exact_name=True):
             expected_pages, expected_count = pages, count
         records.extend(values)
         if page >= pages:
-            if not exact_name and (len(records) != expected_count or
+            if require_complete and (len(records) != expected_count or
                     len({_record_id(remote) for remote in records}) != len(records)):
                 raise DNSAuthError("Incomplete DNS provider listing")
             return records
@@ -193,7 +194,8 @@ def _cleanup_one(path, record):
         _finish(path, record)
         return
     if record["phase"] == "intent":
-        matches = [remote for remote in _listed(record) if _matches(remote, record, owned=True)]
+        matches = [remote for remote in _listed(record, require_complete=True)
+                   if _matches(remote, record, owned=True)]
         if len(matches) != 1:
             raise DNSAuthError("DNS challenge creation remains unresolved")
         record["record"] = _record_id(matches[0])

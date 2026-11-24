@@ -6,9 +6,12 @@ Automatic Let's Encrypt certificate management for CommuniGate Pro on Linux usin
 
 [Русская документация](README.ru.md)
 
-This branch develops **2.2.0.dev4**. The stable production release is **2.1.0**.
+This branch develops **2.2.0.dev5**. The stable production release is **2.1.0**.
 See [ROADMAP.md](ROADMAP.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for completed work,
 test evidence and the next checkpoint. The development branch is not a release.
+Contributor commands and test boundaries are in [CONTRIBUTING.md](CONTRIBUTING.md).
+See [SECURITY.md](SECURITY.md) for reporting and trust boundaries, and the
+[staging acceptance plan](docs/STAGING.md) for external validation before RC.
 
 ## Why this project exists
 
@@ -29,7 +32,11 @@ A mail server can host many domains and aliases. Renewing certificates manually 
 
 ## Requirements
 
-Ubuntu 24.04 LTS is the tested deployment environment. Python 3, dnspython, Certbot, Cloudflare DNS plugin, OpenSSL, iproute2 and systemd are required. Adaptive mode requires native Certbot in the launcher's Python environment; snap Certbot is not supported for that mode. A running CommuniGate Pro instance with an accessible local HTTP CLI and authorized account is required. Cloudflare API tokens need Zone:Read and DNS:Edit for the managed zones. Other CommuniGate versions and distributions should be tested before production use.
+Ubuntu 24.04 LTS is the tested deployment environment. Python 3, dnspython, Certbot, Cloudflare DNS plugin, OpenSSL, iproute2 and systemd are required. Adaptive mode requires native Certbot in the launcher's Python environment and Linux `/proc/self/fdinfo` for held-lock verification; snap Certbot is not supported for that mode. A running CommuniGate Pro instance with an accessible local HTTP CLI and authorized account is required. Cloudflare API tokens need Zone:Read and DNS:Edit for the managed zones. Other CommuniGate versions and distributions should be tested before production use.
+
+Installer CI covers Ubuntu 24.04 and Debian 13 containers with a systemctl stub.
+See DEVELOPMENT.md for observed results; this is distinct from live systemd,
+CGP and DNS acceptance in the staging plan.
 
     sudo apt update
     sudo apt install certbot python3-certbot-dns-cloudflare python3-dnspython python3 openssl ca-certificates dnsutils iproute2

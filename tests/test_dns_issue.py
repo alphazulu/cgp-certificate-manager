@@ -15,6 +15,7 @@ class DNSIssueTests(unittest.TestCase):
         self.stack = contextlib.ExitStack()
         self.addCleanup(self.stack.close)
         self.root = Path(self.stack.enter_context(tempfile.TemporaryDirectory()))
+        self.stack.enter_context(patch.object(core, 'STATE', self.root / 'state'))
         self.credentials = self.root / 'cloudflare.ini'
         self.credentials.write_text('dns_cloudflare_api_token = dummy\n')
         self.credentials.chmod(0o600)
@@ -94,6 +95,63 @@ class DNSIssueTests(unittest.TestCase):
             self.assertEqual(self.runner.call_args.kwargs['lock_fd'], 42 if extra else None)
         self.assertEqual(self.check.call_count, 2)
         self.process.assert_not_called()
+
+    def test_dry_run_targets_staging_for_fixed_and_adaptive(self):
+        for mode in ('fixed', 'adaptive'):
+            self.cfg['dns_propagation'] = {'mode': mode}
+            for staging in (False, True):
+                with self.subTest(mode=mode, staging=staging):
+                    self.args.dry_run = staging
+                    self.process.reset_mock()
+                    self.runner.reset_mock()
+                    self.issue()
+                    invoked, unused = ((self.runner, self.process) if mode == 'adaptive'
+                                       else (self.process, self.runner))
+                    invoked.assert_called_once()
+                    unused.assert_not_called()
+                    command = invoked.call_args.args[0]
+                    self.assertEqual('--dry-run' in command, staging)
+                    self.assertEqual(command.count('--server'), int(staging))
+                    if staging:
+                        self.assertEqual(command[command.index('--server') + 1],
+                                         'https://acme-staging-v02.api.letsencrypt.org/directory')
+                    self.assertNotIn('--no-directory-hooks', command)
+
+    def test_certbot_parser_uses_staging_despite_custom_cli_configuration(self):
+        from certbot._internal import cli as certbot_cli, constants
+        from certbot._internal.plugins.disco import PluginsRegistry
+
+        config = self.root / 'cli.ini'
+        custom_server = 'https://production.invalid/acme/directory'
+        config.write_text('server = ' + custom_server + '\n')
+        other = self.root / 'other.ini'
+        other.write_text('dns_cloudflare_api_token = dummy_other\n')
+        other.chmod(0o600)
+        self.domain['names'].append('example.net')
+        self.zones['example.net'] = {'credentials': str(other)}
+        plugins = PluginsRegistry.find_all()
+        paths = ['--config-dir', str(self.root / 'certbot'),
+                 '--work-dir', str(self.root / 'work'), '--logs-dir', str(self.root / 'logs')]
+
+        with patch.dict(constants.CLI_DEFAULTS, {'config_files': [str(config)]}), \
+                patch.object(certbot_cli, 'helpful_parser', None):
+            for mode in ('fixed', 'adaptive'):
+                self.cfg['dns_propagation'] = {'mode': mode}
+                for staging in (False, True):
+                    with self.subTest(mode=mode, staging=staging):
+                        self.args.dry_run = staging
+                        self.issue()
+                        invoked = self.runner if mode == 'adaptive' else self.process
+                        command = invoked.call_args.args[0]
+                        parsed = certbot_cli.prepare_and_parse_args(plugins, command[1:] + paths)
+                        self.assertEqual(parsed.dry_run, staging)
+                        self.assertEqual(parsed.server,
+                                         'https://acme-staging-v02.api.letsencrypt.org/directory'
+                                         if staging else custom_server)
+                        self.assertTrue(parsed.directory_hooks)
+        self.assertFalse((self.root / 'state').exists())
+        for directory in ('certbot', 'work', 'logs'):
+            self.assertFalse((self.root / directory).exists())
 
     def test_existing_manual_auth_validates_before_dns_and_cleanup_remains_available(self):
         bad = {'cloudflare_credentials': 'one.ini', 'propagation_seconds': True}
