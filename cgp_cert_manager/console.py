@@ -77,10 +77,14 @@ def identity(row):
 
 def verified_rows(rows, results):
     """Keep verification only for matching certificate identity in this session."""
-    by_name={r['domain']:r for r in results}
+    by_name={r['domain']:r for r in results if isinstance(r,dict) and isinstance(r.get('domain'),str)}
     for row in rows:
         result=by_name.get(row['domain'])
-        if result and identity(result)==identity(row) and row.get('status')=='ready':
+        if result and result.get('tls')=='failed':
+            row['tls']='failed'
+            row['verified_at']=result.get('verified_at',time.strftime('%Y-%m-%d %H:%M:%S'))
+            if result.get('error'): row['verification_error']=result['error']
+        elif result and identity(result)==identity(row) and row.get('status')=='ready':
             if result.get('tls') in ('verified','failed'):
                 row['tls']=result['tls']
                 row['verified_at']=result.get('verified_at',time.strftime('%Y-%m-%d %H:%M:%S'))
@@ -102,7 +106,7 @@ def domain_history(name):
         for line in stream:
             try: item=json.loads(line)
             except ValueError: continue
-            if item.get('domain')==name:
+            if isinstance(item,dict) and item.get('domain')==name:
                 lines.append(str(item.get('time',''))+' '+str(item.get('event','')))
     return list(lines)
 
@@ -292,7 +296,7 @@ class Screen:
     def verify(self,domain=None):
         for row in self.all_rows:
             if domain is None or row['domain']==domain:
-                row.pop('tls',None); row.pop('verified_at',None)
+                row.pop('tls',None); row.pop('verified_at',None); row.pop('verification_error',None)
         cmd=CLI+['--verify','--json']+(['--domain',domain] if domain else [])
         self.w.erase()
         self.put(0,0,'TLS verification',curses.A_BOLD)
@@ -301,7 +305,7 @@ class Screen:
         try:
             code,out,err=capture(cmd,timeout=900)
             results=json.loads(out)
-            if not isinstance(results,list): raise ValueError('Invalid verification response')
+            if not isinstance(results,list) or not all(isinstance(r,dict) and isinstance(r.get('domain'),str) for r in results): raise ValueError('Invalid verification response')
             verified_rows(self.all_rows,results)
             self.apply_view()
             lines=[]

@@ -56,9 +56,15 @@ def main():
     if a.tui:
         from .tui import setup
         return setup()
-    cfg=migrate(load(CONFIG)); STATE.mkdir(mode=0o700,parents=True,exist_ok=True)
-    if a.hook_auth or a.hook_cleanup: hook(cfg,a.hook_cleanup); return 0
-    lock=(STATE/'run.lock').open('a'); fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    STATE.mkdir(mode=0o700,parents=True,exist_ok=True)
+    # Certbot hooks are children of the process holding this lock.
+    if a.hook_auth or a.hook_cleanup:
+        hook(migrate(load(CONFIG)),a.hook_cleanup); return 0
+    with (STATE/'run.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        return locked_main(a,migrate(load(CONFIG)))
+
+def locked_main(a,cfg):
     if a.migrate: atomic(CONFIG,cfg); return 0
     if a.apply_schedule:
         from .schedule import apply
@@ -88,22 +94,34 @@ def main():
         if selected.is_symlink(): raise Error('Invalid backup path')
         old=load(selected); info=installed_info(old)
         if not info or info['days']<1: raise Error('Backup certificate expired or missing')
+        validate_backup(old)
         cur=current(cfg,name)
         if set(cur)!=set(FIELDS): raise Error('Cannot back up current settings')
         saved=backup(name,cur)
         try:
             update(cfg,name,old)
             if not same(current(cfg,name),old): raise Error('Rollback not verified')
-        except Exception:
-            update(cfg,name,cur)
-            if not same(current(cfg,name),cur): raise Error('CRITICAL: rollback recovery failed; backup '+str(saved))
-            raise Error('Rollback failed; previous settings restored')
+        except (Exception, KeyboardInterrupt):
+            try:
+                update(cfg,name,cur)
+                if not same(current(cfg,name),cur): raise Error('Rollback recovery readback mismatch')
+            except Exception:
+                raise Error('CRITICAL: rollback recovery failed; backup '+str(saved)) from None
+            raise Error('Rollback failed; previous settings restored') from None
         history(name,'manual rollback'); return 0
     if a.show_domains: print(json.dumps(load(STATE/'domains.json',[]),indent=2,ensure_ascii=False)); return 0
     state=load(STATE/'state.json',{}); failures=0
-    try: z=zones(cfg); domains=discover(cfg,z); atomic(STATE/'domains.json',domains)
+    read_only=a.dry_run or a.status or a.plan or a.doctor or a.verify or a.verify_listeners
+    try:
+        z=zones(cfg); domains=discover(cfg,z)
+        if not read_only: atomic(STATE/'domains.json',domains)
     except Exception as e:
-        notify(cfg,state,'discovery',type(e).__name__); atomic(STATE/'state.json',state); return 1
+        if read_only:
+            LOG.error('Discovery failed: %s',type(e).__name__)
+        else:
+            notify(cfg,state,'discovery',type(e).__name__)
+            atomic(STATE/'state.json',state)
+        return 1
     if a.sync: print(json.dumps(domains,indent=2,ensure_ascii=False)); return 0
     rows=[]
     for d in domains:

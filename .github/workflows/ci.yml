@@ -11,5 +11,15 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m compileall -q cgp_cert_manager tests
-      - run: python -m unittest discover -s tests -v
+      - run: python -m pip install coverage==7.10.7
+      - run: python -m coverage run --branch --source=cgp_cert_manager -m unittest discover -s tests -v
+      - run: python -m coverage report -m
+        if: always()
+      - run: python -m coverage xml -o coverage.xml
+        if: always()
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage.xml
       - run: bash -n install.sh
