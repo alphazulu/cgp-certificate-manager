@@ -30,8 +30,15 @@ There are **184 additional tests**. Read-only DNS diagnostics, two HTTPS
 validators, actual parent referrals, CAA wildcard/account rules, opt-in adaptive
 propagation, durable cleanup, real Certbot contracts and process-death tests are
 implemented. Existing fixed-mode settings are preserved. Python compilation,
-installer shell syntax and diff checks passed. Implementation CI is pending for
-this source revision; record its exact commit/run after all five jobs pass.
+installer shell syntax and diff checks passed. Implementation
+[`aabe70e`](https://github.com/alphazulu/cgp-certificate-manager/commit/aabe70ef841c4579349d28461e7cd06f755a146f)
+passed [CI 45381705447](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45381705447):
+both dependency profiles (the same 726 / 3511 / 1422 / 100%), both installer
+baselines and package. Each installer
+passed preservation checks for certificate journals, operator evidence and DNS
+receipts, wrapper installation/rollback, invalid DNS settings and 24 unsafe-path
+refusals. This follow-up records the observed implementation run; inspect its
+own current-head checks when resuming.
 See DEVELOPMENT.md for the contract and continuation. No production DNS/ACME/CGP
 probe, merge, release or deployment has been performed. Automatic bootstrap remains blocked.
 
@@ -90,3 +97,4 @@ Separate server identities, least privilege, centralized visibility, independent
 - [ ] License decision by owner; do not assume permission.
 - [ ] SECURITY.md, CONTRIBUTING.md, release automation, dependency/security scanning.
 - [ ] CI matrix for supported Ubuntu/Debian versions; verify before claiming support.
+- [ ] Refresh GitHub Actions versions after the observed Node 20/24 deprecation warnings; retain all five validation jobs.

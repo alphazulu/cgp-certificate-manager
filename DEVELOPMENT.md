@@ -16,10 +16,24 @@ Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 
   Both used Python 3.12 / coverage 7.10.7 and passed `--fail-under=100`.
   **184 additional tests** accompany the changes. Python compilation, installer
   shell syntax and `git diff --check` also passed. No exclusions or lowered gates.
-- Implementation CI is pending for this source revision. Record the exact
-  implementation commit/run after all five GitHub jobs finish; historical green
-  runs do not validate this code. Docker is unavailable locally, so execution
-  of both disposable installer matrices must be verified from CI.
+- Implementation commit:
+  [`aabe70ef841c4579349d28461e7cd06f755a146f`](https://github.com/alphazulu/cgp-certificate-manager/commit/aabe70ef841c4579349d28461e7cd06f755a146f).
+  [CI 45381705447](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45381705447)
+  **passed all five jobs**: tests (compat), tests (current), installer (2.0.1),
+  installer (2.1.0) and package. Both test logs confirm **726 tests / 3511
+  statements / 1422 branches / 100%**, with zero missing/partial and successful
+  `--fail-under=100` (compat 15.105 seconds; current 14.946 seconds). The PR run
+  checks merge preview `7458f666c21e16ab4295a04e02ca566685387311` of the above
+  head with the unchanged stable base. Both installer logs confirm the complete
+  scenarios passed, including 24 unsafe-path refusals per baseline, preservation
+  of pending certificate journals, operator evidence and DNS receipts, wrapper
+  installation/discovery and rollback, and refusal of invalid DNS settings before
+  application/timer changes. Docker is unavailable locally; these execution
+  results come from CI. This documentation follow-up records that observed run;
+  inspect its own current-head checks on resume.
+- CI emitted upstream Actions/Node deprecation warnings, including Node 20
+  actions running under Node 24. All jobs passed; update the action versions as
+  a separate repository-maintenance task, with current-head verification.
 - Stable `main` remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / **2.1.0**.
   This is development only: no merge, release, production DNS/CGP/ACME probe or
   deployment. Automatic CGP bootstrap remains disabled pending a disposable lab.
