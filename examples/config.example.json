@@ -1,0 +1,13 @@
+{
+  "schema_version": 2,
+  "email": "postmaster@example.com",
+  "cloudflare_credentials": "/etc/cgp-letsencrypt/cloudflare.ini",
+  "propagation_seconds": 60,
+  "dns_preflight": true,
+  "communigate": {
+    "url": "http://127.0.0.1:8100/CLI/",
+    "username": "postmaster@example.com",
+    "password": "REPLACE_ME"
+  },
+  "domains": []
+}
