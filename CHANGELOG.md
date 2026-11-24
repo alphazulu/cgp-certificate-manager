@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.0.dev7 — unreleased
+
+- Add optional Prometheus alert rules, a Grafana classic dashboard and a Zabbix 7.0 HTTP template for local monitoring. Keep collection failure, missing data, stale/future snapshots and local certificate state distinct; do not imply current deployed TLS health.
+- Add native promtool timelines and dashboard-query checks, executed Zabbix preprocessing tests and Python asset-contract tests. Keep the existing independent 100% Python coverage gates; require the new monitoring-assets CI job before packaging.
+- Select Prometheus targets explicitly with `cgp_manager="true"`; preserve incomplete-discovery refusal and disabled-domain semantics. No new privileged agent command, monitoring schedule or notification destination is installed.
+- Document artifact formats, thresholds, interpretation and later deployment steps. Real VM/server tests remain deferred; exact observed validation and continuation are recorded in DEVELOPMENT.md and ROADMAP.md.
+
 ## 2.2.0.dev6 — unreleased
 
 - Add offline `--monitoring` JSON, Prometheus `--metrics` and Zabbix `--zabbix-discovery`, with unit tests for source failures, missing measurements and no private-data output. Read saved manager state under an existing nonblocking shared lock; do not create state, contact services or perform recovery.

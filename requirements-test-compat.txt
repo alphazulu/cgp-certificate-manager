@@ -1,5 +1,6 @@
 # Compatibility fixture for the Ubuntu 24.04 generation; not production pins.
 coverage==7.10.7
+PyYAML==6.0.3
 dnspython==2.6.1
 certbot==2.9.0
 acme==2.9.0

@@ -2,7 +2,104 @@
 
 Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 9
+## Current handoff — checkpoint 10
+
+- Development version: **`2.2.0.dev7`**, continuing in draft PR
+  [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
+- Starting HEAD: `be96ef06d3391627eaa7b76eaec7db83b2b38f34`, clean on resume.
+  Its [CI 45390162690](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45390162690)
+  passed the previous seven jobs. The previous 827-test / 3936-statement /
+  1566-branch / 100% result does not validate this checkpoint's new assets.
+- User instruction to continue is being applied to the next independent roadmap
+  scope: Prometheus alert rules, Grafana dashboard and a Zabbix template, with
+  automatic tests. All real VM/server acceptance stays deferred under the
+  maintainer's 2026-11-24 decision. No collection timer, privileged agent command,
+  external notification destination or production import is enabled.
+- Artifact contract: monitor local public certificate expiry and saved manager
+  observations; require explicit source/freshness semantics and preserve unknown
+  data. Default fresh age is 0..900 seconds inclusive; future collection times
+  are errors. Local expiry is critical at <=7 days and warning at >7..21 days.
+  Disabled domains remain discoverable. Local read-error observations are
+  distinct from certificate-health alerts because they make collection incomplete.
+- Prometheus enrollment is the explicit scrape-target label
+  `cgp_manager="true"`; host identity is `(job, instance)` and domain identity
+  adds `domain`. Expected targets come from labelled `up`, including reachable
+  exporters with missing manager data. Removed target configuration needs an
+  independent expected-target inventory and is not silently inferred.
+- Grafana uses the classic schema 39 contract from Grafana 11.0, an imported
+  Prometheus datasource, target/domain variables and explicit unknown data.
+  Zabbix uses a 7.0 JSON export with an HTTP master for the public exporter,
+  native Prometheus-to-JSON preprocessing, dependent observations and guarded
+  discovery. Preprocessing JavaScript is shared verbatim with executable tests.
+- Independent review added dashboard regressions for the same instance in
+  different jobs and mismatched enabled/certificate domains on one host. The
+  dashboard fixtures now contain 17 cases and 209 actual expression evaluations.
+  Zabbix review identified cached-history risks when a leaf becomes missing or
+  an optional saved-failure count disappears, plus fractional timestamps versus
+  the native whole-second `now()` clock. Guards and regression tests accompany
+  the fixes; original floating timestamps remain available for exact JavaScript
+  freshness and observation identity, with native clock resolution documented.
+- CI adds a required **monitoring assets** job; package creation depends on it
+  and the previous two dependency/four installer jobs, making eight jobs.
+  Toolchain pins were checked against primary release/source metadata:
+  promtool 3.16.0, linux-amd64 archive SHA-256
+  `68727009472a2c02e1ff7f062fd5b3e637285bffc8fc2d340c76fb449d6e0f34`;
+  Node.js 24.22.3 through setup-node v7.1.0 commit
+  `949feb2413d6458794dcd2491c4babbbce0c15c1` (Node 24 action manifest).
+  Both Python test profiles add PyYAML 6.0.3 for asset contracts.
+- Local Node.js and PyYAML are available. Direct local download of promtool was
+  unavailable, so actual PromQL engine results must come from the pinned CI
+  job. Python artifact assertions are not a substitute PromQL engine. Docker
+  remains unavailable locally. Actual Grafana/Zabbix import and real monitoring
+  deployment are deferred acceptance, not claimed by static or synthetic tests.
+- Both complete local dependency profiles passed **851 tests / 3936 statements
+  / 1566 branches / 100%**, with zero missing statements and zero partial
+  branches. Compat took 19.472 seconds; current took 18.776 seconds. Each
+  independently passed `--fail-under=100`. Compatibility was run in a separate
+  environment installed from requirements-test-compat.txt after the default
+  runtime was found without its test dependencies. There are **24 new Python
+  tests**: 8 Prometheus, 11 Grafana and 5 Zabbix artifact/execution contracts.
+  Application source changes are limited to the development version and its
+  matching app-local Certbot distribution metadata.
+- The Zabbix Python suite executes **105 Node scenarios** using the exact
+  embedded ES5 bodies. Its required detailed V8 gate passed for all three
+  scripts: normalize 20 functions/68 distinct ranges, fresh 2/19 and discovery
+  3/6, totaling 25 functions and 93 ranges. Every collected nested byte interval
+  has execution coverage; missing Node, missing scripts/coverage or unexecuted
+  intervals fail the suite. No coverage exclusions or lowered thresholds.
+  Arithmetic substitutions test exported trigger conditions/recovery with
+  cached item histories, but do not claim native Zabbix parser/event validation.
+- The finished assets contain 13 alerts and 6 recording rules; 10 Grafana data
+  panels; and a Zabbix template with 16 items, 1 discovery rule, 9 item prototypes,
+  14 global triggers, 6 trigger prototypes, 5 value maps and 7 macros. Native
+  promtool fixtures contain 25 alert scenarios plus 17 dashboard scenarios /
+  209 dashboard expression evaluations. Their actual engine execution is still
+  pending the exact implementation CI below, not inferred from Python checks.
+- Python compilation, installer shell syntax, all 14 workflow run-block shell
+  syntax checks and `git diff --check` passed. Documentation validation passed
+  94 relative links and 25 shell blocks across 16 Markdown files. Local Node was
+  24.22.3; both test environments use coverage 7.10.7 and PyYAML 6.0.3.
+- **Local implementation is complete; exact-revision CI is pending.** Record
+  the eight observed jobs and native promtool results after publication, then
+  mark this roadmap stage complete. Real VM/server/import acceptance remains
+  deferred and is not a prerequisite for the next independent repository work.
+
+### Resume from checkpoint 10
+
+1. Inspect actual branch HEAD, working tree, PR and current checks, then read
+   this handoff and ROADMAP.md. The new candidate requires eight CI jobs.
+2. Preserve tested missing/stale/future/disabled/multihost semantics across
+   alerts, dashboard and discovery. Exercise actual embedded JavaScript and
+   real promtool; do not replace engine tests with string-only assertions.
+3. Complete independent release automation and dependency/security scanning
+   after this monitoring integration checkpoint. External probes and notification
+   delivery remain separate roadmap work with explicit deployment configuration.
+4. Keep real VM/server validation deferred until scheduled by the maintainer.
+   Automatic bootstrap writes still require the documented CGP field-removal,
+   restoration and TLS experiments; no new semantics are assumed from unit tests.
+5. Merge, release and production deployment remain separate maintainer decisions.
+
+## Checkpoint 9 — local monitoring foundation (historical)
 
 - Development version: **`2.2.0.dev6`**, continuing in draft PR
   [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).

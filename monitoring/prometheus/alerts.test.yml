@@ -1,0 +1,1764 @@
+# Execute with the pinned real Prometheus promtool; Python does not evaluate PromQL.
+# The synthetic clock starts at zero. Incrementing timestamp/expiry values keep
+# snapshot age and remaining certificate lifetime fixed for threshold tests.
+# Each positive case checks the total firing count as well as exact alerts,
+# so an unexpected companion alert cannot be silently ignored.
+rule_files:
+- alerts.yml
+evaluation_interval: 1m
+tests:
+- name: healthy_snapshot_and_legitimate_future_retry
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 7776000+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_pending_artifacts{cgp_manager="true",instance="mail:9100",job="node",kind="transactions"}
+    values: '0x60'
+  - series: cgp_manager_pending_artifacts{cgp_manager="true",instance="mail:9100",job="node",kind="resolutions"}
+    values: '0x60'
+  - series: cgp_manager_pending_artifacts{cgp_manager="true",instance="mail:9100",job="node",kind="dns_challenges"}
+    values: '0x60'
+  - series: cgp_manager_last_success_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_retry_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 86400x60
+  promql_expr_test:
+  - expr: cgp_manager:snapshot_fresh
+    eval_time: 30m
+    exp_samples:
+    - labels: cgp_manager:snapshot_fresh{job="node",instance="mail:9100"}
+      value: 1
+  - expr: cgp_manager:local_sources_complete
+    eval_time: 30m
+    exp_samples:
+    - labels: cgp_manager:local_sources_complete{job="node",instance="mail:9100"}
+      value: 1
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 30m
+    exp_samples: []
+- name: disabled_domains_do_not_raise_certificate_or_historical_alerts
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="disabled-expired.example.com",cgp_manager="true",domain="disabled-expired.example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="disabled-expired.example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="disabled-expired.example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="disabled-expired.example.com",instance="mail:9100",job="node"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="disabled-expired.example.com",instance="mail:9100",job="node"}
+    values: 4x60
+  - series: cgp_manager_domain_info{cert_name="disabled-missing.example.com",cgp_manager="true",domain="disabled-missing.example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="disabled-missing.example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="disabled-missing.example.com",instance="mail:9100",job="node",status="missing"}
+    values: 1x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="disabled-missing.example.com",instance="mail:9100",job="node"}
+    values: 2x60
+  promql_expr_test:
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 30m
+    exp_samples: []
+- name: expected_targets_with_absent_or_partial_metadata
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="absent:9100",job="node"}
+    values: 1x60
+  - series: up{cgp_manager="true",instance="success-only:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="success-only:9100",job="node"}
+    values: '0x60'
+  - series: up{cgp_manager="true",instance="timestamp-only:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="timestamp-only:9100",job="node"}
+    values: 0+60x60
+  - series: up{cgp_manager="true",instance="build-only:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="build-only:9100",job="node",version="test"}
+    values: 1x60
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: CGPManagerMonitoringMissing
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node
+        instance: absent:9100
+      exp_annotations:
+        summary: Manager collection metadata is missing
+        description: The opted-in exporter is reachable but collection success or timestamp metadata is absent.
+          Check collection scheduling and textfile publication; absence is not a healthy zero.
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node
+        instance: success-only:9100
+      exp_annotations:
+        summary: Manager collection metadata is missing
+        description: The opted-in exporter is reachable but collection success or timestamp metadata is absent.
+          Check collection scheduling and textfile publication; absence is not a healthy zero.
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node
+        instance: timestamp-only:9100
+      exp_annotations:
+        summary: Manager collection metadata is missing
+        description: The opted-in exporter is reachable but collection success or timestamp metadata is absent.
+          Check collection scheduling and textfile publication; absence is not a healthy zero.
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node
+        instance: build-only:9100
+      exp_annotations:
+        summary: Manager collection metadata is missing
+        description: The opted-in exporter is reachable but collection success or timestamp metadata is absent.
+          Check collection scheduling and textfile publication; absence is not a healthy zero.
+  promql_expr_test:
+  - expr: ALERTS{component="cgp-certificate-manager", alertstate="firing"}
+    eval_time: 4m
+    exp_samples: []
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 5m
+    exp_samples:
+    - labels: '{}'
+      value: 4
+- name: metadata_success_zero_is_present_not_missing
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: CGPManagerCollectionFailed
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node
+        instance: mail:9100
+      exp_annotations:
+        summary: Manager local collection is incomplete
+        description: A fresh snapshot could not collect all required observations. Source and local-certificate
+          read alerts identify available causes; this is not proof of a renewal or served TLS failure.
+  promql_expr_test:
+  - expr: ALERTS{component="cgp-certificate-manager", alertstate="firing"}
+    eval_time: 4m
+    exp_samples: []
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 5m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+- name: exporter_down_suppresses_stale_and_domain_observations
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: -1000+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 4x60
+  - series: cgp_manager_pending_artifacts{cgp_manager="true",instance="mail:9100",job="node",kind="transactions"}
+    values: 3x60
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: CGPManagerExporterUnavailable
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: critical
+        job: node
+        instance: mail:9100
+      exp_annotations:
+        summary: Expected manager metrics target is unavailable
+        description: An opted-in exporter cannot be scraped. Local manager and certificate observations are unknown;
+          this does not establish a CGP TLS failure.
+  promql_expr_test:
+  - expr: ALERTS{component="cgp-certificate-manager", alertstate="firing"}
+    eval_time: 4m
+    exp_samples: []
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 5m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+- name: no_expected_target_no_fictional_absence_or_certificate_alert
+  interval: 1m
+  input_series:
+  - series: up{instance="unlabelled:9100",job="node"}
+    values: 1x60
+  - series: up{cgp_manager="false",instance="opted-out:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="unlabelled:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="unlabelled:9100",job="node"}
+    values: -1000+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="unlabelled:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="unlabelled:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="unlabelled:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="unlabelled:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="unlabelled:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="unlabelled:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="unlabelled:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="unlabelled:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="unlabelled:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="unlabelled:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="unlabelled:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="unlabelled:9100",job="node"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="unlabelled:9100",job="node"}
+    values: 3x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="opted-out:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="opted-out:9100",job="node"}
+    values: -1000+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="opted-out:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="opted-out:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="opted-out:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="opted-out:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="opted-out:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="opted-out:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="opted-out:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="opted-out:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="opted-out:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="opted-out:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="opted-out:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="opted-out:9100",job="node"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="opted-out:9100",job="node"}
+    values: 3x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="removed:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="removed:9100",job="node"}
+    values: -1000+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="removed:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="removed:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="removed:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="removed:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="removed:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="removed:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="removed:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="removed:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="removed:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="removed:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="removed:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="removed:9100",job="node"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="removed:9100",job="node"}
+    values: 3x60
+  promql_expr_test:
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 30m
+    exp_samples: []
+- name: freshness_lower_boundary_zero_age
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 604800+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: CGPManagerLocalCertificateExpiryCritical
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: local_certificate
+        severity: critical
+        job: node
+        instance: mail:9100
+        domain: example.com
+      exp_annotations:
+        summary: A local certificate expires within seven days or has expired
+        description: The enabled domain's readable public local leaf has at most seven days remaining. Verify renewal
+          and the separately observed deployed certificate; these metrics do not prove served TLS health.
+  promql_expr_test:
+  - expr: ALERTS{component="cgp-certificate-manager", alertstate="firing"}
+    eval_time: 4m
+    exp_samples: []
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 5m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+- name: freshness_upper_boundary_900_seconds_inclusive
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: -900+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 604800+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: CGPManagerLocalCertificateExpiryCritical
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: local_certificate
+        severity: critical
+        job: node
+        instance: mail:9100
+        domain: example.com
+      exp_annotations:
+        summary: A local certificate expires within seven days or has expired
+        description: The enabled domain's readable public local leaf has at most seven days remaining. Verify renewal
+          and the separately observed deployed certificate; these metrics do not prove served TLS health.
+  promql_expr_test:
+  - expr: cgp_manager:snapshot_fresh
+    eval_time: 5m
+    exp_samples:
+    - labels: cgp_manager:snapshot_fresh{job="node",instance="mail:9100"}
+      value: 1
+  - expr: ALERTS{component="cgp-certificate-manager", alertstate="firing"}
+    eval_time: 4m
+    exp_samples: []
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 5m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+- name: snapshot_901_seconds_old_suppresses_operational_alerts
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: -901+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 3x60
+  - series: cgp_manager_pending_artifacts{cgp_manager="true",instance="mail:9100",job="node",kind="transactions"}
+    values: 2x60
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: CGPManagerMonitoringStale
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node
+        instance: mail:9100
+      exp_annotations:
+        summary: Manager local snapshot is stale
+        description: The collection timestamp is more than 15 minutes old. Certificate, retained-artifact and saved-result
+          alerts are suppressed until a fresh complete snapshot is available.
+  promql_expr_test:
+  - expr: ALERTS{component="cgp-certificate-manager", alertstate="firing"}
+    eval_time: 4m
+    exp_samples: []
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 5m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+- name: future_timestamp_one_second_is_not_fresh
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 3x60
+  - series: cgp_manager_pending_artifacts{cgp_manager="true",instance="mail:9100",job="node",kind="transactions"}
+    values: 2x60
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: CGPManagerMonitoringTimestampFuture
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node
+        instance: mail:9100
+      exp_annotations:
+        summary: Manager collection timestamp is in the future
+        description: The collector and Prometheus clocks disagree. Future collection timestamps are not accepted
+          as fresh; a future certificate expiry or retry time is a different, normally valid measurement.
+  promql_expr_test:
+  - expr: cgp_manager:snapshot_fresh
+    eval_time: 5m
+    exp_samples: []
+  - expr: ALERTS{component="cgp-certificate-manager", alertstate="firing"}
+    eval_time: 4m
+    exp_samples: []
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 5m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+- name: stale_condition_starts_after_900_seconds_and_waits_five_minutes
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  alert_rule_test:
+  - eval_time: 21m
+    alertname: CGPManagerMonitoringStale
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node
+        instance: mail:9100
+      exp_annotations:
+        summary: Manager local snapshot is stale
+        description: The collection timestamp is more than 15 minutes old. Certificate, retained-artifact and saved-result
+          alerts are suppressed until a fresh complete snapshot is available.
+  promql_expr_test:
+  - expr: ALERTS{alertname="CGPManagerMonitoringStale",alertstate="firing"}
+    eval_time: 15m
+    exp_samples: []
+  - expr: ALERTS{alertname="CGPManagerMonitoringStale",alertstate="firing"}
+    eval_time: 20m
+    exp_samples: []
+  - expr: cgp_manager:snapshot_fresh
+    eval_time: 15m
+    exp_samples:
+    - labels: cgp_manager:snapshot_fresh{job="node",instance="mail:9100"}
+      value: 1
+  - expr: cgp_manager:snapshot_fresh
+    eval_time: 16m
+    exp_samples: []
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 21m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+- name: source_missing_and_error_are_distinct_from_busy_and_health
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="error"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="missing"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="expired.example.com",cgp_manager="true",domain="expired.example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="expired.example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="expired.example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="expired.example.com",instance="mail:9100",job="node"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="expired.example.com",instance="mail:9100",job="node"}
+    values: 3x60
+  - series: cgp_manager_domain_info{cert_name="unreadable.example.com",cgp_manager="true",domain="unreadable.example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="unreadable.example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="unreadable.example.com",instance="mail:9100",job="node",status="error"}
+    values: 1x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="unreadable.example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_pending_artifacts{cgp_manager="true",instance="mail:9100",job="node",kind="transactions"}
+    values: 2x60
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: CGPManagerCollectionFailed
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node
+        instance: mail:9100
+      exp_annotations:
+        summary: Manager local collection is incomplete
+        description: A fresh snapshot could not collect all required observations. Source and local-certificate
+          read alerts identify available causes; this is not proof of a renewal or served TLS failure.
+  - eval_time: 5m
+    alertname: CGPManagerSourceUnavailable
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node
+        instance: mail:9100
+        source: config
+        status: error
+      exp_annotations:
+        summary: A required manager source is unavailable
+        description: The source label names missing or rejected local evidence. Unknown state and counts are not
+          zero; inspect the local monitoring diagnostic before changing any stored recovery evidence.
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node
+        instance: mail:9100
+        source: inventory
+        status: missing
+      exp_annotations:
+        summary: A required manager source is unavailable
+        description: The source label names missing or rejected local evidence. Unknown state and counts are not
+          zero; inspect the local monitoring diagnostic before changing any stored recovery evidence.
+  promql_expr_test:
+  - expr: ALERTS{component="cgp-certificate-manager", alertstate="firing"}
+    eval_time: 4m
+    exp_samples: []
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 5m
+    exp_samples:
+    - labels: '{}'
+      value: 3
+- name: busy_collection_waits_fifteen_minutes_without_false_failure
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="busy"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="busy"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 3x60
+  - series: cgp_manager_pending_artifacts{cgp_manager="true",instance="mail:9100",job="node",kind="transactions"}
+    values: 2x60
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: CGPManagerCollectionBusy
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node
+        instance: mail:9100
+      exp_annotations:
+        summary: Manager observations remain busy
+        description: A required local source has remained busy for 15 minutes. Collection does not wait behind mutation
+          or perform recovery; check the active operation before intervening.
+  promql_expr_test:
+  - expr: ALERTS{component="cgp-certificate-manager", alertstate="firing"}
+    eval_time: 14m
+    exp_samples: []
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 15m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+- name: explicit_local_read_error_is_observation_failure_on_incomplete_snapshot
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="error"}
+    values: 1x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: CGPManagerCollectionFailed
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node
+        instance: mail:9100
+      exp_annotations:
+        summary: Manager local collection is incomplete
+        description: A fresh snapshot could not collect all required observations. Source and local-certificate
+          read alerts identify available causes; this is not proof of a renewal or served TLS failure.
+  - eval_time: 5m
+    alertname: CGPManagerLocalCertificateReadError
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node
+        instance: mail:9100
+        domain: example.com
+      exp_annotations:
+        summary: A local public certificate cannot be observed
+        description: The enabled domain's public local leaf was unreadable, unsafe or invalid while all other required
+          sources were available. Its expiry is unknown; this does not establish the certificate currently served
+          by CGP.
+  promql_expr_test:
+  - expr: ALERTS{component="cgp-certificate-manager", alertstate="firing"}
+    eval_time: 4m
+    exp_samples: []
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 5m
+    exp_samples:
+    - labels: '{}'
+      value: 2
+- name: local_read_error_requires_all_seven_noncertificate_sources
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="error"}
+    values: 1x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: CGPManagerCollectionFailed
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node
+        instance: mail:9100
+      exp_annotations:
+        summary: Manager local collection is incomplete
+        description: A fresh snapshot could not collect all required observations. Source and local-certificate
+          read alerts identify available causes; this is not proof of a renewal or served TLS failure.
+  promql_expr_test:
+  - expr: cgp_manager:local_sources_complete
+    eval_time: 5m
+    exp_samples: []
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 5m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+- name: disabled_local_read_error_does_not_raise_domain_observation_alert
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="error"}
+    values: 1x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: CGPManagerCollectionFailed
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node
+        instance: mail:9100
+      exp_annotations:
+        summary: Manager local collection is incomplete
+        description: A fresh snapshot could not collect all required observations. Source and local-certificate
+          read alerts identify available causes; this is not proof of a renewal or served TLS failure.
+  promql_expr_test:
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 5m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+- name: known_missing_local_certificate_is_not_an_expired_zero
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="missing"}
+    values: 1x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: CGPManagerLocalCertificateMissing
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: local_certificate
+        severity: warning
+        job: node
+        instance: mail:9100
+        domain: example.com
+      exp_annotations:
+        summary: An enabled domain has no local public certificate
+        description: A fresh complete snapshot found no public leaf at the configured local lineage. Check the lineage
+          and issuance history; this is not a live CGP certificate probe.
+  promql_expr_test:
+  - expr: cgp_manager:local_certificate_remaining_seconds
+    eval_time: 5m
+    exp_samples: []
+  - expr: ALERTS{component="cgp-certificate-manager", alertstate="firing"}
+    eval_time: 4m
+    exp_samples: []
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 5m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+- name: unknown_certificate_status_and_unknown_counts_do_not_become_zero
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 3x60
+  promql_expr_test:
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 30m
+    exp_samples: []
+- name: known_certificate_status_without_expiry_is_not_zero_expiry
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  promql_expr_test:
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 30m
+    exp_samples: []
+- name: unknown_domain_enablement_does_not_authorize_domain_alerts
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 3x60
+  promql_expr_test:
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 30m
+    exp_samples: []
+- name: expiry_thresholds_are_inclusive_and_warning_is_disjoint
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="expired.example.com",cgp_manager="true",domain="expired.example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="expired.example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="expired.example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="expired.example.com",instance="mail:9100",job="node"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="expired.example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_domain_info{cert_name="critical-boundary.example.com",cgp_manager="true",domain="critical-boundary.example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="critical-boundary.example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="critical-boundary.example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="critical-boundary.example.com",instance="mail:9100",job="node"}
+    values: 604800+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="critical-boundary.example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_domain_info{cert_name="warning-lower.example.com",cgp_manager="true",domain="warning-lower.example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="warning-lower.example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="warning-lower.example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="warning-lower.example.com",instance="mail:9100",job="node"}
+    values: 604801+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="warning-lower.example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_domain_info{cert_name="warning-upper.example.com",cgp_manager="true",domain="warning-upper.example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="warning-upper.example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="warning-upper.example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="warning-upper.example.com",instance="mail:9100",job="node"}
+    values: 1814400+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="warning-upper.example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_domain_info{cert_name="outside-warning.example.com",cgp_manager="true",domain="outside-warning.example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="outside-warning.example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="outside-warning.example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="outside-warning.example.com",instance="mail:9100",job="node"}
+    values: 1814401+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="outside-warning.example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: CGPManagerLocalCertificateExpiryCritical
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: local_certificate
+        severity: critical
+        job: node
+        instance: mail:9100
+        domain: expired.example.com
+      exp_annotations:
+        summary: A local certificate expires within seven days or has expired
+        description: The enabled domain's readable public local leaf has at most seven days remaining. Verify renewal
+          and the separately observed deployed certificate; these metrics do not prove served TLS health.
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: local_certificate
+        severity: critical
+        job: node
+        instance: mail:9100
+        domain: critical-boundary.example.com
+      exp_annotations:
+        summary: A local certificate expires within seven days or has expired
+        description: The enabled domain's readable public local leaf has at most seven days remaining. Verify renewal
+          and the separately observed deployed certificate; these metrics do not prove served TLS health.
+  - eval_time: 5m
+    alertname: CGPManagerLocalCertificateExpiryWarning
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: local_certificate
+        severity: warning
+        job: node
+        instance: mail:9100
+        domain: warning-lower.example.com
+      exp_annotations:
+        summary: A local certificate expires within twenty-one days
+        description: The enabled domain's readable public local leaf has more than seven and at most twenty-one
+          days remaining. Check scheduled renewal; this observation concerns the local leaf, not live CGP TLS.
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: local_certificate
+        severity: warning
+        job: node
+        instance: mail:9100
+        domain: warning-upper.example.com
+      exp_annotations:
+        summary: A local certificate expires within twenty-one days
+        description: The enabled domain's readable public local leaf has more than seven and at most twenty-one
+          days remaining. Check scheduled renewal; this observation concerns the local leaf, not live CGP TLS.
+  promql_expr_test:
+  - expr: ALERTS{component="cgp-certificate-manager", alertstate="firing"}
+    eval_time: 4m
+    exp_samples: []
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 5m
+    exp_samples:
+    - labels: '{}'
+      value: 4
+- name: retained_artifact_kinds_are_independent_not_a_unique_operation_total
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 7776000+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_pending_artifacts{cgp_manager="true",instance="mail:9100",job="node",kind="transactions"}
+    values: 2x60
+  - series: cgp_manager_pending_artifacts{cgp_manager="true",instance="mail:9100",job="node",kind="resolutions"}
+    values: 1x60
+  - series: cgp_manager_pending_artifacts{cgp_manager="true",instance="mail:9100",job="node",kind="dns_challenges"}
+    values: 3x60
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: CGPManagerPendingArtifacts
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: retained_artifacts
+        severity: warning
+        job: node
+        instance: mail:9100
+        kind: transactions
+      exp_annotations:
+        summary: Manager recovery evidence remains present
+        description: A validated retained-artifact count remains nonzero. Kinds may overlap and are not unique operations;
+          use the corresponding transaction diagnostic before an explicitly authorized recovery or cleanup.
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: retained_artifacts
+        severity: warning
+        job: node
+        instance: mail:9100
+        kind: resolutions
+      exp_annotations:
+        summary: Manager recovery evidence remains present
+        description: A validated retained-artifact count remains nonzero. Kinds may overlap and are not unique operations;
+          use the corresponding transaction diagnostic before an explicitly authorized recovery or cleanup.
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: retained_artifacts
+        severity: warning
+        job: node
+        instance: mail:9100
+        kind: dns_challenges
+      exp_annotations:
+        summary: Manager recovery evidence remains present
+        description: A validated retained-artifact count remains nonzero. Kinds may overlap and are not unique operations;
+          use the corresponding transaction diagnostic before an explicitly authorized recovery or cleanup.
+  promql_expr_test:
+  - expr: ALERTS{component="cgp-certificate-manager", alertstate="firing"}
+    eval_time: 14m
+    exp_samples: []
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 15m
+    exp_samples:
+    - labels: '{}'
+      value: 3
+- name: saved_failure_is_informational_history_not_current_tls_failure
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 7776000+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 2x60
+  - series: cgp_manager_last_success_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_retry_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 86400x60
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: CGPManagerRecordedFailure
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: historical
+        severity: info
+        job: node
+        instance: mail:9100
+        domain: example.com
+      exp_annotations:
+        summary: Manager state retains a previous failure
+        description: The saved failure gauge remains nonzero for an enabled domain. This is historical manager state,
+          not a cumulative counter or proof of a current renewal or served TLS failure.
+  promql_expr_test:
+  - expr: ALERTS{component="cgp-certificate-manager", alertstate="firing"}
+    eval_time: 14m
+    exp_samples: []
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 15m
+    exp_samples:
+    - labels: '{}'
+      value: 1
+- name: transient_collection_failure_clears_before_firing_delay
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0x3 1x56
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="mail:9100",job="node"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="mail:9100",job="node",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="error"}
+    values: 1x3 0x56
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="mail:9100",job="node",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: 7776000+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="mail:9100",job="node"}
+    values: '0x60'
+  - series: cgp_manager_source_status{cgp_manager="true",instance="mail:9100",job="node",source="config",status="ok"}
+    values: 0x3 1x56
+  promql_expr_test:
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 20m
+    exp_samples: []
+- name: multihost_multijob_and_multidomain_gates_do_not_cross_contaminate
+  interval: 1m
+  input_series:
+  - series: up{cgp_manager="true",instance="one:9100",job="node-a"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="one:9100",job="node-a"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="one:9100",job="node-a"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="one:9100",job="node-a",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="one:9100",job="node-a",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="one:9100",job="node-a",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="one:9100",job="node-a",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="one:9100",job="node-a",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="one:9100",job="node-a",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="one:9100",job="node-a",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="one:9100",job="node-a",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="one:9100",job="node-a"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="one:9100",job="node-a"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="one:9100",job="node-a",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="one:9100",job="node-a"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="one:9100",job="node-a"}
+    values: '0x60'
+  - series: up{cgp_manager="true",instance="one:9100",job="node-b"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="one:9100",job="node-b"}
+    values: '0x60'
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="one:9100",job="node-b"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="one:9100",job="node-b",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="one:9100",job="node-b",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="one:9100",job="node-b",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="one:9100",job="node-b",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="one:9100",job="node-b",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="one:9100",job="node-b",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="one:9100",job="node-b",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="one:9100",job="node-b",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="one:9100",job="node-b"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="one:9100",job="node-b"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="one:9100",job="node-b",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="one:9100",job="node-b"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="one:9100",job="node-b"}
+    values: 3x60
+  - series: cgp_manager_pending_artifacts{cgp_manager="true",instance="one:9100",job="node-b",kind="transactions"}
+    values: 3x60
+  - series: up{cgp_manager="true",instance="two:9100",job="node-a"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="two:9100",job="node-a"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="two:9100",job="node-a"}
+    values: -901+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="two:9100",job="node-a",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="two:9100",job="node-a",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="two:9100",job="node-a",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="two:9100",job="node-a",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="two:9100",job="node-a",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="two:9100",job="node-a",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="two:9100",job="node-a",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="two:9100",job="node-a",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="two:9100",job="node-a"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="two:9100",job="node-a"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="two:9100",job="node-a",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="two:9100",job="node-a"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="two:9100",job="node-a"}
+    values: 3x60
+  - series: up{cgp_manager="true",instance="three:9100",job="node-a"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="three:9100",job="node-a"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="three:9100",job="node-a"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="three:9100",job="node-a",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="three:9100",job="node-a",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="three:9100",job="node-a",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="three:9100",job="node-a",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="three:9100",job="node-a",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="three:9100",job="node-a",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="three:9100",job="node-a",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="three:9100",job="node-a",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="example.com",cgp_manager="true",domain="example.com",instance="three:9100",job="node-a"}
+    values: 1x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="three:9100",job="node-a"}
+    values: '0x60'
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="example.com",instance="three:9100",job="node-a",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="example.com",instance="three:9100",job="node-a"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="example.com",instance="three:9100",job="node-a"}
+    values: 3x60
+  - series: up{cgp_manager="true",instance="four:9100",job="node-a"}
+    values: 1x60
+  - series: cgp_manager_collection_success{cgp_manager="true",instance="four:9100",job="node-a"}
+    values: 1x60
+  - series: cgp_manager_collection_timestamp_seconds{cgp_manager="true",instance="four:9100",job="node-a"}
+    values: 0+60x60
+  - series: cgp_manager_build_info{cgp_manager="true",instance="four:9100",job="node-a",version="2.2.0.dev-test"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="four:9100",job="node-a",source="config",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="four:9100",job="node-a",source="inventory",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="four:9100",job="node-a",source="state",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="four:9100",job="node-a",source="transactions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="four:9100",job="node-a",source="resolutions",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="four:9100",job="node-a",source="dns_challenges",status="ok"}
+    values: 1x60
+  - series: cgp_manager_source_status{cgp_manager="true",instance="four:9100",job="node-a",source="lock",status="ok"}
+    values: 1x60
+  - series: cgp_manager_domain_info{cert_name="other.example.com",cgp_manager="true",domain="other.example.com",instance="four:9100",job="node-a"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_status{cgp_manager="true",domain="other.example.com",instance="four:9100",job="node-a",status="ok"}
+    values: 1x60
+  - series: cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true",domain="other.example.com",instance="four:9100",job="node-a"}
+    values: -1+60x60
+  - series: cgp_manager_recorded_failures{cgp_manager="true",domain="other.example.com",instance="four:9100",job="node-a"}
+    values: 3x60
+  - series: cgp_manager_domain_enabled{cgp_manager="true",domain="example.com",instance="four:9100",job="node-a"}
+    values: 1x60
+  - series: up{cgp_manager="true",instance="two:9100",job="node-c"}
+    values: 1x60
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: CGPManagerCollectionFailed
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node-b
+        instance: one:9100
+      exp_annotations:
+        summary: Manager local collection is incomplete
+        description: A fresh snapshot could not collect all required observations. Source and local-certificate
+          read alerts identify available causes; this is not proof of a renewal or served TLS failure.
+  - eval_time: 20m
+    alertname: CGPManagerLocalCertificateExpiryCritical
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: local_certificate
+        severity: critical
+        job: node-a
+        instance: one:9100
+        domain: example.com
+      exp_annotations:
+        summary: A local certificate expires within seven days or has expired
+        description: The enabled domain's readable public local leaf has at most seven days remaining. Verify renewal
+          and the separately observed deployed certificate; these metrics do not prove served TLS health.
+  - eval_time: 20m
+    alertname: CGPManagerMonitoringMissing
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node-c
+        instance: two:9100
+      exp_annotations:
+        summary: Manager collection metadata is missing
+        description: The opted-in exporter is reachable but collection success or timestamp metadata is absent.
+          Check collection scheduling and textfile publication; absence is not a healthy zero.
+  - eval_time: 20m
+    alertname: CGPManagerMonitoringStale
+    exp_alerts:
+    - exp_labels:
+        component: cgp-certificate-manager
+        scope: observation
+        severity: warning
+        job: node-a
+        instance: two:9100
+      exp_annotations:
+        summary: Manager local snapshot is stale
+        description: The collection timestamp is more than 15 minutes old. Certificate, retained-artifact and saved-result
+          alerts are suppressed until a fresh complete snapshot is available.
+  promql_expr_test:
+  - expr: count(ALERTS{component="cgp-certificate-manager", alertstate="firing"})
+    eval_time: 20m
+    exp_samples:
+    - labels: '{}'
+      value: 4

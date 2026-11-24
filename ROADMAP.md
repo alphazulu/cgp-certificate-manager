@@ -26,7 +26,20 @@
 - [x] Implement operator-assisted resolution: exact-preview confirmation, private authorization/completion evidence, incomplete-decision guard and explicit retry without claiming TLS success. See docs/RESOLUTION.md and checkpoint 5 evidence below.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 9 (`2.2.0.dev6`) implements the independent local monitoring foundation:
+Checkpoint 10 (`2.2.0.dev7`, local work complete; CI pending) adds Prometheus alert rules, a Grafana
+dashboard and a Zabbix 7.0 HTTP template with executable synthetic tests. All
+three integrations distinguish source failure, missing data, stale/future
+snapshots and local certificate expiry. CI gains a required monitoring-assets
+job using pinned promtool; both Python jobs execute the JavaScript using pinned
+Node.js. Package creation depends on all eight jobs. Both complete local
+dependency profiles passed **851 tests / 3936 statements / 1566 branches / 100%**,
+zero missing/partial, with 24 new Python tests and 105 executable JavaScript
+scenarios. Detailed V8 coverage passed for all three preprocessing scripts.
+Native Prometheus engine validation (25 alert cases and 17 dashboard cases /
+209 expressions) awaits the exact implementation CI. Real VM/server acceptance
+remains deferred; no import, schedule or notification is enabled.
+
+Previous checkpoint 9 (`2.2.0.dev6`) implements the independent local monitoring foundation:
 JSON snapshots, Prometheus text/atomic textfile publication and Zabbix domain
 discovery. Unknown sources and measurements remain explicit, incomplete LLD
 emits no list, and local expiry makes no claim about current deployed TLS.
@@ -116,12 +129,12 @@ passed tests, both installer baselines and package. Each installer job passed
 18 new unsafe-path refusal cases and preserved pending journals. This follow-up
 documentation commit records the observed result; inspect current-head checks
 when resuming. See DEVELOPMENT.md for exact next steps and remaining limits.
-Operator-assisted resolution was completed in checkpoint 5; checkpoint 9 is active above.
+Operator-assisted resolution was completed in checkpoint 5; checkpoint 10 is active above.
 This remains a development checkpoint, not a production release.
 
 ## 2.3 — Monitoring
 - [x] Read-only local monitoring snapshot, Prometheus textfile output and Zabbix domain discovery, with unit tests (checkpoint 9; observed validation above).
-- [ ] Zabbix template and Grafana dashboard with alerting based on explicit freshness and collection health.
+- [ ] Zabbix template and Grafana dashboard with alerting based on explicit freshness and collection health (checkpoint 10 in progress).
 - [ ] Separately scheduled external TLS probes and notification delivery (SMTP/webhooks and optional Telegram/MQTT).
 - [ ] Real monitoring deployment acceptance on the later VM/server test session; local certificate observations must not be presented as live TLS verification.
 

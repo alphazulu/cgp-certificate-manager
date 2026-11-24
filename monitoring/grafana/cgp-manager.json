@@ -1,0 +1,1365 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Prometheus scraping opted-in node exporter targets with cgp_manager=\"true\".",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "11.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "text",
+      "name": "Text",
+      "version": "11.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": "11.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": "11.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": "11.0.0"
+    }
+  ],
+  "id": null,
+  "uid": "cgp-manager-local",
+  "title": "CGP Certificate Manager · Local monitoring",
+  "description": "Classic Grafana dashboard, minimum Grafana 11.0.0 (schema 39), designed for Grafana 11–12. Local public certificate and saved-state monitoring only; not served TLS. Import through the UI and select Prometheus. No alerts, schedules or administrative actions are created.",
+  "tags": [
+    "cgp",
+    "certificates",
+    "local-monitoring"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "timezone": "utc",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "",
+  "timepicker": {
+    "refresh_intervals": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "text": "${DS_PROMETHEUS}",
+          "value": "${DS_PROMETHEUS}"
+        },
+        "options": [],
+        "refresh": 1,
+        "hide": 0,
+        "multi": false,
+        "includeAll": false,
+        "skipUrlSync": false
+      },
+      {
+        "name": "job",
+        "label": "Job",
+        "description": "Expected opted-in node exporter targets, including targets without manager metrics.",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "query_result(group by (job) (up{cgp_manager=\"true\"}))",
+        "query": {
+          "query": "query_result(group by (job) (up{cgp_manager=\"true\"}))",
+          "qryType": 3,
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "regex": "/job=\"([^\"\\n]+)\"/",
+        "refresh": 1,
+        "sort": 1,
+        "hide": 0,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "skipUrlSync": false
+      },
+      {
+        "name": "instance",
+        "label": "Instance",
+        "description": "Expected opted-in node exporter targets, including targets without manager metrics.",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "query_result(group by (instance) (up{cgp_manager=\"true\",job=~\"${job:regex}\"}))",
+        "query": {
+          "query": "query_result(group by (instance) (up{cgp_manager=\"true\",job=~\"${job:regex}\"}))",
+          "qryType": 3,
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "regex": "/instance=\"([^\"\\n]+)\"/",
+        "refresh": 1,
+        "sort": 1,
+        "hide": 0,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "skipUrlSync": false
+      },
+      {
+        "name": "domain",
+        "label": "Enabled domain view",
+        "description": "All known local domains are selectable; operational domain panels show only enabled domains.",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "query_result(group by (domain) (cgp_manager_domain_info{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}))",
+        "query": {
+          "query": "query_result(group by (domain) (cgp_manager_domain_info{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}))",
+          "qryType": 3,
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "regex": "/domain=\"([^\"\\n]+)\"/",
+        "refresh": 1,
+        "sort": 1,
+        "hide": 0,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Local files and saved manager state",
+      "pluginVersion": "11.0.0",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Local `cert.pem` is not the certificate served by CGP.** This dashboard does not verify deployed TLS, renew certificates or recover pending work.\n\nSelect an opted-in node exporter target (`cgp_manager=\"true\"`). Operational panels require an available target and a complete snapshot aged **0–15 minutes**; domain panels show **enabled domains**. Missing, stale or unreadable observations remain **Unknown / No data**, never healthy zero. Read-error and source diagnostics remain visible on a fresh incomplete snapshot. Refresh is manual."
+      }
+    },
+    {
+      "id": 2,
+      "title": "Exporter target",
+      "description": "Prometheus scrape reachability only. An available node exporter does not prove manager collection or served TLS health. A missing target is Unknown.",
+      "type": "stat",
+      "pluginVersion": "11.0.0",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "up{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}",
+          "legendFormat": "{{job}} / {{instance}}",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "Unknown",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unknown",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Unavailable",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "Available",
+                  "color": "blue"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 3,
+      "title": "Last collection result",
+      "description": "The last recorded local collection: complete means required sources were readable, not certificate or TLS health. This result remains visible when its timestamp is stale; inspect the adjacent age. Missing manager metrics are Unknown.",
+      "type": "stat",
+      "pluginVersion": "11.0.0",
+      "gridPos": {
+        "x": 8,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "cgp_manager_collection_success{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"} and on (job, instance) (up{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "{{job}} / {{instance}}",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "Unknown",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unknown",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Incomplete",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "Collected",
+                  "color": "blue"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 4,
+      "title": "Snapshot age",
+      "description": "Time since local collection, not since renewal or TLS verification. Operational data is admitted only at age 0–900 seconds inclusive. Orange marks the 15-minute warning boundary; exactly 900 seconds remains eligible and is not a stale alert. A negative age indicates a future timestamp / clock problem; an absent timestamp is Unknown.",
+      "type": "stat",
+      "pluginVersion": "11.0.0",
+      "gridPos": {
+        "x": 16,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(time() - cgp_manager_collection_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on (job, instance) (up{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)",
+          "legendFormat": "{{job}} / {{instance}}",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "noValue": "Unknown",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 900
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unknown",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 5,
+      "title": "Local source observations",
+      "description": "Fresh source statuses remain visible even when collection is incomplete. Readable is a local file observation; Busy means the existing manager lock prevented a consistent read. Unknown sources are not converted to zero.",
+      "type": "table",
+      "pluginVersion": "11.0.0",
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 14,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(max without (status) ((cgp_manager_source_status{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",status=\"ok\"} == 1) * 0 or (cgp_manager_source_status{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",status=\"missing\"} == 1) * 1 or (cgp_manager_source_status{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",status=\"error\"} == 1) * 2 or (cgp_manager_source_status{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",status=\"busy\"} == 1) * 3)) and on (job, instance) ((up{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1) and on (job, instance) ((time() - cgp_manager_collection_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) >= 0) and on (job, instance) ((time() - cgp_manager_collection_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) <= 900))",
+          "legendFormat": "__auto",
+          "format": "table",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "Unknown",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unknown",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "noValue",
+                "value": "Unknown"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "blue",
+                      "value": null
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "Unknown",
+                        "color": "gray"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "Readable",
+                        "color": "blue"
+                      },
+                      "1": {
+                        "text": "Missing",
+                        "color": "orange"
+                      },
+                      "2": {
+                        "text": "Unreadable",
+                        "color": "red"
+                      },
+                      "3": {
+                        "text": "Busy",
+                        "color": "yellow"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "displayName",
+                "value": "Observation"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "cgp_manager": true
+            },
+            "indexByName": {
+              "job": 0,
+              "instance": 1,
+              "source": 2,
+              "Value": 3
+            },
+            "renameByName": {
+              "job": "Job",
+              "instance": "Instance",
+              "source": "Source",
+              "kind": "Artifact kind",
+              "domain": "Domain"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Retained pending artifacts",
+      "description": "Validated local artifact counts from a fresh complete snapshot. Kinds may overlap and must not be summed into a unique incident total. Unknown counts are omitted, not zero. This dashboard never performs cleanup or recovery.",
+      "type": "table",
+      "pluginVersion": "11.0.0",
+      "gridPos": {
+        "x": 14,
+        "y": 9,
+        "w": 10,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(cgp_manager_pending_artifacts{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) and on (job, instance) (((up{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1) and on (job, instance) ((time() - cgp_manager_collection_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) >= 0) and on (job, instance) ((time() - cgp_manager_collection_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) <= 900)) and on (job, instance) (cgp_manager_collection_success{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1))",
+          "legendFormat": "__auto",
+          "format": "table",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "Unknown",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unknown",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "noValue",
+                "value": "Unknown"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "blue",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "Unknown",
+                        "color": "gray"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "displayName",
+                "value": "Retained"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "cgp_manager": true
+            },
+            "indexByName": {
+              "job": 0,
+              "instance": 1,
+              "kind": 2,
+              "Value": 3
+            },
+            "renameByName": {
+              "job": "Job",
+              "instance": "Instance",
+              "source": "Source",
+              "kind": "Artifact kind",
+              "domain": "Domain"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Local public certificate read status",
+      "description": "Enabled domains, fresh local snapshot. Readable only means public cert.pem was parsed; expired leaves can be readable. Read errors remain visible on incomplete snapshots. This is not chain, private-key, hostname or served TLS validation.",
+      "type": "table",
+      "pluginVersion": "11.0.0",
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 10,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(max without (status) ((cgp_manager_local_certificate_status{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",domain=~\"${domain:regex}\",status=\"ok\"} == 1) * 0 or (cgp_manager_local_certificate_status{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",domain=~\"${domain:regex}\",status=\"missing\"} == 1) * 1 or (cgp_manager_local_certificate_status{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",domain=~\"${domain:regex}\",status=\"error\"} == 1) * 2)) and on (job, instance) ((up{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1) and on (job, instance) ((time() - cgp_manager_collection_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) >= 0) and on (job, instance) ((time() - cgp_manager_collection_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) <= 900)) and on (job, instance, domain) (cgp_manager_domain_enabled{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",domain=~\"${domain:regex}\"} == 1)",
+          "legendFormat": "__auto",
+          "format": "table",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "Unknown",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unknown",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "noValue",
+                "value": "Unknown"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "blue",
+                      "value": null
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "Unknown",
+                        "color": "gray"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "Readable",
+                        "color": "blue"
+                      },
+                      "1": {
+                        "text": "Missing",
+                        "color": "orange"
+                      },
+                      "2": {
+                        "text": "Read error",
+                        "color": "red"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "displayName",
+                "value": "Local leaf"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "cgp_manager": true
+            },
+            "indexByName": {
+              "job": 0,
+              "instance": 1,
+              "domain": 2,
+              "Value": 3
+            },
+            "renameByName": {
+              "job": "Job",
+              "instance": "Instance",
+              "source": "Source",
+              "kind": "Artifact kind",
+              "domain": "Domain"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Local certificate — days left",
+      "description": "Enabled domains with a known readable public leaf and a fresh complete snapshot. Remaining days are rounded up: <=7 days is critical, >7 through 21 days is warning. Expired leaves remain critical. Unknown expiry is never zero. This does not describe the certificate served by CGP.",
+      "type": "stat",
+      "pluginVersion": "11.0.0",
+      "gridPos": {
+        "x": 10,
+        "y": 18,
+        "w": 14,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(ceil((cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",domain=~\"${domain:regex}\"} - time()) / 86400)) and on (job, instance) (((up{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1) and on (job, instance) ((time() - cgp_manager_collection_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) >= 0) and on (job, instance) ((time() - cgp_manager_collection_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) <= 900)) and on (job, instance) (cgp_manager_collection_success{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)) and on (job, instance, domain) (cgp_manager_domain_enabled{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",domain=~\"${domain:regex}\"} == 1) and on (job, instance, domain) (cgp_manager_local_certificate_status{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",domain=~\"${domain:regex}\",status=\"ok\"} == 1)",
+          "legendFormat": "{{domain}} · {{job}} / {{instance}}",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "d",
+          "decimals": 0,
+          "noValue": "Unknown",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 8
+              },
+              {
+                "color": "blue",
+                "value": 22
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unknown",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 9,
+      "title": "Saved failure count — history",
+      "description": "Saved count for the last failed stage, not a cumulative counter. Enabled domains and fresh complete snapshots only; gaps are not filled or connected. This historical gauge is not current TLS health.",
+      "type": "timeseries",
+      "pluginVersion": "11.0.0",
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(cgp_manager_recorded_failures{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",domain=~\"${domain:regex}\"}) and on (job, instance) (((up{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1) and on (job, instance) ((time() - cgp_manager_collection_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) >= 0) and on (job, instance) ((time() - cgp_manager_collection_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) <= 900)) and on (job, instance) (cgp_manager_collection_success{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)) and on (job, instance, domain) (cgp_manager_domain_enabled{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",domain=~\"${domain:regex}\"} == 1)",
+          "legendFormat": "{{domain}} · {{job}} / {{instance}}",
+          "format": "time_series",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "Unknown",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unknown",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "auto",
+            "pointSize": 4,
+            "axisLabel": "Saved failures",
+            "axisPlacement": "auto",
+            "axisCenteredZero": false,
+            "axisBorderShow": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Last saved success — age",
+      "description": "Age of the last saved manager deployment or unchanged check. It is historical evidence, not an expected heartbeat or proof of current served TLS. Enabled domains and fresh complete collection only; missing saved success remains Unknown.",
+      "type": "stat",
+      "pluginVersion": "11.0.0",
+      "gridPos": {
+        "x": 12,
+        "y": 27,
+        "w": 6,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(time() - cgp_manager_last_success_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",domain=~\"${domain:regex}\"}) and on (job, instance) (((up{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1) and on (job, instance) ((time() - cgp_manager_collection_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) >= 0) and on (job, instance) ((time() - cgp_manager_collection_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) <= 900)) and on (job, instance) (cgp_manager_collection_success{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)) and on (job, instance, domain) (cgp_manager_domain_enabled{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",domain=~\"${domain:regex}\"} == 1)",
+          "legendFormat": "{{domain}} · {{job}} / {{instance}}",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "noValue": "Unknown",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 0
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unknown",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 11,
+      "title": "Saved retry timestamp",
+      "description": "Saved retry time, not a promise of a scheduled retry or proof of active backoff. Zero explicitly means Cleared. Enabled domains and fresh complete collection only. Unix seconds are converted to milliseconds for Grafana date display; unknown is not Cleared.",
+      "type": "stat",
+      "pluginVersion": "11.0.0",
+      "gridPos": {
+        "x": 18,
+        "y": 27,
+        "w": 6,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "(cgp_manager_retry_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",domain=~\"${domain:regex}\"} * 1000) and on (job, instance) (((up{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1) and on (job, instance) ((time() - cgp_manager_collection_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) >= 0) and on (job, instance) ((time() - cgp_manager_collection_timestamp_seconds{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"}) <= 900)) and on (job, instance) (cgp_manager_collection_success{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\"} == 1)) and on (job, instance, domain) (cgp_manager_domain_enabled{cgp_manager=\"true\",job=~\"${job:regex}\",instance=~\"${instance:regex}\",domain=~\"${domain:regex}\"} == 1)",
+          "legendFormat": "{{domain}} · {{job}} / {{instance}}",
+          "format": "time_series",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeAsIso",
+          "decimals": 0,
+          "noValue": "Unknown",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unknown",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Cleared",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      }
+    }
+  ]
+}

@@ -227,6 +227,8 @@ replace it with `[]`; otherwise a configured
 [lost-resource policy](https://www.zabbix.com/documentation/current/en/manual/discovery/low_level_discovery)
 could disable or delete previously discovered objects.
 
-This checkpoint supplies the discovery contract, not an installed Zabbix
-template, privileged agent rule, Grafana dashboard or live-server acceptance
-result. Those are separate remaining roadmap items.
+Optional Zabbix/Grafana assets and Prometheus alert rules now accompany this
+contract in the [monitoring integrations guide](MONITORING_INTEGRATIONS.md).
+Their executable synthetic tests and format checks are separate from the later
+real import and deployment acceptance. The application installer does not
+enable an integration, privileged agent rule or collection schedule.

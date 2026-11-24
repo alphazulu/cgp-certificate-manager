@@ -6,7 +6,7 @@ Automatic Let's Encrypt certificate management for CommuniGate Pro on Linux usin
 
 [Русская документация](README.ru.md)
 
-This branch develops **2.2.0.dev6**. The stable production release is **2.1.0**.
+This branch develops **2.2.0.dev7**. The stable production release is **2.1.0**.
 See [ROADMAP.md](ROADMAP.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for completed work,
 test evidence and the next checkpoint. The development branch is not a release.
 Contributor commands and test boundaries are in [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -15,6 +15,10 @@ See [SECURITY.md](SECURITY.md) for reporting and trust boundaries, and the
 Real VM/server tests are deferred to a later session; independent development
 and automated checks continue. The new [local monitoring interface](docs/MONITORING.md)
 exports saved state and local certificate expiry without contacting external services.
+Optional [monitoring integrations](docs/MONITORING_INTEGRATIONS.md) provide
+Prometheus alert rules, a Grafana dashboard and a Zabbix template with synthetic
+tests. Their import, collection schedule and notification routing remain
+explicit deployment steps.
 
 ## Why this project exists
 

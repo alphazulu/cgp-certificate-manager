@@ -31,8 +31,9 @@ task resumable without relying on chat history.
 
 ## Isolated test environments
 
-Use Linux, Python **3.12** with its `venv` module, Bash and the OpenSSL command-line
-tools. The suite includes POSIX file/lock checks, subprocess recovery and local
+Use Linux, Python **3.12** with its `venv` module, **Node.js 24.22.3**, Bash and
+the OpenSSL command-line tools. Node runs the exact Zabbix preprocessing scripts;
+its absence is a test failure, not a reason to skip the checks. The suite includes POSIX file/lock checks, subprocess recovery and local
 TLS tests. Run it as an ordinary development user, with synthetic fixtures and
 temporary state, rather than against an installed server.
 
@@ -112,6 +113,10 @@ Preserve the contracts described in these documents:
   unsafe local paths and incomplete discovery, and test publication failure
   before and after atomic replacement. Monitoring must not query providers,
   perform recovery or expose private source contents.
+- [Monitoring integrations](docs/MONITORING_INTEGRATIONS.md): exercise shipped
+  Prometheus expressions with real promtool and exact Zabbix JavaScript with
+  synthetic input. Assert missing, stale, future, disabled and cross-host cases;
+  an empty/disappearing series must not become a healthy zero or empty discovery.
 
 Automated tests must not contact production CGP, Cloudflare or ACME services,
 use production credentials, or alter real DNS. Use synthetic domains, isolated
@@ -123,13 +128,14 @@ proof for every real deployment.
 
 ## CI and installer integration
 
-The [workflow](.github/workflows/ci.yml) is configured for seven jobs:
+The [workflow](.github/workflows/ci.yml) is configured for eight jobs:
 
 | Jobs | Scope |
 |---|---|
-| `tests (compat)` and `tests (current)` | Python 3.12, separate dependencies and strict 100% coverage gates |
+| `tests (compat)` and `tests (current)` | Python 3.12, separate dependencies, strict 100% application coverage and executed Zabbix preprocessing under pinned Node.js |
 | Four `installer` combinations | Ubuntu 24.04 and Debian 13, each upgrading source-pinned 2.0.1 and 2.1.0 baselines |
-| `package` | Archive and SHA-256 verification after both test profiles and all installer combinations succeed |
+| `monitoring assets` | Pinned promtool validates/evaluates alert rules and the actual dashboard expressions with synthetic timelines |
+| `package` | Archive and SHA-256 verification after both test profiles, all installer combinations and monitoring-assets checks succeed |
 
 The package job uploads a CI artifact; it does not publish a release. Action
 versions are pinned to full commit SHAs with version comments. Verify a changed
@@ -146,6 +152,37 @@ the exact revision's CI results before marking integration checks complete.
 The installed monitoring checks use the candidate's native interpreter/launcher,
 forbid external calls and compare private state before and after observation.
 Explicit export writes only the dedicated synthetic public metrics destination.
+
+## Monitoring asset checks
+
+The JSON/YAML contract tests and exact JavaScript preprocessing tests run with
+the normal Python suite. They do not contact Zabbix, Grafana, node_exporter or a
+Prometheus server. Keep JavaScript coverage enforcement on the actual shipped
+script bodies; never weaken it with ignored ranges or a test-only replacement.
+
+For the additional PromQL checks, use the pinned **promtool 3.16.0** binary:
+
+```sh
+promtool check rules monitoring/prometheus/alerts.yml
+promtool test rules monitoring/prometheus/alerts.test.yml
+python3 tests/integration/check_monitoring_assets.py > /tmp/cgp-dashboard-tests.json
+promtool test rules /tmp/cgp-dashboard-tests.json
+```
+
+The helper reads the shipped Grafana expressions and supplies synthetic
+time-series inputs to native promtool tests. It does not interpret PromQL in
+Python. A failure in expression syntax, vector matching or expected samples
+must fail the job. The CI workflow downloads only the pinned official release,
+checks archive SHA-256
+`68727009472a2c02e1ff7f062fd5b3e637285bffc8fc2d340c76fb449d6e0f34`
+and extracts promtool. Do not commit the binary/archive or replace a failed
+engine test with a string-only assertion.
+
+If promtool cannot be obtained in a local workspace, record that limitation and
+inspect the exact revision's monitoring-assets CI job before marking those
+checks passed. Actual template/dashboard import, frontend rendering and server
+integration remain in the deferred acceptance session; asset validation is not
+evidence of a completed live deployment.
 
 ## Pull request and handoff
 
