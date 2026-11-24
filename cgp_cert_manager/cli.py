@@ -1,7 +1,7 @@
 import argparse, fcntl, shutil, sys, smtplib, socket
 from email.message import EmailMessage
 from .core import *
-from . import __version__
+from . import __version__, deployment
 
 def hook(cfg,cleanup):
     if cleanup:
@@ -46,7 +46,7 @@ def main():
     os.umask(0o077)
     p=argparse.ArgumentParser(); p.add_argument('--version',action='version',version=__version__); p.add_argument('--domain'); p.add_argument('--backup-file'); p.add_argument('--json',action='store_true'); p.add_argument('--allow-shrink',action='store_true'); p.add_argument('--force-renew',action='store_true'); p.add_argument('--retry-now',action='store_true')
     g=p.add_mutually_exclusive_group()
-    for x in ('sync','list','show-domains','status','plan','verify','doctor','dry-run','install-only','history','hook-auth','hook-cleanup','reset-backoff','discover-listeners','verify-listeners','repair-chain','tui','apply-schedule','console'): g.add_argument('--'+x,action='store_true')
+    for x in ('sync','list','show-domains','status','plan','verify','doctor','dry-run','install-only','history','hook-auth','hook-cleanup','reset-backoff','discover-listeners','verify-listeners','repair-chain','tui','apply-schedule','console','transactions','recover'): g.add_argument('--'+x,action='store_true')
     g.add_argument('--backups',metavar='DOMAIN'); g.add_argument('--rollback',metavar='DOMAIN'); g.add_argument('--migrate',action='store_true')
     a=p.parse_args()
     if a.backup_file and not a.rollback: p.error('--backup-file requires --rollback')
@@ -65,6 +65,16 @@ def main():
         return locked_main(a,migrate(load(CONFIG)))
 
 def locked_main(a,cfg):
+    if a.transactions or a.recover:
+        rows=deployment.transaction_status(cfg,a.domain) if a.transactions else deployment.recover_pending(cfg,a.domain)
+        if a.json: print(json.dumps(rows,indent=2,ensure_ascii=False))
+        elif not rows: print('No pending transactions')
+        elif a.transactions:
+            print(f'{"DOMAIN":25} {"PHASE":12} {"STATE":12} SERVER')
+            for row in rows: print(f"{row['domain']:25} {row['phase']:12} {row['state']:12} {'match' if row['server_matches'] else 'mismatch'}")
+        else:
+            for row in rows: print(f"{row['domain']}: {row['result']}")
+        return 0
     if a.migrate: atomic(CONFIG,cfg); return 0
     if a.apply_schedule:
         from .schedule import apply
@@ -95,23 +105,17 @@ def locked_main(a,cfg):
         old=load(selected); info=installed_info(old)
         if not info or info['days']<1: raise Error('Backup certificate expired or missing')
         validate_backup(old)
+        deployment.recover_pending(cfg)
         cur=current(cfg,name)
         if set(cur)!=set(FIELDS): raise Error('Cannot back up current settings')
-        saved=backup(name,cur)
-        try:
-            update(cfg,name,old)
-            if not same(current(cfg,name),old): raise Error('Rollback not verified')
-        except (Exception, KeyboardInterrupt):
-            try:
-                update(cfg,name,cur)
-                if not same(current(cfg,name),cur): raise Error('Rollback recovery readback mismatch')
-            except Exception:
-                raise Error('CRITICAL: rollback recovery failed; backup '+str(saved)) from None
-            raise Error('Rollback failed; previous settings restored') from None
+        d=next((item for item in cfg.get('domains',[]) if item['cgp_domain']==name),{'cgp_domain':name,'names':info['names']})
+        d=dict(d,tls=d.get('tls',cfg.get('tls',[])))
+        deployment.apply(cfg,name,cur,old,deployment.snapshot_endpoints(d,old),deployment.snapshot_endpoints(d,cur))
         history(name,'manual rollback'); return 0
     if a.show_domains: print(json.dumps(load(STATE/'domains.json',[]),indent=2,ensure_ascii=False)); return 0
     state=load(STATE/'state.json',{}); failures=0
     read_only=a.dry_run or a.status or a.plan or a.doctor or a.verify or a.verify_listeners
+    if not read_only and not a.sync: deployment.recover_pending(cfg)
     try:
         z=zones(cfg); domains=discover(cfg,z)
         if not read_only: atomic(STATE/'domains.json',domains)
@@ -127,6 +131,7 @@ def locked_main(a,cfg):
     for d in domains:
         name=d['cgp_domain']; item=state.setdefault(name,{})
         if a.domain and a.domain!=name: continue
+        if not read_only: deployment.assert_no_pending()
         phase='inspection'; row=None
         try:
             stored=current(cfg,name); old=installed_info(stored); local=local_info(d)

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.0.dev0 — unreleased
+
+- Route certificate deployment and manual backup restoration through a durable per-domain transaction journal under the existing global operation lock.
+- Record previous and intended settings with separate TLS endpoints before remote writes; bind recovery to the local machine and configured CGP CLI endpoint.
+- Recover interrupted work before normal certificate operations. Refuse unknown CGP state and block further domain changes while any transaction is unresolved.
+- Verify the recorded key, leaf and complete CA chain, including live TLS, independently of mutable Certbot files. Retain unresolved journals after failed restoration or verification.
+- Add read-only `--transactions`, explicit `--recover`, scoped domain actions and a global F9 console menu with recovery confirmation.
+- Add fault-injection unit tests, fresh-process crash/recovery tests and real OpenSSL/loopback TLS tests. Keep the 100% statement/branch coverage gate.
+- Test installer upgrades from both stable 2.0.1 and 2.1.0, including preservation of pending transaction journals. Development artifacts identify themselves as `2.2.0.dev0`.
+
 ## 2.1.0
 
 - Optional whiptail setup and curses administration console with shared Russian/English navigation, domain details, TLS verification, sorting, filters, history, backup selection and timer controls.

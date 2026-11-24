@@ -26,6 +26,8 @@ ACTIONS = (
     ('Select backup to restore (rollback)', ('--rollback',), True),
     ('Reset retry delay', ('--reset-backoff',), True),
     ('Retry now', ('--retry-now',), True),
+    ('Transaction status', ('--transactions',), False),
+    ('Recover pending transaction', ('--recover',), True),
 )
 
 def command_for(domain, index):
@@ -118,6 +120,7 @@ HELP = [
     'F6: service journal',
     'F7: systemd timer controls',
     'F8: verify all managed domains',
+    'F9: inspect or recover pending transactions',
     'S: cycle sorting (name, expiry, status)',
     'F: cycle filters (all, managed, attention)',
     'F1: help',
@@ -250,7 +253,7 @@ class Screen:
             self.put(4+i-self.offset,0,text,self.colors.get(row_status(row),0) | (curses.A_REVERSE if i==self.selected else 0))
         self.put(h-3,0,self.message)
         self.put(h-2,0,'Enter Domain | F2 Settings | F5 Refresh | F6 Logs')
-        self.put(h-1,0,'F1 Help | F7 Timer | F8 Verify | S Sort | F Filter | Q Exit',curses.A_BOLD)
+        self.put(h-1,0,'F1 Help | F7 Timer | F8 TLS | F9 Recovery | Q',curses.A_BOLD)
         self.w.refresh()
 
     def view(self,title,lines):
@@ -429,6 +432,16 @@ class Screen:
         commands={1:CLI+['--apply-schedule'],2:['systemctl','enable','--now','cgp-letsencrypt.timer'],3:['systemctl','stop','cgp-letsencrypt.timer'],4:['systemctl','disable','--now','cgp-letsencrypt.timer']}
         self.execute(commands[choice],options[choice])
 
+    def transaction_menu(self):
+        # Recovery must remain available even when discovery returns no domains.
+        options=['Transaction status','Recover all pending transactions','Back']
+        choice=self.menu('Pending transactions',options)
+        if choice is None or choice==2: return
+        if choice==0:
+            self.inspect(CLI+['--transactions'],options[choice])
+        elif self.confirm(options[choice]):
+            self.execute(CLI+['--recover'],options[choice])
+
     def loop(self):
         self.refresh_data()
         while True:
@@ -443,6 +456,7 @@ class Screen:
             elif k==curses.KEY_F6: self.logs()
             elif k==curses.KEY_F7: self.timer_menu()
             elif k==curses.KEY_F8: self.verify()
+            elif k==curses.KEY_F9: self.transaction_menu()
             elif k==curses.KEY_F1: self.view('Help',HELP)
             elif k in (ord('s'),ord('S')):
                 self.sort_mode=(self.sort_mode+1)%3

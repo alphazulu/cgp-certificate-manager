@@ -294,31 +294,18 @@ def discover_listeners():
     return [{'port':p,'starttls':LISTENER_MODES[p]} for p in sorted(ports) if p in LISTENER_MODES]
 
 def deploy(cfg,d):
+    from . import deployment
     name=d['cgp_domain']; p=LIVE/d['cert_name']; cert=p/'cert.pem'; key=p/'privkey.pem'; chain=p/'chain.pem'
-    info=local_info(d)
+    # Validate and install the same captured leaf, even if Certbot changes LIVE.
+    cert_pem=cert.read_bytes(); info=cert_info(cert_pem)
     if not info or set(info['names'])!=set(d['names']) or info['days']<1: raise Error('Local certificate SAN/expiry mismatch')
-    run('openssl','verify','-purpose','sslserver','-CAfile','/etc/ssl/certs/ca-certificates.crt','-untrusted',str(chain),str(cert))
-    if run('openssl','x509','-in',str(cert),'-pubkey','-noout')!=run('openssl','pkey','-in',str(key),'-pubout'): raise Error('Key mismatch')
     # CGP accepts concatenated DER in a single Base64 DataBlock.
-    new={'PrivateSecureKey':'['+payload(run('openssl','rsa','-in',str(key),'-traditional'))+']','SecureCertificate':'['+payload(cert.read_bytes())+']','CAChain':'['+chain_payload(chain.read_bytes())+']','CertificateType':'YES'}
+    # deployment.apply validates the captured key, leaf and chain together.
+    new={'PrivateSecureKey':'['+payload(run('openssl','rsa','-in',str(key),'-traditional'))+']','SecureCertificate':'['+payload(cert_pem)+']','CAChain':'['+chain_payload(chain.read_bytes())+']','CertificateType':'YES'}
     old=current(cfg,name)
-    if certificate_settings_match(old,new): verify_tls(d,info['fingerprint']); return 'unchanged'
     # A first installation with no readable old settings is not safely reversible.
     if set(old)!=set(FIELDS): raise Error('Cannot back up all CGP certificate fields; refusing automatic update')
-    b=backup(name,old)
-    try:
-        try: update(cfg,name,new)
-        except Exception: LOG.warning('%s: update returned error; checking readback',name)
-        if not certificate_settings_match(current(cfg,name),new): raise Error('CGP readback mismatch')
-        verify_tls(d,info['fingerprint'])
-    except (Exception, KeyboardInterrupt):
-        try:
-            update(cfg,name,old)
-            if not same(current(cfg,name),old): raise Error('Rollback readback mismatch')
-        except Exception: raise Error('CRITICAL: rollback unverified; backup '+str(b)) from None
-        raise Error('Deployment failed; previous settings restored') from None
-    for stale in sorted(b.parent.glob('*.json'),reverse=True)[5:]: stale.unlink()
-    return 'installed'
+    return deployment.apply(cfg,name,old,new,tls_endpoints(d),deployment.snapshot_endpoints(d,old))
 
 def validate_backup(settings):
     """Reject incomplete or cryptographically invalid backup before any write."""

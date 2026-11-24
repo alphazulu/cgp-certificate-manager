@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch
-from cgp_cert_manager import core as c
+from cgp_cert_manager import core as c, recovery
 import base64, hashlib
 
 def pem(b):
@@ -35,7 +35,7 @@ class DeploymentTests(unittest.TestCase):
     def test_rollback_after_failed_tls(self):
         import tempfile
         from pathlib import Path
-        from unittest.mock import Mock
+        import contextlib
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp); p=root/'example.com'; p.mkdir()
             (p/'cert.pem').write_bytes(pem(b'leaf')); (p/'chain.pem').write_bytes(pem(b'ca1')+pem(b'ca2')); (p/'privkey.pem').write_bytes(b'key')
@@ -44,7 +44,21 @@ class DeploymentTests(unittest.TestCase):
             d={'cgp_domain':'example.com','cert_name':'example.com','names':['example.com']}
             def fake_run(*args,**kw):
                 return pem(b'key') if args[1]=='rsa' else b'pubkey'
-            with patch.object(c,'LIVE',root), patch.object(c,'local_info',return_value={'names':d['names'],'days':80,'fingerprint':'abc'}), patch.object(c,'run',side_effect=fake_run), patch.object(c,'current',side_effect=[old,new,old]), patch.object(c,'backup',return_value=root/'backup.json'), patch.object(c,'update') as update, patch.object(c,'verify_tls',side_effect=c.Error('TLS failed')):
+            actual=dict(old)
+            def write(cfg,name,settings):
+                actual.clear(); actual.update(settings)
+            with contextlib.ExitStack() as stack:
+                for attribute,value in (('LIVE',root),('STATE',root)):
+                    stack.enter_context(patch.object(c,attribute,value))
+                stack.enter_context(patch.object(c,'cert_info',return_value={'names':d['names'],'days':80,'fingerprint':'abc'}))
+                stack.enter_context(patch.object(c,'run',side_effect=fake_run))
+                stack.enter_context(patch.object(c,'current',side_effect=lambda *_:dict(actual)))
+                stack.enter_context(patch.object(c,'validate_backup'))
+                stack.enter_context(patch.object(recovery,'server_identity',return_value='server'))
+                update=stack.enter_context(patch.object(c,'update',side_effect=write))
+                verify=stack.enter_context(patch.object(recovery,'verify_snapshot',side_effect=[c.Error('TLS failed'),None]))
                 with self.assertRaisesRegex(c.Error,'previous settings restored'): c.deploy({},d)
                 self.assertEqual(update.call_count,2)
                 self.assertEqual(update.call_args.args[2],old)
+                self.assertEqual(verify.call_args.args[0],old)
+                self.assertEqual(actual,old)

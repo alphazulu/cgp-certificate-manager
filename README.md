@@ -6,6 +6,10 @@ Automatic Let's Encrypt certificate management for CommuniGate Pro on Linux usin
 
 [Русская документация](README.ru.md)
 
+This branch develops **2.2.0.dev0**. The stable production release is **2.1.0**.
+See [ROADMAP.md](ROADMAP.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for completed work,
+test evidence and the next checkpoint. The development branch is not a release.
+
 ## Why this project exists
 
 A mail server can host many domains and aliases. Renewing certificates manually and importing the correct private key and complete CA chain into every domain is error-prone. This manager connects Certbot to CommuniGate Pro and automates that lifecycle without requesting a server restart. DNS-01 allows wildcard certificates without exposing a separate HTTP challenge listener.
@@ -17,8 +21,8 @@ A mail server can host many domains and aliases. Renewing certificates manually 
 - Issue and renew RSA certificates with Certbot; support multiple Cloudflare tokens via manual DNS hooks when required.
 - Guard against losing existing SANs because a Cloudflare zone became unavailable; compare public DNS delegation and detect challenge CNAMEs.
 - Deploy via local HTTP CLI, verify private key, certificate, CA chain and PKI setting; use CertificateType=YES and Base64-encoded concatenated DER for CAChain.
-- Verify hostname, trust, and complete ordered TLS chain against local Certbot files over HTTPS/SNI by default.
-- Back up prior certificate settings, attempt rollback on failed deployment, verify rollback readback, and retain five recent deployment backups per domain.
+- Verify hostname, trust, and complete ordered TLS chain over HTTPS/SNI by default. Installation and recovery verify captured certificate snapshots; `--verify` compares the live installation with the current Certbot lineage.
+- Durably journal prior and intended settings before deployment, recover interrupted transactions, and verify restoration by readback and live TLS. Prune older backups only after a completed installation, retaining five recent backups per domain.
 - Separate retry backoff for issuance and deployment, optional SMTP error notifications, JSON status and history, systemd scheduling.
 
 ## Requirements
@@ -74,18 +78,35 @@ Replace example.com with a managed domain. Review the plan before enabling autom
 | --domain DOMAIN --retry-now | Bypass retry delay without forcing renewal |
 | --domain DOMAIN --reset-backoff | Reset retry delay |
 | --backups DOMAIN, --rollback DOMAIN, --backup-file FILENAME | Inspect backups or restore a selected backup |
+| --transactions [--domain DOMAIN] [--json] | Inspect pending transaction metadata without recovery |
+| --recover [--domain DOMAIN] [--json] | Explicitly recover pending transactions |
 | --history, --json, --version | History, structured status, version |
 | --force-renew, --allow-shrink | Explicit overrides; use with caution |
 
 ## Architecture and storage
 
-CGP discovery → Cloudflare zone selection → Certbot DNS-01 → local verification → backup → CGP CLI deployment → readback → TLS verification → success or rollback.
+Recover pending work → CGP discovery → Cloudflare zone selection → Certbot DNS-01 → captured certificate validation → backup and durable journal → CGP CLI deployment → readback and TLS verification → commit or verified restoration.
 
 - /opt/cgp-certificate-manager/: application
 - /usr/local/sbin/cgp-letsencrypt: CLI launcher
 - /etc/cgp-letsencrypt/: private configuration and credentials
 - /etc/letsencrypt/: Certbot lineages (not replaced by installer)
 - /var/lib/cgp-letsencrypt/: discovered domains, state, history, backups and lock
+- /var/lib/cgp-letsencrypt/transactions/: pending journals containing private certificate snapshots (directory 0700, files 0600)
+
+## Interrupted certificate operations
+
+Normal runs, installation-only runs and manual rollback resolve pending transactions before starting new certificate changes. A newly unresolved transaction stops the same batch before another domain can issue or deploy. Read-only diagnostics never trigger recovery. Inspection and explicit recovery also work when Cloudflare discovery is unavailable:
+
+```sh
+sudo cgp-letsencrypt --transactions --json
+sudo cgp-letsencrypt --recover --domain example.com
+sudo cgp-letsencrypt --transactions
+```
+
+The global operation lock covers both commands. Transaction inspection prints domain, phase, recognized remote state and server identity match; it does not print private keys. An empty result means no pending journal, not a fresh TLS health check. A successful inspection returns zero even if a row reports `unknown` or `foreign`; recovery failures return nonzero.
+
+Recovery uses the saved settings and saved TLS endpoints, including names from the previous certificate after SAN changes. It never needs the old Certbot lineage. If CGP contains a third, unrecognized set of settings, recovery refuses to overwrite it and retains the journal. If restoration cannot pass TLS verification, its journal also remains pending. See [transaction recovery and limitations](docs/TRANSACTIONS.md) before handling an unresolved operation.
 
 ## Safety and limitations
 
@@ -94,7 +115,7 @@ Backups contain private keys; restrict them to root. Rollback is a best-effort A
     journalctl -u cgp-letsencrypt.service -n 100 --no-pager
     python3 -m unittest discover -s tests -v
 
-Unit tests mock API/TLS behavior and are not a substitute for a live integration test. Version 2.0.1 has been verified against a live multi-domain CGP deployment.
+Unit tests isolate CGP, Certbot and systemd. Additional tests exercise real OpenSSL and a local TLS server, and restart recovery in a new process after abrupt termination. These checks do not replace validation against a live CGP instance. Stable 2.1.0 has been checked after a production upgrade; this development version has not.
 
 Independent project; not affiliated with CommuniGate, Cloudflare or Let's Encrypt. No license has been selected yet; repository visibility alone does not grant redistribution rights.
 
@@ -108,19 +129,19 @@ The first two main-menu entries are Save and exit and Exit without saving. The m
 
 ## Administrative console
 
-Run `sudo cgp-letsencrypt --console` after installation, or `sudo python3 -m cgp_cert_manager.console` from a checkout. The curses console uses the existing CLI without holding its operation lock. It displays an on-demand status snapshot, systemd timer information, domain details, SANs, and service logs. Enter opens domain actions; F2 opens the whiptail editor; F5 refreshes; F6 opens logs; F7 manages the timer; F8 verifies all domains; Q, Escape or F10 exits. Certificate mutations and timer changes require confirmation. Commands execute synchronously with normal terminal output. The console supports English and Russian navigation; actual TLS verification requires an explicit verify action, not merely a ready status.
+Run `sudo cgp-letsencrypt --console` after installation, or `sudo python3 -m cgp_cert_manager.console` from a checkout. The curses console uses the existing CLI without holding its operation lock. It displays an on-demand status snapshot, systemd timer information, domain details, SANs, and service logs. Enter opens domain actions; F2 opens the whiptail editor; F5 refreshes; F6 opens logs; F7 manages the timer; F8 verifies all domains; F9 opens transaction inspection and recovery; Q, Escape or F10 exits. Certificate mutations, transaction recovery and timer changes require confirmation. Commands execute synchronously with normal terminal output. The console supports English and Russian navigation; actual TLS verification requires an explicit verify action, not merely a ready status.
 
 ### Console status and backups
 
-F1 opens help. S cycles sorting and F cycles filters. Colors distinguish ready, verified, expiring, blocked and error states. F8 or the domain verification action records actual TLS results for this console session; refreshing status clears them. Domain history is available in the domain menu. Select a specific backup before confirming rollback, or use `--rollback DOMAIN --backup-file FILENAME`. Backup selection does not change the existing rollback trust model: readback is verified, but live TLS must be checked separately.
+F1 opens help. S cycles sorting and F cycles filters. Colors distinguish ready, verified, expiring, blocked and error states. F8 or the domain verification action records actual TLS results for this console session; refreshing status clears them. Domain history is available in the domain menu. Select a specific backup before confirming rollback, or use `--rollback DOMAIN --backup-file FILENAME`. Rollback now performs live TLS checks against the selected backup; it does not compare that old certificate with a newer Certbot lineage. The domain menu offers scoped transaction actions. F9 also works with an empty domain list and can inspect or recover all pending transactions.
 
 ### Installation and upgrade checks
 
-Both terminal interfaces use the saved UI language for common navigation and prompts; technical status codes and some diagnostic text remain English. Run the full test suite, verify the live certificates, and review the installation backup before enabling the timer. The installer checks Python syntax before changing application files. The installer serializes application changes with normal certificate operations and attempts to restore the previous application, configuration and units on handled failures. It leaves the timer stopped after success. A power loss or SIGKILL is not transactionally recoverable.
+Both terminal interfaces use the saved UI language for common navigation and prompts; technical status codes and some diagnostic text remain English. Run the full test suite, verify the live certificates, and review the installation backup before enabling the timer. The installer checks Python syntax before changing application files. The installer serializes application changes with normal certificate operations and attempts to restore the previous application, configuration and units on handled failures. It leaves the timer stopped after success. The application installer itself is not transactionally recoverable after power loss or SIGKILL; the certificate journal covers certificate operations, not application installation.
 
 ## Test suite
 
-The final RC passed 188 unit tests with 100% measured line and branch coverage on the tested environments. CI enforces `coverage report --fail-under=100` and tests clean installation, upgrade from 2.0.1, rollback and lock handling in a disposable Ubuntu container with mocked systemd. These tests do not certify every live CGP/ACME environment.
+Stable 2.1.0 passed 188 unit tests. Development adds unit tests for every new transaction path, process-death/restart scenarios and real OpenSSL/loopback TLS checks. CI enforces `coverage report --fail-under=100` and tests clean installation, upgrades from both 2.0.1 and 2.1.0, rollback, lock handling and journal preservation in disposable Ubuntu containers with mocked systemd. See DEVELOPMENT.md for observed counts and CI results. Coverage does not establish correctness for every live CGP/ACME environment.
 
     python3 -m coverage run --branch --source=cgp_cert_manager -m unittest discover -s tests -v
     python3 -m coverage report -m --fail-under=100

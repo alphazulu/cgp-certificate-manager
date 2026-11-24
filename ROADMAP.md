@@ -10,15 +10,22 @@
 - [x] Define transaction design and safety invariants.
 - [x] Implement durable per-domain write-ahead journal (atomic replace, file and directory fsync, mode 0600).
 - [x] Implement recovery: distinguish previous, intended and unknown CGP state; refuse to overwrite unknown/manual changes.
-- [ ] Integrate journal with deployment and manual rollback under global lock.
-- [ ] Verify live TLS using restored backup chain, not current Certbot files.
-- [ ] Expose read-only transaction status and explicit recovery in CLI/TUI; scheduled recovery before mutation.
-- [ ] Fault-injection tests at every phase, abrupt process termination tests, corruption and concurrency tests.
-- [ ] Real OpenSSL fixtures and local TLS integration tests.
+- [x] Integrate journal with deployment and manual rollback under global lock.
+- [x] Verify live TLS using restored backup chain, not current Certbot files.
+- [x] Expose read-only transaction status and explicit recovery in CLI/TUI; scheduled recovery before mutation. F9 also works without discovered domains.
+- [x] Fault-injection tests at every phase, fresh-process recovery after abrupt termination, corruption, lock exclusion and detected concurrent manual changes. These do not simulate storage power loss or provide remote compare-and-swap.
+- [x] Real OpenSSL fixtures and loopback TLS integration tests.
 - [ ] Safe bootstrap when previous fields missing; fail closed until CGP semantics established.
 - [ ] DNS CAA/DNSSEC/delegation checks and dynamic propagation wait.
-- [ ] Detect manual changes, validate permissions, backup retention (never remove pending recovery data).
+- [x] Detect unknown/manual certificate changes, block all subsequent domain mutations while any transaction remains pending, and keep pending snapshots outside backup pruning.
+- [ ] Complete ownership/permission validation for parent state directory, lock, configuration and existing backups; journal directory/files already checked.
+- [ ] Define safe operator-assisted resolution for invalid/expired previous certificates; current behavior retains the journal when TLS proof is unavailable.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
+
+Checkpoint 3: local full suite passed 303 tests with 100% measured statements and
+branches. CI now includes installer upgrades from stable 2.0.1 and 2.1.0 and
+pending-journal preservation. See DEVELOPMENT.md for observed CI results and
+the exact resume steps; do not treat local success as a production release.
 
 ## 2.3 — Monitoring
 Zabbix discovery/template; Prometheus textfile; Grafana; external TLS probes; SMTP/webhooks and optional Telegram/MQTT.

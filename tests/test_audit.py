@@ -59,7 +59,7 @@ class AuditTests(unittest.TestCase):
 
     def test_diagnostic_failure_does_not_notify_or_write(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(cli,'STATE',Path(tmp)), patch.object(cli,'zones',side_effect=OSError()), patch.object(cli,'notify') as notify, patch.object(cli,'atomic') as atomic:
-            args=argparse.Namespace(dry_run=False,status=True,plan=False,doctor=False,verify=False,verify_listeners=False,migrate=False,apply_schedule=False,discover_listeners=False,reset_backoff=False,repair_chain=False,list=False,history=False,backups=None,rollback=None,show_domains=False)
+            args=argparse.Namespace(dry_run=False,status=True,plan=False,doctor=False,verify=False,verify_listeners=False,migrate=False,apply_schedule=False,discover_listeners=False,reset_backoff=False,repair_chain=False,list=False,history=False,backups=None,rollback=None,show_domains=False,transactions=False,recover=False)
             self.assertEqual(cli.locked_main(args,{}),1)
             notify.assert_not_called()
             atomic.assert_not_called()

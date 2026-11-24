@@ -16,8 +16,22 @@ class ConsoleTests(unittest.TestCase):
 
     def test_mutations_confirmed(self):
         for label,flags,confirm in console.ACTIONS:
-            if flags not in (('--verify',),('--verify-listeners',),('--backups',)):
+            if flags not in (('--verify',),('--verify-listeners',),('--backups',),('--transactions',)):
                 self.assertTrue(confirm,label)
+
+    def test_transaction_actions_are_appended_and_scoped(self):
+        self.assertEqual(console.ACTIONS[7][1],('--rollback',))
+        self.assertEqual(console.ACTIONS[9][1],('--retry-now',))
+        self.assertEqual(console.command_for('example.com',10),console.CLI+['--domain','example.com','--transactions'])
+        self.assertEqual(console.command_for('example.com',11),console.CLI+['--domain','example.com','--recover'])
+        self.assertFalse(console.ACTIONS[10][2])
+        self.assertTrue(console.ACTIONS[11][2])
+
+    def test_transaction_labels_are_translated(self):
+        for label in ('Transaction status','Recover pending transaction','Recover all pending transactions','Pending transactions','F9: inspect or recover pending transactions'):
+            self.assertNotEqual(console.translate(label,'ru'),label)
+            self.assertEqual(console.translate(label,'en'),label)
+        self.assertIn('F9: inspect or recover pending transactions',console.HELP)
 
     def test_status_parser(self):
         with patch.object(console,'capture',return_value=(0,'[{"domain":"z.com"},{"domain":"a.com"}]','')):

@@ -33,6 +33,7 @@ class CLIFlowTests(unittest.TestCase):
         self.m={}
         for name,value in {'zones':{},'discover':[self.domain],'current':dict(FIELDS),'installed_info':dict(CERT),'local_info':dict(CERT),'issue':None,'deploy':'installed','verify_tls':None,'chain_payload':'YQ==','discover_listeners':[{'port':443}],'expected_chain':['a'],'probe_tls':None}.items():
             self.m[name]=self.stack.enter_context(patch.object(cli,name,return_value=value))
+        self.recover=self.stack.enter_context(patch.object(cli.deployment,'recover_pending',return_value=[]))
         self.stack.enter_context(patch.object(cli.os,'umask'))
         self.out=io.StringIO()
         self.stack.enter_context(contextlib.redirect_stdout(self.out))
@@ -237,27 +238,28 @@ class CLIFlowTests(unittest.TestCase):
 
     def test_rollback_selected(self):
         path,old=self.make_backup()
-        self.m['current'].side_effect=[dict(FIELDS),old]
-        with patch.object(cli,'validate_backup') as validate,patch.object(cli,'update') as update:
+        endpoints=[{'port':443,'sni':NAME}]
+        with patch.object(cli,'validate_backup') as validate,patch.object(cli.deployment,'apply') as apply,patch.object(cli.deployment,'snapshot_endpoints',return_value=endpoints):
             self.assertEqual(self.invoke('--rollback',NAME,'--backup-file',path.name),0)
         validate.assert_called_once_with(old)
-        update.assert_called_once_with(self.cfg,NAME,old)
+        apply.assert_called_once_with(self.cfg,NAME,FIELDS,old,endpoints,endpoints)
+        self.recover.assert_called_once_with(self.cfg)
         self.assertEqual(self.invoke('--backups',NAME),0)
         self.assertIn(path.name,self.out.getvalue())
 
     def test_rollback_recovery(self):
         path,old=self.make_backup()
-        self.m['current'].side_effect=[dict(FIELDS),dict(FIELDS),dict(FIELDS)]
-        with patch.object(cli,'validate_backup'),patch.object(cli,'update') as update:
+        with patch.object(cli,'validate_backup'),patch.object(cli.deployment,'snapshot_endpoints',return_value=[]),patch.object(cli.deployment,'apply',side_effect=core.Error('Deployment failed; previous settings restored')):
             with self.assertRaisesRegex(core.Error,'previous settings restored'):
                 self.invoke('--rollback',NAME)
-        self.assertEqual(update.call_count,2)
+        self.assertFalse((self.root/'history.jsonl').exists())
 
     def test_rollback_recovery_failure(self):
         self.make_backup()
-        with patch.object(cli,'validate_backup'),patch.object(cli,'update',side_effect=OSError()):
+        with patch.object(cli,'validate_backup'),patch.object(cli.deployment,'snapshot_endpoints',return_value=[]),patch.object(cli.deployment,'apply',side_effect=core.Error('CRITICAL: recovery pending')):
             with self.assertRaisesRegex(core.Error,'CRITICAL'):
                 self.invoke('--rollback',NAME)
+        self.assertFalse((self.root/'history.jsonl').exists())
 
     def test_rollback_invalid_choices(self):
         with self.assertRaisesRegex(core.Error,'No backup'):
@@ -295,12 +297,14 @@ class CLIFlowTests(unittest.TestCase):
                 self.invoke('--rollback',NAME)
             update.assert_not_called()
 
-    def test_rollback_recovery_readback_mismatch(self):
-        path,old=self.make_backup()
-        self.m['current'].side_effect=[dict(FIELDS),dict(FIELDS),old]
-        with patch.object(cli,'validate_backup'),patch.object(cli,'update'):
-            with self.assertRaisesRegex(core.Error,'CRITICAL'):
+    def test_pending_recovery_blocks_manual_rollback(self):
+        self.make_backup()
+        self.recover.side_effect=core.Error('Unknown CGP state')
+        with patch.object(cli,'validate_backup'),patch.object(cli.deployment,'apply') as apply:
+            with self.assertRaisesRegex(core.Error,'Unknown CGP state'):
                 self.invoke('--rollback',NAME)
+        self.m['current'].assert_not_called()
+        apply.assert_not_called()
 
     def test_deferred_issue_continues_next_domain(self):
         second=dict(self.domain,cgp_domain='second.com',cert_name='second.com',names=['second.com'])

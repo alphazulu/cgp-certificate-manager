@@ -16,3 +16,6 @@ domains.json
 history.jsonl
 backups/
 *.tar.gz
+.coverage
+.coverage.*
+coverage.xml

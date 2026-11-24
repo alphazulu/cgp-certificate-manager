@@ -218,6 +218,62 @@ class ScreenTests(unittest.TestCase):
         s.timer_menu()
         self.assertEqual(s.execute.call_count,4)
 
+    def test_domain_transaction_status_and_confirmed_recovery(self):
+        s=self.screen
+        s.menu=Mock(side_effect=[11,12,12,None])
+        s.confirm=Mock(side_effect=[False,True])
+        s.inspect=Mock(); s.execute=Mock()
+        s.domain_menu()
+        s.inspect.assert_called_once_with(c.CLI+['--domain',NAME,'--transactions'],'Transaction status — '+NAME)
+        s.execute.assert_called_once_with(c.CLI+['--domain',NAME,'--recover'],'Recover pending transaction — '+NAME)
+        self.assertEqual(s.confirm.call_count,2)
+
+    def test_global_transaction_menu_cancel_and_recover(self):
+        s=self.screen
+        s.menu=Mock(); s.confirm=Mock(return_value=True)
+        s.inspect=Mock(); s.execute=Mock()
+        for choice in (None,2,0,1):
+            s.menu.return_value=choice
+            s.transaction_menu()
+        s.inspect.assert_called_once_with(c.CLI+['--transactions'],'Transaction status')
+        s.execute.assert_called_once_with(c.CLI+['--recover'],'Recover all pending transactions')
+        s.confirm.assert_called_once_with('Recover all pending transactions')
+        s.confirm.return_value=False
+        s.transaction_menu()
+        self.assertEqual(s.execute.call_count,1)
+
+    def test_global_transaction_status_failure_stays_in_console(self):
+        s=self.screen
+        s.menu=Mock(return_value=0); s.view=Mock()
+        with patch.object(c,'capture',side_effect=OSError()),patch.object(c.curses,'endwin') as endwin:
+            s.transaction_menu()
+        endwin.assert_not_called()
+        s.view.assert_called_once_with('Transaction status',['Diagnostic unavailable or timed out'])
+
+    def test_f9_available_without_discovered_domains(self):
+        s=self.screen
+        s.rows=[]; s.all_rows=[]
+        s.refresh_data=Mock(); s.menu=Mock(return_value=0)
+        s.inspect=Mock(); s.execute=Mock(); s.confirm=Mock(return_value=True)
+        self.keys(c.curses.KEY_F9,27)
+        s.loop()
+        s.inspect.assert_called_once_with(c.CLI+['--transactions'],'Transaction status')
+        s.menu.return_value=1
+        self.keys(c.curses.KEY_F9,27)
+        s.loop()
+        s.execute.assert_called_once_with(c.CLI+['--recover'],'Recover all pending transactions')
+        self.assertEqual(s.rows,[])
+
+    def test_f9_footer_fits_minimum_width_in_both_languages(self):
+        self.w.getmaxyx.return_value=(10,48)
+        for lang in ('en','ru'):
+            self.screen.lang=lang
+            self.w.addnstr.reset_mock()
+            self.screen.draw()
+            footer=next(args.args[2] for args in self.w.addnstr.call_args_list if args.args[0]==9)
+            self.assertIn('F9',footer)
+            self.assertLessEqual(len(footer),47)
+
     def test_loop_all_shortcuts(self):
         s=self.screen
         for name in ('refresh_data','draw','domain_menu','execute','logs','timer_menu','verify','view'):

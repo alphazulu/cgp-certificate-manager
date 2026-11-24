@@ -17,6 +17,10 @@ PHASES = {
     "committed": set(),
     "restored": set(),
 }
+RECORD_FIELDS = {
+    "schema", "domain", "phase", "previous", "intended", "endpoints",
+    "previous_endpoints", "config_identity",
+}
 
 class JournalError(core.Error):
     pass
@@ -51,14 +55,7 @@ def validate_settings(settings):
         ):
             raise JournalError("Invalid transaction settings")
 
-def validate(record, domain):
-    if not isinstance(record, dict) or record.get("schema") != 1:
-        raise JournalError("Unsupported transaction journal schema")
-    if record.get("domain") != domain or record.get("phase") not in PHASES:
-        raise JournalError("Invalid transaction identity or phase")
-    validate_settings(record.get("previous"))
-    validate_settings(record.get("intended"))
-    endpoints = record.get("endpoints")
+def validate_endpoints(endpoints):
     if not isinstance(endpoints, list) or not endpoints:
         raise JournalError("Invalid transaction endpoints")
     for ep in endpoints:
@@ -75,6 +72,19 @@ def validate(record, domain):
             raise JournalError("Invalid transaction TLS host")
         if ep.get("starttls") not in (None, "smtp", "imap", "pop3", "ldap", "xmpp", "xmpp-server"):
             raise JournalError("Invalid transaction STARTTLS protocol")
+
+def validate(record, domain):
+    if not isinstance(record, dict) or type(record.get("schema")) is not int or record["schema"] != 2:
+        raise JournalError("Unsupported transaction journal schema")
+    if set(record) != RECORD_FIELDS:
+        raise JournalError("Incomplete or unexpected transaction fields")
+    phase = record["phase"]
+    if record["domain"] != domain or not isinstance(phase, str) or phase not in PHASES:
+        raise JournalError("Invalid transaction identity or phase")
+    validate_settings(record["previous"])
+    validate_settings(record["intended"])
+    validate_endpoints(record["endpoints"])
+    validate_endpoints(record["previous_endpoints"])
     if not isinstance(record.get("config_identity"), str) or not record["config_identity"]:
         raise JournalError("Missing server identity")
     return record
@@ -89,16 +99,29 @@ class Journal:
     def ensure_directory(self):
         # The parent is the existing manager state directory.
         self.directory.mkdir(mode=0o700, exist_ok=True)
-        info = self.directory.lstat()
+        self.check_directory()
+        sync_directory(self.directory.parent)
+
+    def check_directory(self):
+        """Validate without creating or syncing anything for read-only callers."""
+        try:
+            info = self.directory.lstat()
+        except FileNotFoundError:
+            return False
         if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
             raise JournalError("Unsafe transaction directory")
-        sync_directory(self.directory.parent)
+        return True
+
+    def domains(self):
+        """List pending domain names without reading sensitive settings."""
+        if not self.check_directory():
+            return []
+        return sorted(core.identifier(path.stem) for path in self.directory.glob("*.json"))
 
     def read(self, domain):
         path = self.path(domain)
-        if not os.path.lexists(path):
+        if not self.check_directory() or not os.path.lexists(path):
             return None
-        self.ensure_directory()
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         with os.fdopen(fd, "r") as stream:
             info = os.fstat(stream.fileno())
@@ -110,21 +133,22 @@ class Journal:
                 raise JournalError("Corrupt transaction journal") from None
         return validate(record, domain)
 
-    def prepare(self, domain, previous, intended, endpoints, config_identity):
+    def prepare(self, domain, previous, intended, endpoints, config_identity, previous_endpoints=None):
         self.ensure_directory()
         if self.read(domain) is not None:
             raise JournalError("Unresolved transaction already exists")
         record = validate({
-            "schema": 1, "domain": domain, "phase": "prepared",
+            "schema": 2, "domain": domain, "phase": "prepared",
             "previous": previous, "intended": intended,
             "endpoints": endpoints, "config_identity": config_identity,
+            "previous_endpoints": endpoints if previous_endpoints is None else previous_endpoints,
         }, domain)
         durable_json(self.path(domain), record)
         return record
 
     def transition(self, domain, phase):
         record = self.read(domain)
-        if record is None or phase not in PHASES[record["phase"]]:
+        if record is None or not isinstance(phase, str) or phase not in PHASES[record["phase"]]:
             raise JournalError("Invalid transaction transition")
         record["phase"] = phase
         durable_json(self.path(domain), record)
@@ -140,7 +164,7 @@ class Journal:
 def classify(record, actual):
     """No remote write is permitted for an unknown state."""
     if core.same(actual, record["previous"]):
-        return "previous"
+        return "both" if core.same(actual, record["intended"]) else "previous"
     if core.same(actual, record["intended"]):
         return "intended"
     return "unknown"

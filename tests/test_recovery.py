@@ -21,7 +21,7 @@ class RecoveryTests(unittest.TestCase):
         self.old=settings("[YQ==]")
         self.new=settings("[Yg==]")
         self.ep=[{"port":443,"sni":self.name}]
-        self.identity=recovery.server_identity(self.cfg,"machine")
+        self.identity=recovery.server_identity(self.cfg,"a"*32)
         self.verify=Mock()
         self.j.prepare(self.name,self.old,self.new,self.ep,self.identity)
 
@@ -34,9 +34,29 @@ class RecoveryTests(unittest.TestCase):
         return recovery.recover(self.j,self.name,self.cfg,self.identity,self.verify)
 
     def test_identity(self):
-        self.assertNotEqual(self.identity,recovery.server_identity(self.cfg,"other"))
+        self.assertNotEqual(self.identity,recovery.server_identity(self.cfg,"b"*32))
         with self.assertRaises(JournalError):
             recovery.recover(self.j,self.name,self.cfg,"wrong",self.verify)
+
+    def test_local_machine_identity_and_validation(self):
+        with patch.object(Path,"read_text",return_value="A"*32+"\n") as read:
+            self.assertEqual(self.identity,recovery.server_identity(self.cfg))
+            read.assert_called_once_with()
+        with patch.object(Path,"read_text",side_effect=OSError()):
+            with self.assertRaisesRegex(JournalError,"Cannot read"): recovery.server_identity(self.cfg)
+        for invalid in ("",123,"invalid"):
+            with self.subTest(invalid=invalid),self.assertRaisesRegex(JournalError,"Invalid local"):
+                recovery.server_identity(self.cfg,invalid)
+        for invalid in ({},{"communigate":{"url":"https://remote.example.com/CLI/"}}):
+            with self.subTest(invalid=invalid),self.assertRaisesRegex(JournalError,"loopback"):
+                recovery.server_identity(invalid,"a"*32)
+        changed={"communigate":{"url":"http://127.0.0.1:8101/CLI/"}}
+        self.assertNotEqual(self.identity,recovery.server_identity(changed,"a"*32))
+
+    def test_default_verifier(self):
+        with patch.object(core,"current",return_value=self.old),patch.object(recovery,"verify_snapshot") as verify:
+            self.assertEqual(recovery.recover(self.j,self.name,self.cfg,self.identity),"restored")
+            verify.assert_called_once_with(self.old,self.ep)
 
     def test_none(self):
         self.j.transition(self.name,"restoring")
@@ -76,13 +96,13 @@ class RecoveryTests(unittest.TestCase):
     def test_failed_intended_restores_previous(self):
         self.advance("applying")
         self.verify.side_effect=[core.Error("TLS failure"),None]
-        with patch.object(core,"current",side_effect=[self.new,self.new,self.old]),patch.object(core,"update") as update:
+        with patch.object(core,"current",side_effect=[self.new,self.new,self.new,self.old,self.old]),patch.object(core,"update") as update:
             self.assertEqual(self.run_recovery(),"restored")
             update.assert_called_once_with(self.cfg,self.name,self.old)
 
     def test_resume_restoring(self):
         self.j.transition(self.name,"restoring")
-        with patch.object(core,"current",side_effect=[self.new,self.new,self.old]),patch.object(core,"update") as update:
+        with patch.object(core,"current",side_effect=[self.new,self.new,self.old,self.old]),patch.object(core,"update") as update:
             self.assertEqual(self.run_recovery(),"restored")
             update.assert_called_once_with(self.cfg,self.name,self.old)
 
@@ -93,6 +113,77 @@ class RecoveryTests(unittest.TestCase):
             with self.assertRaisesRegex(JournalError,"changed before"): self.run_recovery()
             update.assert_not_called()
         self.assertEqual(self.j.read(self.name)["phase"],"verifying")
+
+    def test_changed_after_successful_verification(self):
+        self.advance("applying")
+        with patch.object(core,"current",side_effect=[self.new,{}]),patch.object(core,"update") as update:
+            with self.assertRaisesRegex(JournalError,"during transaction"): self.run_recovery()
+            update.assert_not_called()
+        self.assertEqual(self.j.read(self.name)["phase"],"verifying")
+
+    def test_changed_during_restore_verification(self):
+        with patch.object(core,"current",side_effect=[self.old,self.old,self.old,self.old,{}]),patch.object(core,"update") as update:
+            with self.assertRaisesRegex(JournalError,"during recovery"): self.run_recovery()
+            update.assert_not_called()
+        self.assertEqual(self.j.read(self.name)["phase"],"restoring")
+
+    def test_changed_during_durable_restore_transition(self):
+        with patch.object(core,"current",side_effect=[self.old,self.old,{}]),patch.object(core,"update") as update:
+            with self.assertRaisesRegex(JournalError,"while preparing recovery"): self.run_recovery()
+            update.assert_not_called()
+        self.assertEqual(self.j.read(self.name)["phase"],"restoring")
+
+    def test_state_returns_to_previous_before_restore_write(self):
+        self.advance("applying")
+        self.verify.side_effect=[core.Error("TLS failure"),None]
+        with patch.object(core,"current",side_effect=[self.new,self.new,self.old,self.old,self.old]),patch.object(core,"update") as update:
+            self.assertEqual(self.run_recovery(),"restored")
+            update.assert_not_called()
+
+    def test_separate_previous_endpoints(self):
+        self.j.path(self.name).unlink()
+        old_ep=[{"port":993,"sni":"old.example.com"}]
+        self.j.prepare(self.name,self.old,self.new,self.ep,self.identity,previous_endpoints=old_ep)
+        with patch.object(core,"current",return_value=self.old):
+            self.assertEqual(self.run_recovery(),"restored")
+        self.verify.assert_called_once_with(self.old,old_ep)
+
+    def test_identical_snapshots_all_phases(self):
+        for phase in ("prepared","applying","applied","verifying","restoring","restored","committed"):
+            with self.subTest(phase=phase):
+                self.j.path(self.name).unlink(missing_ok=True)
+                self.j.prepare(self.name,self.old,self.old,self.ep,self.identity)
+                if phase in ("restoring","restored"):
+                    self.j.transition(self.name,"restoring")
+                    if phase=="restored": self.j.transition(self.name,"restored")
+                elif phase!="prepared": self.advance(phase)
+                with patch.object(core,"current",return_value=self.old),patch.object(core,"update") as update:
+                    expected="restored" if phase in ("prepared","restoring","restored") else "committed"
+                    self.assertEqual(self.run_recovery(),expected)
+                    update.assert_not_called()
+                self.assertIsNone(self.j.read(self.name))
+
+    def test_interrupt_during_verification_retains_evidence(self):
+        self.advance("verifying")
+        self.verify.side_effect=KeyboardInterrupt()
+        with patch.object(core,"current",return_value=self.new),patch.object(core,"update") as update:
+            with self.assertRaises(KeyboardInterrupt): self.run_recovery()
+            update.assert_not_called()
+        self.assertEqual(self.j.read(self.name)["phase"],"verifying")
+
+    def test_restore_update_error_retains_evidence(self):
+        self.j.transition(self.name,"restoring")
+        with patch.object(core,"current",return_value=self.new),patch.object(core,"update",side_effect=OSError()):
+            with self.assertRaises(OSError): self.run_recovery()
+        self.assertEqual(self.j.read(self.name)["phase"],"restoring")
+
+    def test_restore_terminal_record_cannot_write(self):
+        self.advance("committed")
+        record=self.j.read(self.name)
+        with patch.object(core,"current",return_value=self.new),patch.object(core,"update") as update:
+            with self.assertRaises(JournalError): recovery.restore(self.j,self.name,self.cfg,record,self.verify)
+            update.assert_not_called()
+        self.assertEqual(self.j.read(self.name)["phase"],"committed")
 
     def test_restore_readback_failure(self):
         self.j.transition(self.name,"restoring")
@@ -129,7 +220,7 @@ class SnapshotTests(unittest.TestCase):
 
     def test_datablock(self):
         self.assertEqual(recovery.datablock("[YQ==]"),b"a")
-        for invalid in ("bad","[!!!]"):
+        for invalid in ("bad","[bad",123,"[!!!]"):
             with self.assertRaises(JournalError): recovery.datablock(invalid)
 
     def test_snapshot(self):

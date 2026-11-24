@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch, Mock
-from cgp_cert_manager import core as c, cli, localization, schedule
+from cgp_cert_manager import core as c, cli, localization, schedule, recovery
 from test_deployment import pem, block
 
 class CoreExtraTests(unittest.TestCase):
@@ -185,11 +185,14 @@ class DeploymentExtraTests(unittest.TestCase):
         self.d={'cgp_domain':'example.com','cert_name':'example.com','names':['example.com']}
         stack.enter_context(patch.object(c,'LIVE',self.root))
         stack.enter_context(patch.object(c,'STATE',self.root))
-        self.info=stack.enter_context(patch.object(c,'local_info',return_value={'names':['example.com'],'days':80,'fingerprint':'fp'}))
+        self.info=stack.enter_context(patch.object(c,'cert_info',return_value={'names':['example.com'],'days':80,'fingerprint':'fp'}))
         self.run=stack.enter_context(patch.object(c,'run',side_effect=lambda *a,**kw:pem(b'key') if a[1]=='rsa' else b'pub'))
-        self.current=stack.enter_context(patch.object(c,'current',side_effect=[self.old,self.new]))
-        self.update=stack.enter_context(patch.object(c,'update'))
-        self.verify=stack.enter_context(patch.object(c,'verify_tls'))
+        self.actual=dict(self.old)
+        self.current=stack.enter_context(patch.object(c,'current',side_effect=lambda *_:dict(self.actual)))
+        self.update=stack.enter_context(patch.object(c,'update',side_effect=lambda cfg,name,value:setattr(self,'actual',dict(value))))
+        self.verify=stack.enter_context(patch.object(recovery,'verify_snapshot'))
+        self.validate=stack.enter_context(patch.object(c,'validate_backup'))
+        stack.enter_context(patch.object(recovery,'server_identity',return_value='server'))
 
     def test_success_and_retention(self):
         path=self.root/'backups'/'example.com'; path.mkdir(parents=True)
@@ -197,10 +200,10 @@ class DeploymentExtraTests(unittest.TestCase):
         self.assertEqual(c.deploy({},self.d),'installed')
         self.assertEqual(len(list(path.glob('*.json'))),5)
         self.update.assert_called_once_with({},'example.com',self.new)
-        self.verify.assert_called_once_with(self.d,'fp')
+        self.verify.assert_called_once_with(self.new,[{'host':'127.0.0.1','port':443,'sni':'example.com'}])
 
     def test_unchanged(self):
-        self.current.side_effect=[self.new]
+        self.actual=dict(self.new)
         self.assertEqual(c.deploy({},self.d),'unchanged')
         self.update.assert_not_called()
 
@@ -211,8 +214,8 @@ class DeploymentExtraTests(unittest.TestCase):
         self.update.assert_not_called()
 
     def test_bad_key(self):
-        self.run.side_effect=[b'ok',b'pub1',b'pub2']
-        with self.assertRaisesRegex(c.Error,'Key mismatch'): c.deploy({},self.d)
+        self.validate.side_effect=c.Error('Backup key mismatch')
+        with self.assertRaisesRegex(c.Error,'key mismatch'): c.deploy({},self.d)
         self.update.assert_not_called()
 
     def test_incomplete_previous_settings(self):
@@ -221,23 +224,33 @@ class DeploymentExtraTests(unittest.TestCase):
         self.update.assert_not_called()
 
     def test_update_error_but_readback_success(self):
-        self.update.side_effect=OSError()
+        def lost_reply(cfg,name,settings):
+            self.actual=dict(settings)
+            raise OSError()
+        self.update.side_effect=lost_reply
         self.assertEqual(c.deploy({},self.d),'installed')
 
     def test_readback_mismatch_recovery(self):
-        self.current.side_effect=[self.old,self.old,self.old]
+        self.update.side_effect=None
         with self.assertRaisesRegex(c.Error,'previous settings restored'): c.deploy({},self.d)
-        self.assertEqual(self.update.call_count,2)
+        self.assertEqual(self.update.call_count,1)
 
     def test_interrupt_recovery(self):
-        self.current.side_effect=[self.old,self.new,self.old]
-        self.verify.side_effect=KeyboardInterrupt()
+        self.verify.side_effect=[KeyboardInterrupt(),None]
         with self.assertRaisesRegex(c.Error,'previous settings restored'): c.deploy({},self.d)
         self.assertEqual(self.update.call_count,2)
 
     def test_recovery_failure(self):
-        self.current.side_effect=[self.old,self.old,self.new]
+        self.verify.side_effect=c.Error('TLS unavailable')
         with self.assertRaisesRegex(c.Error,'CRITICAL'): c.deploy({},self.d)
+
+    def test_leaf_snapshot_survives_lineage_change(self):
+        def read_and_change(pem_data):
+            (self.root/'example.com'/'cert.pem').write_bytes(pem(b'other leaf'))
+            return {'names':['example.com'],'days':80,'fingerprint':'fp'}
+        self.info.side_effect=read_and_change
+        self.assertEqual(c.deploy({},self.d),'installed')
+        self.assertEqual(self.actual['SecureCertificate'],self.new['SecureCertificate'])
 
 class SmallModuleTests(unittest.TestCase):
     def test_language(self):
