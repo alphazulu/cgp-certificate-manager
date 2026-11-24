@@ -1,0 +1,15 @@
+[Unit]
+Description=CGP external TLS monitor
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+ExecStart=/usr/local/sbin/cgp-monitor --run
+TimeoutStartSec=900
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/cgp-monitor

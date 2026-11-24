@@ -70,6 +70,40 @@ for filesystem, freshness and publication failure semantics.
 
 ## External services and recovery
 
+The separate `cgp-monitor` performs network observations only for explicitly
+configured endpoints. It uses its own private configuration, state and lock,
+without manager credentials, CGP discovery, certificate private keys or local
+Certbot lineages. Probes require TLS 1.2+, trusted certificates and a matching
+SAN; they never retry with verification disabled. An explicit private CA bundle
+replaces the system trust set for that endpoint. A successful observation covers
+the connected peer at that time, not every DNS/backend address, application
+health or certificate revocation.
+
+Notification routing and credential snapshots stay out of public results and
+saved events. SMTP uses verified TLS or STARTTLS; the explicit `plain_local`
+option permits only literal `127.0.0.1` or `::1`, without authentication or a CA
+override. Webhooks require verified HTTPS, ignore proxy environment variables
+and refuse redirects. Only `--run --send` plus enabled configuration permits
+delivery. A durable per-channel intent precedes the network attempt; an absent
+acknowledgement remains uncertain and may be retried with the same event ID.
+SMTP acceptance is not recipient delivery, and a webhook receiver must implement
+its own idempotency. Exactly-once delivery is not promised.
+Complete protocol framing is required before an acknowledgement is accepted;
+truncated SMTP lines or HTTP headers remain uncertain after submission.
+
+Workers receive secrets through bounded stdin, not command-line arguments or
+inherited environment variables. The parent supervises a process group; each
+worker also arms its own deadline and retains the monitor lock when applicable.
+That bounds a worker stuck in system DNS even after parent death. Local root,
+the effective UID, trusted Python/source and the operating system remain trusted.
+The shipped monitor service omits `--send`, and installation enables no monitor
+timer or destination. See [the complete contract](docs/EXTERNAL_MONITORING.md)
+for limits, fresh/unknown state and explicit later activation.
+An installed `--run` uses the fixed monitor state directory to coordinate with
+the installer; a custom directory is allowed for runs from an isolated source
+checkout. Read-only status/probe actions do not acquire the exclusive run lock,
+and the stateless probe is not serialized against application replacement.
+
 - **CommuniGate:** the configured HTTP CLI is restricted to loopback URLs and
   redirects are rejected. Local transport and the authorized CGP account remain
   trusted. Snapshot readback and TLS verification are separate checks; neither

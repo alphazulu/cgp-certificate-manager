@@ -6,6 +6,34 @@ set -euo pipefail
 export PATH=/mock-bin:$PATH
 mkdir -p /mock-bin /etc/cgp-letsencrypt /etc/systemd/system
 install -d -m 700 /var/lib/cgp-letsencrypt
+# Every candidate/baseline Python process inherits an offline transport guard.
+# Even a swallowed accidental probe/send attempt must leave a failing marker.
+mkdir -p /tmp/cgp-installer-guards
+cat >/tmp/cgp-installer-guards/sitecustomize.py <<'OFFLINE_GUARD'
+from pathlib import Path
+import socket
+import sys
+
+_attempt_marker = Path('/tmp/cgp-installer-network-attempted')
+
+def refused(*args, **kwargs):
+    _attempt_marker.write_text('Unexpected installer network operation\n')
+    raise AssertionError('Installer must not initiate network operations')
+
+def block_worker(frame, event, arg):
+    # The worker deliberately discards ambient PYTHONPATH. Refuse its parent
+    # entrypoint before it can start a child that would lack these test guards.
+    if (event == 'call' and frame.f_code.co_name == 'execute'
+            and frame.f_globals.get('__name__') == 'cgp_cert_manager.monitor_worker'):
+        refused()
+
+socket.create_connection = refused
+socket.getaddrinfo = refused
+socket.socket.connect = refused
+socket.socket.connect_ex = refused
+sys.setprofile(block_worker)
+OFFLINE_GUARD
+export PYTHONPATH=/tmp/cgp-installer-guards
 cat >/mock-bin/systemctl <<'SH'
 #!/bin/bash
 set -eu
@@ -15,14 +43,21 @@ case "$1" in
     case "$*" in
       *cgp-letsencrypt.service*) test -f /tmp/service-active ;;
       *cgp-letsencrypt.timer*) test -f /tmp/timer-active ;;
+      *cgp-monitor.service*) test -f /tmp/monitor-service-active ;;
+      *cgp-monitor.timer*) test -f /tmp/monitor-timer-active ;;
       *) exit 1 ;;
     esac ;;
   list-unit-files)
-    if [[ -f /etc/systemd/system/cgp-letsencrypt.timer ]]; then
-      echo 'cgp-letsencrypt.timer enabled'
+    if [[ -f /etc/systemd/system/$2 ]]; then
+      printf '%s disabled\n' "$2"
     fi ;;
-  stop) rm -f /tmp/timer-active ;;
-  start|restart) touch /tmp/timer-active ;;
+  stop|start|restart)
+    case "$2" in
+      cgp-letsencrypt.timer) marker=/tmp/timer-active ;;
+      cgp-monitor.timer) marker=/tmp/monitor-timer-active ;;
+      *) echo "Unexpected service activation: $*" >&2; exit 2 ;;
+    esac
+    if [[ $1 == stop ]]; then rm -f "$marker"; else touch "$marker"; fi ;;
   daemon-reload)
     if [[ -f /tmp/fail-reload-once ]]; then
       rm /tmp/fail-reload-once
@@ -37,6 +72,10 @@ config=/etc/cgp-letsencrypt/config.json
 app=/opt/cgp-certificate-manager
 launcher=/usr/local/sbin/cgp-letsencrypt
 certbot_launcher=/usr/local/sbin/cgp-certbot
+monitor_launcher=/usr/local/sbin/cgp-monitor
+monitor_config=/etc/cgp-monitor/config.json
+monitor_state=/var/lib/cgp-monitor
+monitor_evidence=$monitor_state/state.json
 drop=/etc/systemd/system/cgp-letsencrypt.timer.d/90-cgp-manager.conf
 source_version() {
     python3 -c 'import runpy,sys; print(runpy.run_path(sys.argv[1])["__version__"])' "$1/cgp_cert_manager/__init__.py"
@@ -55,6 +94,90 @@ assert_pending_journal() {
     cmp "$dns_receipt" /tmp/dns-receipt.expected
     test "$(stat -c %a "$dns_receipt")" = 600
     test "$(stat -c %a "$(dirname "$dns_receipt")")" = 700
+    assert_monitor_data
+    test ! -e /tmp/cgp-installer-network-attempted
+}
+assert_monitor_data() {
+    if [[ ! -f /tmp/monitor-config.expected ]]; then
+        test ! -e "$monitor_config"
+        return
+    fi
+    python3 - "$monitor_config" "$monitor_evidence" "${audit_unsafe_path:-}" <<'MONITOR_PRESERVATION'
+from pathlib import Path
+import stat
+import sys
+
+config, evidence, fault = sys.argv[1:]
+for name, expected in ((config, '/tmp/monitor-config.expected'), (evidence, '/tmp/monitor-state.expected')):
+    path = Path(name)
+    assert path.read_bytes() == Path(expected).read_bytes(), 'Monitor evidence changed'
+    if name != fault:
+        info = path.lstat()
+        assert stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+        assert info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o600
+state = Path(evidence).parent
+if str(state) != fault:
+    info = state.lstat()
+    assert stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o700
+lock = state / 'run.lock'
+if str(lock) != fault:
+    info = lock.lstat()
+    assert stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+    assert info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o600
+MONITOR_PRESERVATION
+}
+assert_monitor_cli() {
+    python3 - "$app" "$monitor_launcher" "$monitor_state" <<'MONITOR_ENTRYPOINT'
+from contextlib import ExitStack, redirect_stdout, redirect_stderr
+import io
+from pathlib import Path
+import runpy
+import socket
+import smtplib
+import sys
+from unittest.mock import patch
+
+application, launcher, state = (Path(value) for value in sys.argv[1:])
+sys.path.insert(0, str(application))
+from cgp_cert_manager import __version__, core, monitor_config, storage
+
+def snapshot():
+    return {str(path): (path.read_bytes(), path.stat().st_ino, path.stat().st_mtime_ns)
+            for root in (core.STATE, state) for path in root.rglob('*') if path.is_file()}
+
+before = snapshot()
+with ExitStack() as stack:
+    forbidden = [stack.enter_context(patch.object(module, name, side_effect=AssertionError('Read-only entrypoint')))
+                 for module, name in ((socket, 'create_connection'), (smtplib, 'SMTP'),
+                                      (smtplib, 'SMTP_SSL'), (storage, 'operation_lock'),
+                                      (storage, 'atomic_json'), (monitor_config, 'load'))]
+    for action in ('--help', '--version'):
+        output = io.StringIO()
+        with patch.object(sys, 'argv', [str(launcher), action]), redirect_stdout(output), redirect_stderr(io.StringIO()):
+            try:
+                runpy.run_path(str(launcher), run_name='__main__')
+            except SystemExit as exited:
+                assert exited.code == 0, action
+            else:
+                raise AssertionError('Launcher did not return its exit status')
+        if action == '--version':
+            assert __version__ in output.getvalue()
+        else:
+            assert '--run' in output.getvalue() and '--send' in output.getvalue()
+    for call in forbidden:
+        call.assert_not_called()
+assert snapshot() == before, 'Monitor help/version changed private state'
+MONITOR_ENTRYPOINT
+    test "$(stat -c %a "$monitor_launcher")" = 750
+    test "$(stat -c %a "$monitor_state")" = 700
+    test "$(stat -c %a "$monitor_state/run.lock")" = 600
+    test -f /etc/systemd/system/cgp-monitor.service
+    test -f /etc/systemd/system/cgp-monitor.timer
+    grep -Fxq 'ExecStart=/usr/local/sbin/cgp-monitor --run' /etc/systemd/system/cgp-monitor.service
+    grep -Fxq 'ProtectSystem=strict' /etc/systemd/system/cgp-monitor.service
+    grep -Fxq 'ReadWritePaths=/var/lib/cgp-monitor' /etc/systemd/system/cgp-monitor.service
+    grep -Fxq 'OnUnitInactiveSec=5min' /etc/systemd/system/cgp-monitor.timer
+    test ! -e /tmp/cgp-installer-network-attempted
 }
 assert_audit_archives() {
     python3 - /tmp/cgp-resolution-expected/manifest.json "${audit_unsafe_path:-}" <<'AUDIT_CHECK'
@@ -272,6 +395,7 @@ echo '=== clean install ==='
 bash /tmp/candidate-writable/install.sh --non-interactive
 test -x "$launcher"
 test -x "$certbot_launcher"
+test -x "$monitor_launcher"
 test "$(stat -c %a "$certbot_launcher")" = 750
 "$certbot_launcher" --version
 python3 - "$app" <<'PLUGIN_DISCOVERY'
@@ -294,16 +418,22 @@ test "$(stat -c %a "$launcher")" = 750
 test "$(stat -c %a "$config")" = 600
 test "$(stat -c %a /var/lib/cgp-letsencrypt)" = 700
 test ! -f /tmp/timer-active
+test ! -f /tmp/monitor-timer-active
+! grep -Eq '^(enable|start|restart) cgp-monitor\.' /tmp/systemctl.log
 assert_pending_journal
 assert_monitoring_cli
+assert_monitor_cli
 
 echo '=== clean installation failure restores absent application ==='
-rm -rf "$app" "$launcher" "$certbot_launcher" "$drop" /etc/systemd/system/cgp-letsencrypt.{service,timer}
+rm -rf "$app" "$launcher" "$certbot_launcher" "$monitor_launcher" "$drop" /etc/systemd/system/cgp-letsencrypt.{service,timer} /etc/systemd/system/cgp-monitor.{service,timer}
 touch /tmp/fail-reload-once
 must_fail bash /tmp/candidate-writable/install.sh --non-interactive
 test ! -e "$app"
 test ! -e "$launcher"
 test ! -e "$certbot_launcher"
+test ! -e "$monitor_launcher"
+test ! -e /etc/systemd/system/cgp-monitor.service
+test ! -e /etc/systemd/system/cgp-monitor.timer
 test ! -e "$drop"
 python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == json.load(open(sys.argv[2]))' "$config" /tmp/config.expected
 assert_pending_journal
@@ -312,6 +442,7 @@ echo "=== install actual baseline $baseline_version ==="
 bash /tmp/baseline-writable/install.sh
 test "$("$launcher" --version)" = "$baseline_version"
 test ! -e "$certbot_launcher"
+test ! -e "$monitor_launcher"
 assert_pending_journal
 touch "$app/cgp_cert_manager/stale.py"
 echo 'persistent-state' >/var/lib/cgp-letsencrypt/sentinel
@@ -325,8 +456,28 @@ must_fail bash /tmp/candidate-writable/install.sh --upgrade
 test "$("$launcher" --version)" = "$baseline_version"
 test -f "$app/cgp_cert_manager/stale.py"
 test ! -e "$certbot_launcher"
+test ! -e "$monitor_launcher"
+test ! -e /etc/systemd/system/cgp-monitor.service
+test ! -e /etc/systemd/system/cgp-monitor.timer
 test -f /tmp/timer-active
 python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == json.load(open(sys.argv[2]))' "$config" /tmp/config.before-upgrade
+assert_pending_journal
+
+echo '=== monitor operation also excludes application upgrade ==='
+before_monitor_log=$(sha256sum /tmp/systemctl.log)
+(
+  flock -n 9
+  must_fail bash /tmp/candidate-writable/install.sh --upgrade
+) 9>>"$monitor_state/run.lock"
+test "$(sha256sum /tmp/systemctl.log)" = "$before_monitor_log"
+test -f /tmp/timer-active
+test "$("$launcher" --version)" = "$baseline_version"
+assert_pending_journal
+touch /tmp/monitor-service-active
+must_fail bash /tmp/candidate-writable/install.sh --upgrade
+rm /tmp/monitor-service-active
+test -f /tmp/timer-active
+test "$("$launcher" --version)" = "$baseline_version"
 assert_pending_journal
 
 echo '=== running operation rejects upgrade without stopping timer ==='
@@ -350,12 +501,61 @@ test -x "$certbot_launcher"
 "$certbot_launcher" --version
 test ! -e "$app/cgp_cert_manager/stale.py"
 test ! -f /tmp/timer-active
+test ! -f /tmp/monitor-timer-active
 python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == json.load(open(sys.argv[2]))' "$config" /tmp/config.before-upgrade
 grep -q persistent-state /var/lib/cgp-letsencrypt/sentinel
 grep -q '07,19:00:00' "$drop"
 grep -q 'dummy' /etc/cgp-letsencrypt/cloudflare.ini
 assert_pending_journal
 assert_monitoring_cli
+assert_monitor_cli
+
+echo '=== existing monitor configuration and state survive upgrade rollback ==='
+install -d -m 700 /etc/cgp-monitor
+cat >"$monitor_config" <<'MONITOR_CONFIG'
+{"schema":1,"enabled":false,"endpoints":[],"notifications":{"enabled":false,"channels":[]}}
+MONITOR_CONFIG
+printf '%s\n' '{"private":"retained monitor observation and delivery evidence"}' >"$monitor_evidence"
+chmod 600 "$monitor_config" "$monitor_evidence"
+cp "$monitor_config" /tmp/monitor-config.expected
+cp "$monitor_evidence" /tmp/monitor-state.expected
+for file in "$monitor_launcher" /etc/systemd/system/cgp-monitor.service /etc/systemd/system/cgp-monitor.timer; do
+    printf '\n# prior monitor installation fixture\n' >>"$file"
+    cp -a "$file" "/tmp/$(basename "$file").prior"
+done
+touch /tmp/timer-active /tmp/monitor-timer-active /tmp/fail-reload-once
+must_fail bash /tmp/candidate-writable/install.sh --upgrade
+for file in "$monitor_launcher" /etc/systemd/system/cgp-monitor.service /etc/systemd/system/cgp-monitor.timer; do
+    cmp "$file" "/tmp/$(basename "$file").prior"
+done
+test -f /tmp/timer-active
+test -f /tmp/monitor-timer-active
+test "$("$launcher" --version)" = "$candidate_version"
+assert_pending_journal
+assert_monitor_cli
+
+echo '=== successful monitor upgrade leaves both timers stopped ==='
+bash /tmp/candidate-writable/install.sh --upgrade
+test ! -f /tmp/timer-active
+test ! -f /tmp/monitor-timer-active
+cmp "$monitor_launcher" /tmp/candidate-writable/monitor-launcher
+cmp /etc/systemd/system/cgp-monitor.service /tmp/candidate-writable/systemd/cgp-monitor.service
+cmp /etc/systemd/system/cgp-monitor.timer /tmp/candidate-writable/systemd/cgp-monitor.timer
+assert_pending_journal
+assert_monitor_cli
+
+echo '=== invalid monitor configuration refuses before changing either timer ==='
+printf '%s\n' '{"schema":1,"enabled":true,"endpoints":[],"notifications":{"enabled":false,"channels":[]}}' >"$monitor_config"
+before_monitor_log=$(sha256sum /tmp/systemctl.log)
+before_monitor_app=$(tar -C "$app" -cf - . | sha256sum)
+touch /tmp/timer-active /tmp/monitor-timer-active
+must_fail bash /tmp/candidate-writable/install.sh --upgrade
+test "$(sha256sum /tmp/systemctl.log)" = "$before_monitor_log"
+test "$(tar -C "$app" -cf - . | sha256sum)" = "$before_monitor_app"
+test -f /tmp/timer-active
+test -f /tmp/monitor-timer-active
+cp /tmp/monitor-config.expected "$monitor_config"
+assert_pending_journal
 
 echo '=== invalid schedule rejected before modifying files ==='
 cp "$config" /tmp/valid-config
@@ -391,6 +591,7 @@ assert_preflight_refused() {
     test "$(tar -C "$app" -cf - . | sha256sum)" = "$before_app"
     test "$(find /root -maxdepth 1 -type d -name 'cgp-manager-backup-*' | sort)" = "$before_backups"
     test -f /tmp/timer-active
+    test -f /tmp/monitor-timer-active
     assert_pending_journal
 }
 path_contents() {
@@ -443,6 +644,12 @@ exercise_unsafe_path "$backup_fixture" 600 644
 audit_fixture=$(python3 -c 'import json; print(json.load(open("/tmp/cgp-resolution-expected/manifest.json"))["completed"] + "/authorization.json")')
 exercise_unsafe_path /var/lib/cgp-letsencrypt/resolutions 700 755
 exercise_unsafe_path "$audit_fixture" 600 644
+exercise_unsafe_path "$monitor_config" 600 644
+exercise_unsafe_path "$monitor_state" 700 755
+exercise_unsafe_path "$monitor_state/run.lock" 600 644
+exercise_unsafe_path "$monitor_evidence" 600 644
 assert_audit_archives
+assert_monitor_data
+test ! -e /tmp/cgp-installer-network-attempted
 
 echo 'Installer integration scenarios passed.'

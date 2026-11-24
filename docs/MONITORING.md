@@ -11,6 +11,12 @@ CGP.** Expiry below refers to the public local `cert.pem`. Current deployed TLS
 must be observed separately. Real VM/server acceptance is deferred by the
 maintainer's 2026-11-24 decision in [STAGING.md](STAGING.md).
 
+The separate [external TLS monitor](EXTERNAL_MONITORING.md), `cgp-monitor`,
+provides those network observations and explicit SMTP/webhook attempts using
+its own configuration and state. It does not change the offline behavior or
+schema documented here. Its timer and notification destinations require
+separate activation during the later acceptance session.
+
 ## Commands and exit status
 
 Run under the administrative identity that owns the protected manager files:

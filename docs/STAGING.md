@@ -16,12 +16,13 @@ Certbot interfaces and process termination. The installer containers use a
 systemctl stub. Those results do not establish real Cloudflare behavior, public
 DNS propagation, ACME acceptance, a running systemd timer or CGP field removal.
 
-## Two independent labs
+## Independent acceptance tracks
 
 | Track | Resources | What it can establish |
 |---|---|---|
 | DNS and renewal | Disposable Linux VM, native Certbot, dedicated Cloudflare zone(s)/tokens, ACME staging account | Actual provider API, DNS evidence, challenge lifecycle, recovery and renewal migration |
 | CGP deployment/bootstrap | Disposable CGP instance with its exact build recorded, synthetic domains/keys and test TLS clients | Field provenance, write/removal cascades, restoration, SNI/chain and real service behavior |
+| External TLS monitoring and delivery | Separate observer VM, allocated TLS/STARTTLS test endpoints and approved test-only SMTP/webhook receivers | Observer trust/network view, live systemd scheduling, receiver acknowledgements, retry/recovery and upgrade behavior |
 
 The DNS track can start without a running CGP instance: standalone `cgp-certbot`
 loads the protected manager configuration and uses its server identity, but the
@@ -194,6 +195,58 @@ Keep automatic bootstrap disabled until the server experiments support a new
 snapshot/restore design. A staging certificate and an empty CGP domain alone do
 not satisfy that prerequisite. Do not reinterpret schema-2 journals as recording
 historical field presence.
+
+## External TLS monitor and notification acceptance — deferred
+
+This track remains **not exercised**. It needs no running CGP or provider
+credentials. Use the candidate's [independent monitor](EXTERNAL_MONITORING.md)
+and its [disabled example](../examples/monitor.example.json). A source checkout
+can run `python3 -m cgp_cert_manager.monitor_cli`; the complete manager installer
+still requires its separate manager configuration and dependencies. Allocate
+test-only receivers before permitting `--send`; no production destination is
+implied by this plan.
+
+Record the following cases separately, with exact candidate, observer OS,
+Python/OpenSSL, trust roots and synthetic endpoint labels:
+
+1. Validate private configuration and credentials, disabled behavior and installed
+   `--help`/`--version`. Confirm `--check-config`, `--probe` and `--status` do not
+   create observation state or deliver messages. Probe does perform networking.
+2. Observe direct TLS and SMTP/IMAP/POP3 STARTTLS with DNS SNI and IP SAN cases.
+   Exercise trusted, wrong-name, untrusted, expired, not-yet-valid, CN-only and
+   missing/rejected STARTTLS endpoints. Confirm no insecure fallback; failed
+   verification must not publish trusted expiry or fingerprint measurements.
+   Repeat from the intended external observer's actual resolver/network view.
+3. Exercise slow DNS, a stalled TCP/TLS/protocol peer, oversized responses and
+   parent termination. Confirm bounded completion, inherited lock retention
+   until worker exit, no overlapping state writer and no orphan after handled
+   interruption. Process tests do not establish storage power-loss durability.
+4. Run without `--send`; inspect fresh, stale, future, corrupt, busy and changed-
+   configuration results. Verify that observation times and alert thresholds
+   match local policy, and that the previous configuration generation is retained
+   without retrying its destinations.
+5. With approved test receivers only, explicitly enable one channel at a time
+   and use `--run --send`. Check first-healthy suppression, warning/critical
+   transitions, reminders, accepted/rejected/uncertain outcomes, same-ID retry,
+   per-channel independence and recovery. Inject loss after receiver acceptance
+   and before state acknowledgement; record any duplicate and the receiver's
+   actual idempotency behavior. Confirm that failed recovery delivery remains
+   visible even when the latest TLS observation is healthy.
+6. Inspect the real systemd unit and any override before activation. The shipped
+   service uses `--run` without `--send`; notification scheduling requires an
+   explicit reviewed override. Verify timer cadence, service exit statuses,
+   writable-path confinement, logs and recipient content. Make no claim of
+   recipient delivery from SMTP or HTTP acceptance alone.
+7. Upgrade with both timers and independent monitor state present. Verify busy
+   monitor exclusion, refusal of installed `--run` with a custom state directory,
+   exact configuration/state preservation, new wrapper/unit
+   rollback on handled failure, restoration of previous active timers after
+   failure, and both timers stopped after success. Re-enable only the schedules
+   explicitly accepted in this lab; keep private backup/evidence files private.
+
+Prometheus/Grafana/Zabbix deployment acceptance remains a separate pending
+track: the current local-exporter assets do not ingest these external
+observations automatically. Telegram/MQTT are not implemented in this checkpoint.
 
 ## Evidence and release decision
 

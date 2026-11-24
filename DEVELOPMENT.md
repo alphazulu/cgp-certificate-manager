@@ -1,8 +1,146 @@
 # Development checkpoint
 
-Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
+Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 11
+## Current handoff — checkpoint 12
+
+- Development version: **`2.2.0.dev9`**, continuing in draft PR
+  [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
+- Starting HEAD: `2f3d937b460a0a2b33a85a1bf7796f3b2c7adfb5`, clean on resume.
+  Its [PR CI 45409711073](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45409711073)
+  passed all eleven jobs; push CI 45409696217 also passed. That historical
+  950-test / 4507-statement / 1746-branch result is separate from this checkpoint.
+- Authorized independent scope: separately scheduled external TLS observations
+  and explicitly configured SMTP/HTTPS webhook delivery. Every new behavior has
+  unit tests. The maintainer's real VM/server/provider deferral remains in force;
+  no real recipient, destination or production endpoint is used. Optional
+  Telegram/MQTT channels remain separate work. No merge, tag, release, privileged
+  release-workflow dispatch or production deployment is part of this checkpoint.
+- `cgp-monitor` has independent configuration (`/etc/cgp-monitor/config.json`),
+  state (`/var/lib/cgp-monitor/observations.json`) and operation lock. It uses no
+  CGP discovery, provider credentials, certificate private keys or local Certbot
+  lineages. Existing renewal and offline `cgp-letsencrypt --monitoring`/metrics/
+  discovery behavior is unchanged. The supplied JSON example is disabled.
+- Commands require an explicit action: `--check-config` validates without network
+  or state writes; `--probe` observes without saving/sending; `--status` reads
+  saved freshness/delivery; `--run` records observations under its own lock.
+  Only `--run --send`, enabled policy and enabled channels permit delivery.
+  Missing/invalid/busy/stale/future/configuration-changed results remain explicit.
+  Both `--run` and `--status` report a retained pending attempt as
+  `delivery_failed`, even when TLS is healthy or sending was not requested.
+  The observation's own status remains separate from delivery status.
+- `tlsprobe` supports direct TLS and SMTP/IMAP/POP3 STARTTLS. It requires TLS 1.2+,
+  trust and matching SAN, with explicit SNI/IP SAN and no verification-disabled
+  retry. Custom private CA data is captured before use and replaces default
+  trust. It bounds DNS candidates, TCP/protocol exchange, response lines and
+  certificate data. Successful results contain the connected peer, leaf expiry,
+  SHA-256 and TLS version; verification failure retains unknown measurements.
+  One connected peer is not a claim about every address, application health,
+  revocation or equality to CGP/Certbot settings.
+- Each network action runs in a supervised process with bounded stdin/stdout
+  and a minimal environment. Secrets are never command-line arguments. A parent
+  deadline covers DNS as well as protocol work; the child unblocks and arms its
+  own SIGALRM through output flush. It inherits a duplicate of the monitor lock
+  above FD 2. Tests reproduce parent SIGKILL while synthetic DNS blocks, verify
+  lock retention until the child deadline and exercise FD 0 and a blocked
+  inherited SIGALRM mask. Handled interrupts finish process-group cleanup before
+  returning and are not lost during descriptor/handler cleanup.
+- SMTP supports verified TLS/STARTTLS with optional private password files.
+  Explicit `plain_local` is limited to literal loopback, without authentication
+  or CA override. HTTPS webhooks reject redirects and bypass proxy environment
+  settings. Optional bearer and CA snapshots are private and bounded. TLS key
+  logging is not enabled by ambient environment. SMTP/webhook acceptance means
+  relay/receiver acknowledgement, not recipient delivery.
+- Review reproduced truncated SMTP and HTTP replies that the standard library
+  parsers can accept. Transport guards now require complete bounded CRLF framing
+  and HTTP header termination before recognizing an acknowledgement. Truncation
+  after submission stays uncertain; response bodies are not needed for the
+  generic webhook acknowledgement. Real parser regressions accompany the fix.
+- Notification intent is durably saved before every network attempt. Each
+  channel retains its own acknowledgement, pending event, retry deadline and
+  compact superseded-event summary. First healthy observations are suppressed;
+  incident changes and recovery create events, unchanged alerts obey reminders,
+  and uncertain/rejected attempts retry the same event ID after cooldown. SMTP
+  Message-ID and webhook Idempotency-Key are stable for retries; exactly-once
+  delivery is not claimed. A receiver must implement webhook idempotency.
+- Configuration/credential/CA identity changes start a new notification baseline
+  and retain one previous generation without sending old events to changed
+  destinations. Configuration is rechecked before each actual send. Saved
+  records and public results contain allowlisted observation/event metadata,
+  never credentials, receiver routes or prepared secrets. State validation
+  rejects unknown fields, malformed outcomes and future event times. Clock
+  rollback, including between preflight and observation start, a failed state
+  write/fsync and an unconfirmed post-send save cannot
+  become successful delivery; failed recovery remains visible with healthy TLS.
+- The optional service invokes `cgp-monitor --run`, **without `--send`**. Its
+  timer is not enabled or started by installation. The installer validates
+  optional existing monitor config/state and holds manager then monitor locks;
+  it preserves state/config, installs/restores the wrapper and units and refuses
+  an active monitor. It may initialize the empty private monitor state directory
+  and lock even without monitor configuration. Success leaves both timers
+  stopped; handled failure restores previously active timers after restoration.
+  Installed `--run` refuses a custom state directory, so it cannot bypass the
+  installer lock; separate source checkouts can use their own state directory.
+  Read-only `--status` may inspect a custom directory. `--probe` takes no state
+  lock and is not serialized against an application upgrade.
+  The full manager installer still requires manager configuration; source use
+  of the independent command does not require a running CGP.
+- Installer integration expands to **36 unsafe-path/metadata refusals** in each
+  existing OS/baseline combination, with new preservation/rollback/lock cases.
+  It explicitly blocks monitor worker creation before Popen in addition to the
+  existing networking stubs, because the worker intentionally drops inherited
+  Python hooks. This harness uses mock systemd and makes no external probe/send.
+- Documentation: [external monitoring](docs/EXTERNAL_MONITORING.md), the disabled
+  [example](examples/monitor.example.json), both READMEs, contribution/security
+  guidance, changelog, local-monitor link and deferred acceptance plan accompany
+  the implementation. Telegram/MQTT and actual observer/receiver/systemd
+  acceptance are still unchecked roadmap items.
+- Both complete local dependency profiles independently passed **1138 tests /
+  5665 statements / 2094 branches / 100%**, zero missing statements, missing
+  branches, partial branches or exclusions. `--fail-under=100` passed separately
+  for manager and repository-tooling sources in each environment. Compat took
+  **32.395 seconds**, current **32.254 seconds**. There are **188 additional
+  tests**. Real networking was limited to synthetic loopback servers; tests
+  also exercise actual files, flock, subprocess termination and durable-write
+  failures. Full commands remain in CONTRIBUTING.md.
+- Python compilation, installer shell syntax, all **21 workflow run-block**
+  syntax checks and `git diff --check` passed. Documentation validation passed
+  **135 relative links and 32 shell examples across 18 Markdown files**. The
+  shipped monitor example passed the real configuration validator with the
+  monitor, notification policy and both channels disabled.
+- Current implementation CI is **pending publication and observation** at this
+  commit. The local complete gates above are observed; native installer,
+  promtool, audit, CodeQL and packaging results must be read from the exact new
+  revision before being marked passed. Docker, native promtool and CodeQL are
+  unavailable locally. The CI still requires all eleven jobs with no weakened
+  thresholds, skipped source or changed audit policy.
+- Stable main remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / **2.1.0**.
+  Existing production installation and timer settings have not been changed.
+
+### Resume from checkpoint 12
+
+1. Inspect actual HEAD, working tree, draft PR and all eleven current checks.
+   Read this handoff, ROADMAP.md and docs/EXTERNAL_MONITORING.md before editing.
+   Preserve any in-progress changes and distinguish local/previous CI evidence
+   from the exact current revision.
+2. Complete publication/CI observation if still pending. Investigate a real
+   failing gate rather than reducing coverage, audit completeness or security
+   checks. Record exact commit/run, test counts and native installer results in
+   this handoff, roadmap and PR after they have been observed.
+3. Keep external probe/delivery state separate from renewal and local-exporter
+   snapshots. Preserve explicit send opt-in, durable intent, uncertain outcomes,
+   retry IDs, bounded workers and tests with every new path.
+4. The next independent implementation scope is the optional Telegram/MQTT
+   channels in the existing notification lifecycle. Define and test each
+   protocol's acknowledgement, timeout, credential and duplicate semantics
+   before adding it; do not contact a real recipient or enable a destination.
+   Current local-exporter assets do not automatically ingest external results.
+5. Keep all real VM/server/observer/receiver/systemd/provider/import acceptance,
+   bootstrap write enablement, license decision, release tag/draft trial, merge
+   and publication pending for their separately authorized sessions. The cases
+   in docs/STAGING.md are a plan, not executed evidence.
+
+## Checkpoint 11 — release preparation and security (historical)
 
 - Development version: **`2.2.0.dev8`**, continuing in draft PR
   [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).

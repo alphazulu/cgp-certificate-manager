@@ -1,4 +1,4 @@
-"""Private-storage preflight and an inherited lock for the shell installer."""
+"""Private-storage preflight and inherited locks for the shell installer."""
 import argparse
 import fcntl
 import os
@@ -6,8 +6,9 @@ from pathlib import Path
 import subprocess
 import sys
 
-from . import core, dnsconfig, storage
+from . import core, dnsconfig, monitor_config, storage
 from .cli import migrate
+from .monitor_config import CONFIG as MONITOR_CONFIG, STATE as MONITOR_STATE
 from .schedule import render
 
 
@@ -28,6 +29,9 @@ def runtime_dependencies(options):
 def preflight():
     """Validate existing secrets and recovery data without changing permissions."""
     storage.validate_tree(core.STATE)
+    storage.validate_tree(MONITOR_STATE)
+    if storage.check_private_file(MONITOR_CONFIG, missing_ok=True):
+        monitor_config.load(MONITOR_CONFIG)
     cfg = migrate(core.load(core.CONFIG))
     runtime_dependencies(dnsconfig.validate(cfg))
     render(cfg.get("schedule", {}))
@@ -36,46 +40,49 @@ def preflight():
         core.token(account["credentials"])
 
 
-def check_lock(fd):
-    """Require the inherited descriptor to name the current private lock file.
+def check_lock(fd, monitor_fd):
+    """Require both inherited descriptors to name the current private locks.
 
     flock uses the inherited open-file description, so this also locks a valid
     descriptor if the internal payload was invoked directly. The shell retains
     that descriptor after this checker exits.
     """
-    storage.check_private_directory(core.STATE)
-    with storage.open_private(core.STATE / "run.lock") as named:
-        expected = os.fstat(named.fileno())
-        actual = os.fstat(fd)
-        if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
-            raise core.Error("Installer descriptor is not the manager operation lock")
-    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    for state, descriptor, name in ((core.STATE, fd, "manager"),
+                                    (MONITOR_STATE, monitor_fd, "monitor")):
+        storage.check_private_directory(state)
+        with storage.open_private(state / "run.lock") as named:
+            expected = os.fstat(named.fileno())
+            actual = os.fstat(descriptor)
+            if (actual.st_dev, actual.st_ino) != (expected.st_dev, expected.st_ino):
+                raise core.Error("Installer descriptor is not the " + name + " operation lock")
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
     preflight()
 
 
 def run():
-    """Keep the lock alive until installation or shell rollback has completed."""
+    """Keep both locks alive until installation or shell rollback completes."""
     os.umask(0o077)
     source = Path(__file__).resolve().parents[1]
-    with storage.operation_lock(core.STATE) as lock:
+    with storage.operation_lock(core.STATE) as lock, storage.operation_lock(MONITOR_STATE) as monitor_lock:
         preflight()
         return subprocess.run(
-            ["bash", str(source / "scripts" / "install-locked.sh"), str(lock.fileno())],
-            cwd=source, pass_fds=(lock.fileno(),),
+            ["bash", str(source / "scripts" / "install-locked.sh"),
+             str(lock.fileno()), str(monitor_lock.fileno())],
+            cwd=source, pass_fds=(lock.fileno(), monitor_lock.fileno()),
         ).returncode
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check-lock", type=int, help=argparse.SUPPRESS)
+    parser.add_argument("--check-lock", type=int, nargs=2, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:
         if args.check_lock is not None:
-            check_lock(args.check_lock)
+            check_lock(*args.check_lock)
             return 0
         return run()
     except BlockingIOError:
-        print("Certificate manager busy; retry after completion", file=sys.stderr)
+        print("Certificate manager or monitor busy; retry after completion", file=sys.stderr)
         return 1
     except (core.Error, OSError, ValueError) as exc:
         print("Installation refused: " + str(exc), file=sys.stderr)

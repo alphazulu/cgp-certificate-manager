@@ -6,7 +6,7 @@ Automatic Let's Encrypt certificate management for CommuniGate Pro on Linux usin
 
 [Русская документация](README.ru.md)
 
-This branch develops **2.2.0.dev8**. The stable production release is **2.1.0**.
+This branch develops **2.2.0.dev9**. The stable production release is **2.1.0**.
 See [ROADMAP.md](ROADMAP.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for completed work,
 test evidence and the next checkpoint. The development branch is not a release.
 Contributor commands and test boundaries are in [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -19,6 +19,11 @@ Optional [monitoring integrations](docs/MONITORING_INTEGRATIONS.md) provide
 Prometheus alert rules, a Grafana dashboard and a Zabbix template with synthetic
 tests. Their import, collection schedule and notification routing remain
 explicit deployment steps.
+The separate [external TLS monitor](docs/EXTERNAL_MONITORING.md), `cgp-monitor`,
+checks configured TLS and mail STARTTLS endpoints independently of renewal.
+It has its own configuration, state and optional timer. SMTP and HTTPS webhook
+delivery require explicit notification settings and `--run --send`; the shipped
+service does not send, and installation does not enable its timer.
 Repository [release and security checks](docs/RELEASING.md) prepare reproducible
 source artifacts, audit resolved dependencies and analyze Python with CodeQL.
 The manual release workflow prepares an unpublished draft only after the full
@@ -110,13 +115,23 @@ Replace example.com with a managed domain. Review the plan before enabling autom
 
 ## Architecture and storage
 
-Monitoring reads existing local sources under a nonblocking shared operation
+The local monitoring commands read existing sources under a nonblocking shared operation
 lock and does not perform discovery, recovery or live TLS probes. Unknown
 measurements are omitted from Prometheus output; collection failures and source
 freshness are explicit. Local leaf expiry does not prove which certificate CGP
 serves. See [docs/MONITORING.md](docs/MONITORING.md) for the metric contract,
 atomic textfile permissions and discovery failure behavior. No monitoring timer,
 Zabbix template or Grafana dashboard is enabled by installation.
+
+`cgp-monitor` observes configured remote endpoints using a separate
+`/etc/cgp-monitor/config.json` and `/var/lib/cgp-monitor`. Read
+[the external monitoring guide](docs/EXTERNAL_MONITORING.md) and adapt the
+[disabled example](examples/monitor.example.json) before the later acceptance
+session. `--check-config` validates settings; `--probe` performs a network
+observation without saving state or sending; `--status` reads the saved result;
+`--run` records a new observation. Only `--run --send` permits configured
+notification attempts. These observations do not compare CGP settings or the
+served certificate with a local Certbot lineage.
 
 Recover pending work → CGP discovery → Cloudflare zone selection → explicit snapshot readiness → Certbot DNS-01 → captured certificate validation → backup and durable journal → CGP CLI deployment → readback and TLS verification → commit or verified restoration.
 

@@ -26,7 +26,25 @@
 - [x] Implement operator-assisted resolution: exact-preview confirmation, private authorization/completion evidence, incomplete-decision guard and explicit retry without claiming TLS success. See docs/RESOLUTION.md and checkpoint 5 evidence below.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 11 (`2.2.0.dev8`) implements the independent release-preparation and
+Checkpoint 12 (`2.2.0.dev9`) implements the independent external TLS monitor and
+explicit SMTP/HTTPS webhook delivery. `cgp-monitor` has separate private config,
+state and locking; it supports direct TLS and SMTP/IMAP/POP3 STARTTLS with trust,
+SAN/name validation and bounded workers, including system DNS deadlines.
+Notification intent is durable before sending; per-channel outcomes distinguish
+accepted, rejected and uncertain, preserve retry IDs and recovery, and avoid
+reusing old destinations after configuration changes. No secrets enter public
+results or saved events. The optional timer invokes `--run` without `--send` and
+is not enabled by installation. Installer locking, preservation and handled
+rollback include the new wrapper/units and independent monitor state.
+Both complete local profiles passed **1138 tests / 5665 statements / 2094 branches
+/ 100%**, zero missing/partial/excluded, with **188 new tests**. Current-revision
+native CI remains pending publication/observation at this commit; all eleven
+jobs are still required. See DEVELOPMENT.md for observed evidence and
+docs/EXTERNAL_MONITORING.md for the contract. Optional Telegram/MQTT channels are
+the next independent scope. Real VM/server/observer/receiver/systemd acceptance
+remains deferred; no schedule, destination, merge or release has been activated.
+
+Previous checkpoint 11 (`2.2.0.dev8`) implements the independent release-preparation and
 security-scanning scope. New repository tools build deterministic source
 archives with provenance, enforce complete dependency-audit evidence and check
 CodeQL SARIF together with the native analysis outcome. The reusable CI now has
@@ -167,13 +185,14 @@ passed tests, both installer baselines and package. Each installer job passed
 18 new unsafe-path refusal cases and preserved pending journals. This follow-up
 documentation commit records the observed result; inspect current-head checks
 when resuming. See DEVELOPMENT.md for exact next steps and remaining limits.
-Operator-assisted resolution was completed in checkpoint 5; checkpoint 11 is active above.
+Operator-assisted resolution was completed in checkpoint 5; checkpoint 12 is active above.
 This remains a development checkpoint, not a production release.
 
 ## 2.3 — Monitoring
 - [x] Read-only local monitoring snapshot, Prometheus textfile output and Zabbix domain discovery, with unit tests (checkpoint 9; observed validation above).
 - [x] Zabbix template and Grafana dashboard with alerting based on explicit freshness and collection health, with actual preprocessing/rule/query tests (checkpoint 10; observed validation above).
-- [ ] Separately scheduled external TLS probes and notification delivery (SMTP/webhooks and optional Telegram/MQTT).
+- [x] Separately scheduled external TLS probes and explicit SMTP/HTTPS webhook delivery, with independent state, bounded workers and unit/loopback tests (checkpoint 12; current-revision CI evidence tracked above).
+- [ ] Optional Telegram/MQTT channels using the same explicit, durable notification lifecycle, with protocol-specific acknowledgement/uncertainty tests.
 - [ ] Real monitoring deployment acceptance on the later VM/server test session; local certificate observations must not be presented as live TLS verification.
 
 ## 2.4 — Updates

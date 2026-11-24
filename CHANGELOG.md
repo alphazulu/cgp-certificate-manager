@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.0.dev9 — unreleased
+
+- Add an independent `cgp-monitor` command with separate private configuration, state and operation lock. Validate settings, perform read-only probes, inspect saved freshness or explicitly record observations without using CGP, Certbot lineages or provider credentials.
+- Observe direct TLS and SMTP/IMAP/POP3 STARTTLS with required trust and SAN/name validation, TLS 1.2+, bounded protocol parsing and a supervised worker deadline covering system DNS. Retain unknown certificate measurements on verification failure.
+- Add explicitly configured SMTP and HTTPS webhook channels. Persist each send intent before networking; distinguish accepted, rejected and uncertain outcomes; retry the same event ID, suppress duplicate acknowledgements per channel and record recovery. Configuration changes start a new baseline and retain one previous generation without retrying old destinations.
+- Add an optional monitor service/timer, disabled by installation and configured without `--send`. Include both operation locks, the wrapper and units in installer preflight/preservation/handled rollback; leave both timers stopped after successful installation.
+- Refuse truncated SMTP/HTTP acknowledgements, preserve pending-delivery failure during observation-only runs, reject clock rollback between preflight and observation, and prevent an installed custom-state run from bypassing the installer lock. Add regression tests with each review fix.
+- Add 188 tests, including real loopback TLS/STARTTLS/SMTP/HTTPS, process-death/lock/deadline cases, state fault injection and installer contracts. Both complete local profiles pass 1138 tests, 5665 statements and 2094 branches at 100%; exact revision CI evidence is recorded in DEVELOPMENT.md.
+- Document explicit activation and deferred real-environment acceptance. Optional Telegram/MQTT channels remain separate roadmap work; no new schedule, destination, release or production deployment is activated.
+
 ## 2.2.0.dev8 — unreleased
 
 - Add a deterministic source-archive builder with safe version/metadata parsing, exact commit/tree provenance, existing-tag checks, default-branch ancestry checks and refusal of unsafe entries or overwrites. Test the builder with real temporary Git repositories.

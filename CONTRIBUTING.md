@@ -121,6 +121,14 @@ Preserve the contracts described in these documents:
   Prometheus expressions with real promtool and exact Zabbix JavaScript with
   synthetic input. Assert missing, stale, future, disabled and cross-host cases;
   an empty/disappearing series must not become a healthy zero or empty discovery.
+- [External monitoring](docs/EXTERNAL_MONITORING.md): test TLS and STARTTLS
+  against loopback servers with explicit trust/name failures, bounded replies
+  and worker deadlines. Test per-channel durable intent, uncertain delivery,
+  retry identity, recovery, configuration changes and secret-free output.
+  Read-only actions must not save state or send. Process-death tests must prove
+  inherited lock retention and the child's own deadline, including blocked
+  signals and low-numbered descriptors. Notification tests use local synthetic
+  receivers only; do not send to real recipients.
 - [Release preparation and security checks](docs/RELEASING.md): test immutable
   source construction, exact tag/context validation, complete audit evidence,
   native-analysis status and the actual workflow refusal paths. Missing evidence
@@ -170,6 +178,12 @@ the exact revision's CI results before marking integration checks complete.
 The installed monitoring checks use the candidate's native interpreter/launcher,
 forbid external calls and compare private state before and after observation.
 Explicit export writes only the dedicated synthetic public metrics destination.
+The external-monitor checks validate the installed wrapper, optional configuration,
+both operation locks, timer sequencing and restoration of new files. The harness
+includes 36 unsafe-path/metadata refusals per combination. A separate guard
+refuses the monitor worker before process creation, because its intentionally
+minimal environment does not inherit the harness's Python networking hooks.
+The harness performs no external probe or actual notification delivery.
 
 ## Monitoring asset checks
 
