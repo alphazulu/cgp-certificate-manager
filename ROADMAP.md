@@ -42,9 +42,18 @@ Both complete local profiles passed **950 tests / 4507 statements / 1746 branche
 / 100%**, zero missing/partial, with 99 new tests. Fresh-cache PyPI audits were
 complete: current 22/22 packages with zero findings; compatibility 23/23 with
 23 records / 15 package-advisory-ID pairs across four historical dependencies.
-Native implementation CI is pending; see the active handoff in DEVELOPMENT.md
-and the contract in docs/RELEASING.md. All real
-VM/server acceptance and actual privileged release preparation remain deferred.
+Implementation
+[`7cd8377`](https://github.com/alphazulu/cgp-certificate-manager/commit/7cd8377f114799a66a2b21cf9e8d16b6b20c970a)
+passed [CI 45408950645](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45408950645),
+all eleven jobs. Native CodeQL completed with one report/run, zero findings and
+zero policy errors; native dependency audits reproduced the counts above.
+Both complete test profiles retained the same 950 / 4507 / 1746 / 100% result.
+All four installer combinations, native monitoring checks and deterministic
+packaging/checksum/upload passed. This follow-up records that observed run;
+inspect its own current-head checks on resume. See DEVELOPMENT.md and
+docs/RELEASING.md for the evidence and contract. All real VM/server acceptance
+and actual privileged release preparation remain deferred. The next independent
+scope is separately scheduled external TLS probes and explicit notifications.
 
 Previous checkpoint 10 (`2.2.0.dev7`) adds Prometheus alert rules, a Grafana
 dashboard and a Zabbix 7.0 HTTP template with executable synthetic tests. All
@@ -179,7 +188,7 @@ Separate server identities, least privilege, centralized visibility, independent
 ## Repository maintenance
 - [ ] License decision by owner; do not assume permission.
 - [x] SECURITY.md and CONTRIBUTING.md with actual reporting/trust boundaries and isolated test commands.
-- [ ] Release preparation automation and dependency/source-security scanning, with strict helper/workflow tests and observed native CI (checkpoint 11 in progress).
+- [x] Release preparation automation and dependency/source-security scanning, with strict helper/workflow tests and observed native CI (checkpoint 11; evidence above).
 - [ ] Execute the manual attestation/draft workflow on a separately approved eligible release tag, inspect provenance and retained artifacts, and obtain publication approval.
 - [x] Verify the expanded installer CI matrix on Ubuntu 24.04 and Debian 13 for both upgrade baselines; container checks do not establish full deployment support.
 - [x] Refresh GitHub Actions to verified stable Node 24 revisions pinned by commit SHA; retain both strict dependency profiles and all upgrade baselines.

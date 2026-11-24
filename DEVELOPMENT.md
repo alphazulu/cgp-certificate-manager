@@ -40,8 +40,8 @@ Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 
 - CodeQL uses the default Python suite over manager and repository tooling.
   Its tested SARIF gate requires a successful native analyze step, valid reports
   and zero findings; reported execution/configuration warnings and missing
-  evidence fail. The native CodeQL result is pending for this implementation,
-  not inferred from synthetic SARIF tests.
+  evidence fail. The native CodeQL run passed in the exact implementation CI
+  recorded below; synthetic SARIF tests are separate evidence.
 - CI now expands to **eleven jobs**: two full coverage profiles, four installer
   combinations, native monitoring checks, two dependency audits, CodeQL and
   packaging. Package creation depends on every preceding gate and compares two
@@ -75,7 +75,8 @@ Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 
   pyOpenSSL 23.2.0 and setuptools 78.1.1. Both inventories and reports were
   complete, with no diagnostics/skips/mismatches. Original reports, logs and
   statuses were retained locally; they assess PyPI test environments, not the
-  installed mail server or distribution backports. Native CI remains pending.
+  installed mail server or distribution backports. Native CI independently
+  reproduced both complete results, as recorded below.
 - Documentation: [docs/RELEASING.md](docs/RELEASING.md) defines artifact identity,
   audit policy, permissions, failure behavior and deferred release execution.
   READMEs, CONTRIBUTING.md, SECURITY.md, CHANGELOG.md and the roadmap are updated
@@ -91,22 +92,54 @@ Updated 2026-11-24. Branch feature/transactional-deployment; stable base v2.1.0 
 - Python compilation, installer shell syntax, all 21 workflow run-block shell
   syntax checks and `git diff --check` passed. Documentation validation passed
   110 relative links and 28 shell examples across 17 Markdown files.
+- Implementation commit:
+  [`7cd8377f114799a66a2b21cf9e8d16b6b20c970a`](https://github.com/alphazulu/cgp-certificate-manager/commit/7cd8377f114799a66a2b21cf9e8d16b6b20c970a).
+  [CI 45408950645](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45408950645)
+  **passed all eleven jobs**. Both dependency logs confirm **950 tests / 4507
+  statements / 1746 branches / 100%**, zero missing/partial, and successful
+  `--fail-under=100` (compat 20.699 seconds; current 22.215 seconds).
+- Both native dependency audits were complete and matched the local inventory
+  and finding counts above. CodeQL used CLI **2.27.5**, extracted the selected
+  manager/tooling sources, completed analysis/upload/processing, and produced
+  **1 SARIF report / 1 run / 0 findings / 0 policy errors** with `passed=true`.
+  Original audit evidence and SARIF/summary were uploaded as CI artifacts.
+- All four Ubuntu 24.04 / Debian 13 x baseline 2.0.1 / 2.1.0 installer jobs
+  reached their final success marker, including preservation/rollback,
+  installed metadata/monitoring and 24 unsafe-path cases per combination.
+  Native Certbot was 2.9.0 on Ubuntu and 4.0.0 on Debian. Monitoring checks
+  verified promtool 3.16.0, accepted all 19 rules and passed both native alert
+  and actual dashboard-expression fixtures.
+- Packaging produced two byte-identical source artifact sets, verified the
+  archive checksum and uploaded the three-file `release-package` artifact.
+  The archive SHA-256 was
+  `8682fc84be1db68d2f929509cb765bdb9c8a7d8df1eeee1a901c2a959b9bb14c`.
+  Its manifest correctly identifies the tested PR merge preview
+  `653d1bcb97a92a5f8da2da65e2dbffe8ae7e84d5`, whose source tree is
+  `bee7e96b9ff4485d869aa51da22f6726acd0e41c`, equal to the implementation tree.
+  Inspected job logs contain no GitHub warning/error, deprecation or traceback
+  markers. Six CI artifacts retain coverage, both audits, CodeQL and packaging.
+- This documentation-only follow-up records the observed implementation run
+  and completes the repository-automation roadmap item. Inspect its own exact
+  current-head checks on resume; no claim of its future result is embedded here.
+  The privileged manual attestation/draft path remains unexecuted. Automatic
+  weekly scanning will only become active after merge to the default branch.
 - Stable main remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / **2.1.0**.
-  Native CodeQL, installer/monitoring checks and exact implementation CI must
-  be observed before this checkpoint is marked complete. Docker, promtool and
-  the native CodeQL runner remain unavailable locally.
+  No merge, release, tag creation, VM/server/provider test or production change
+  was performed. Docker, promtool and native CodeQL remain unavailable locally;
+  their observed results above come from the exact implementation CI.
 
 ### Resume from checkpoint 11
 
 1. Inspect actual HEAD, working tree, draft PR and current checks; read this
    handoff and ROADMAP.md. The candidate requires all eleven CI jobs.
-2. Inspect the exact implementation CI with the expanded source scope and
-   complete audit evidence. Both full local coverage profiles passed above.
-   Preserve the strict 100% gate and all audit/refusal regressions. Investigate
-   actual CodeQL results rather than disabling the gate or hiding findings.
-3. Record the observed implementation commit/run, then update roadmap and PR.
-   A documentation follow-up needs its own current-head CI inspection.
-4. After the repository automation checkpoint, the next independent roadmap
+2. Preserve the expanded strict 100% gate, complete audit evidence and refusal
+   regressions. Future advisory or CodeQL findings require investigation;
+   disabling a gate or dropping an inventory entry is not a fix. Compatibility
+   finding-only policy does not permit incomplete or warning-bearing scans.
+3. Keep the current handoff and PR tied to observed exact-revision results.
+   The implementation CI above is historical evidence for its precise source;
+   the documentation follow-up requires its own current-head CI inspection.
+4. The next independent roadmap
    scope is separately scheduled external TLS probes and explicit notification
    configuration, developed with local fixtures and unit tests. Do not silently
    enable a production schedule or destination.
