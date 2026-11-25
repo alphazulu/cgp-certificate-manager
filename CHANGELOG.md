@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.0.dev12 — unreleased
+
+- Add explicit `cgp-update --review`, `--apply --confirm-update TOKEN` and `--recover`. Bind approval to the signed package, full installed preimages, trusted executor, preserved configuration, machine and prior receipt. Recheck freshness, trust, staged bytes and installation state before replacement; old preparation IDs remain informational.
+- Install the update runtime and pre-import guard outside the replaceable application. Keep a durable pending marker through interruption and restart; serialize manager, monitor and updater operations. Preserve the manager lock in fixed Certbot children and guard direct timer operations.
+- Save bounded, complete filesystem inventories and private content-addressed preimages. Use same-filesystem rename slots with directory synchronization, durable phases, full readback and explicit rollback-only recovery. Refuse unknown/manual state before restoration, retain uncertain and orphan evidence, and independently verify every backup.
+- Apply only the declared layout-1, configuration-schema-2 data payload. Never execute candidate installers, migration hooks or version commands. Preserve adjacent application files, credentials, manager/monitor recovery evidence, Certbot state and independent update runtime; restore absence, bytes, ownership, modes and modification times on rollback. Unsupported links, special files, cross-device trees and extended metadata are refused.
+- Verify managed systemd fragments/drop-ins, stop both timers before replacement and leave them stopped after apply or recovery, preserving enablement. Freshness is checked again after quiescence. Add process-death, recovery, integration and policy tests alongside the implementation; keep both strict 100% gates and every CI job.
+- Refuse missing or administrator-modified baseline unit files before installation. During recovery, handle verified rename gaps after systemd cache loss and guarded services left failed after restart; require zero tracked PIDs and no retained cgroup, preserve failure status, and revalidate every restored unit. Cover these cases with fresh-process regressions.
+- Keep real VM/server, signing/trust provisioning, merge, privileged release and production update acceptance deferred. DEVELOPMENT.md and ROADMAP.md record observed validation and the exact continuation point.
+
 ## 2.2.0.dev11 — unreleased
 
 - Add offline `cgp-update --check`, `--prepare` and `--status` for an authenticated preparation plan. Ed25519 verification uses separately provisioned private local trust, a canonical domain-separated manifest, strict project/channel/version/expiry checks and persistent per-channel anti-rollback floors.

@@ -1,6 +1,9 @@
 """DNS gates and fixed/adaptive Certbot routing without external operations."""
 import contextlib
 import os
+import select
+import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -62,7 +65,41 @@ class DNSIssueTests(unittest.TestCase):
         self.assertIn('--dns-cloudflare', command)
         self.assertEqual(command[command.index('--dns-cloudflare-propagation-seconds') + 1], '90')
         self.assertNotIn('--authenticator', command)
+        self.assertEqual(self.process.call_args.kwargs['pass_fds'], ())
         self.runner.assert_not_called()
+
+    def test_fixed_certbot_inherits_lock_until_child_exits_even_if_parent_closes_its_copy(self):
+        children = []
+        def child(command, **options):
+            fd, = options['pass_fds']
+            self.assertEqual(options['timeout'], 3600)
+            self.assertTrue(options['check'])
+            program = ('import os,sys; os.fstat(int(sys.argv[1])); '
+                       'print("inherited",flush=True); sys.stdin.buffer.read(1)')
+            process = subprocess.Popen([sys.executable, '-I', '-c', program, str(fd)],
+                                       pass_fds=options['pass_fds'], stdin=subprocess.PIPE,
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            children.append(process)
+            self.assertTrue(select.select([process.stdout], [], [], 5)[0])
+            self.assertEqual(process.stdout.readline(), b'inherited\n')
+        self.process.side_effect = child
+        try:
+            with storage.operation_lock(core.STATE) as lock:
+                self.args.operation_lock_fd = lock.fileno()
+                self.issue()
+            # The manager descriptor is closed, but the live child still owns
+            # its inherited open-file description, excluding a concurrent update.
+            with self.assertRaises(BlockingIOError), storage.operation_lock(core.STATE):
+                pass
+            output, error = children[0].communicate(b'x', timeout=5)
+            self.assertEqual(children[0].returncode, 0, error.decode())
+            with storage.operation_lock(core.STATE):
+                pass
+        finally:
+            for process in children:
+                if process.poll() is None:
+                    process.kill()
+                process.communicate(timeout=5)
 
     def test_fixed_mode_cannot_ignore_adaptive_receipts_after_configuration_change(self):
         self.cfg['dns_preflight'] = False

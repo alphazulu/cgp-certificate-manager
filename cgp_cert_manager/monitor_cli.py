@@ -8,6 +8,7 @@ from . import __version__, monitor_config as config, monitor_runner
 
 
 SAFE_ERRORS = frozenset({'invalid_state_path', 'protected_state_path', 'unknown_endpoint',
+                         'update_pending', 'update_gate_unsafe',
                          'installed_state_override',
                          'endpoint_disabled', 'clock_moved_backwards', 'configuration_changed',
                          'invalid_identifier', 'invalid_expiry_thresholds', 'no_enabled_endpoints',

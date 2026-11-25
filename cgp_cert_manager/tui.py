@@ -13,7 +13,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import core, dnsconfig, storage
+from . import core, dnsconfig, storage, update_gate
 from .localization import translate
 
 LANGUAGE='en'
@@ -169,6 +169,7 @@ def save_config(cfg, pending, active):
     # Immutable credential paths: the old config never references a new token.
     # The single atomic config replacement is the commit point.
     from datetime import datetime, timezone
+    update_gate.require_idle()
     storage.validate_tree(core.STATE)
     previous = storage.read_text(core.CONFIG) if storage.check_private_file(core.CONFIG, missing_ok=True) else None
     storage.ensure_private_directory(core.STATE)
@@ -205,13 +206,15 @@ def setup():
         return 1
     os.umask(0o077)
     try:
+        update_gate.require_idle()
         with storage.operation_lock(core.STATE):
+            update_gate.require_idle()
             storage.validate_tree(core.STATE)
             return edit()
     except BlockingIOError:
         print('Certificate manager is busy', file=sys.stderr)
         return 1
-    except core.Error as exc:
+    except (core.Error, update_gate.PendingUpdateError) as exc:
         print('Configuration refused: '+str(exc), file=sys.stderr)
         return 1
     except KeyboardInterrupt:

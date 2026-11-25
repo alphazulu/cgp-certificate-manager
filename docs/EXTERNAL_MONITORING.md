@@ -1,6 +1,6 @@
 # Independent external TLS monitoring
 
-This describes the unreleased `2.2.0.dev11` development checkpoint. `cgp-monitor`
+This describes the unreleased `2.2.0.dev12` development checkpoint. `cgp-monitor`
 observes explicitly configured network endpoints and can send explicitly enabled
 notifications. It has its own configuration, state and lock. It does not discover
 CGP domains, contact Cloudflare or ACME, issue or install certificates, or recover

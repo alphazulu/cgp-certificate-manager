@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 
-from . import core, dnsconfig, storage
+from . import core, dnsconfig, storage, update_gate
 
 
 _CONTEXT = None
@@ -40,6 +40,7 @@ def require_context():
         raise core.Error('Adaptive authenticator requires the cgp-certbot wrapper')
     _, fd, cfg = _CONTEXT
     _check_lock(fd)
+    update_gate.require_idle()
     return cfg
 
 
@@ -130,12 +131,14 @@ def _wait(process, interrupts):
 
 def run(cmd, cfg, lock_fd=None, config_path=None):
     """Wait for Certbot to stop before touching its durable DNS cleanup ledger."""
+    update_gate.require_idle()
     dnsconfig.validate(cfg)
     path = _config_path(core.CONFIG if config_path is None else config_path)
     if lock_fd is None:
         with storage.operation_lock(core.STATE) as lock:
             return run(cmd, cfg, lock_fd=lock.fileno(), config_path=path)
     _check_lock(lock_fd)
+    update_gate.require_idle()
     storage.validate_tree(core.STATE)
     if _load_config(path) != cfg:
         raise core.Error('Adaptive Certbot configuration changed')
@@ -166,6 +169,7 @@ def run(cmd, cfg, lock_fd=None, config_path=None):
 def _invoke(args, path, fd):
     global _CONTEXT
     _check_lock(fd)
+    update_gate.require_idle()
     storage.validate_tree(core.STATE)
     cfg = _load_config(path)
     _CONTEXT = (os.getpid(), fd, cfg)
@@ -185,6 +189,7 @@ def main(argv=None):
         if arguments in (['--version'], ['--help'], ['-h']):
             from certbot.main import main as certbot_main
             return certbot_main(arguments)
+        update_gate.require_idle()
         path = _config_path(os.environ.get('CGP_CERTBOT_CONFIG', str(core.CONFIG)))
         if options.manager_lock_fd is None:
             with storage.operation_lock(core.STATE) as lock:
@@ -196,7 +201,7 @@ def main(argv=None):
         print('Adaptive Certbot interrupted', file=sys.stderr)
         return 130
     except Exception as exc:
-        print('Adaptive Certbot refused: ' + (str(exc) if isinstance(exc, core.Error)
+        print('Adaptive Certbot refused: ' + (str(exc) if isinstance(exc, (core.Error, update_gate.PendingUpdateError))
                                              else type(exc).__name__), file=sys.stderr)
         return 1
 

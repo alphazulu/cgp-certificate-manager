@@ -1,5 +1,14 @@
 #!/usr/bin/python3
 import sys
+sys.dont_write_bytecode = True
+sys.path.insert(0, '/opt/cgp-update-runtime')
+from cgp_update_gate import require_idle
+sys.path.pop(0)
+try:
+    require_idle()
+except RuntimeError as error:
+    print('CGP operation refused: ' + str(error), file=sys.stderr)
+    sys.exit(1)
 sys.path.insert(0, '/opt/cgp-certificate-manager')
 from cgp_cert_manager.cli import entry
 sys.exit(entry())

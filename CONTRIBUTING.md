@@ -133,6 +133,12 @@ Preserve the contracts described in these documents:
   source construction, exact tag/context validation, complete audit evidence,
   native-analysis status and the actual workflow refusal paths. Missing evidence
   must fail; tests must never create a real tag, attestation or release.
+- [Authenticated updates](docs/UPDATES.md): keep candidate files as data; test
+  exact approval binding, complete preimages, private journals and independent
+  recovery. Use fresh subprocesses for each rename boundary, lost systemd cache
+  and guarded-service failure. A remaining process/cgroup or unknown filesystem
+  state must prevent restoration. Test both pre-import and under-lock guards;
+  never use an installed application, real service or production signing key.
 
 Automated tests must not contact production CGP, Cloudflare or ACME services,
 use production credentials, or alter real DNS. Use synthetic domains, isolated
@@ -184,6 +190,9 @@ includes 36 unsafe-path/metadata refusals per combination. A separate guard
 refuses the monitor worker before process creation, because its intentionally
 minimal environment does not inherit the harness's Python networking hooks.
 The harness performs no external probe or actual notification delivery.
+It also checks the independent update runtime, its rollback/preservation, and
+three pending-marker forms (regular file, symlink and directory) that refuse
+the installer and normal managed launchers before application imports or writes.
 
 ## Monitoring asset checks
 

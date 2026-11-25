@@ -2,7 +2,118 @@
 
 Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 14
+## Current handoff — checkpoint 15 (local gates passed; native CI pending)
+
+- Development version **`2.2.0.dev12`** in draft PR #2, branch
+  `feature/transactional-deployment`. This resumes and finishes the prior
+  session's uncommitted implementation from starting HEAD
+  `eedb690014a37891a4ef50c2ae9ca0c1b0e8500d`, tree
+  `54afa33399a64fd292f91898d7a2a6230b811d2e`.
+- Starting-head PR CI 45525009407 and push CI 45525001948 passed all eleven
+  jobs. Their **1303 / 6833 / 2350 / 100%** result belongs to checkpoint 14;
+  it is not evidence for this implementation. The new local evidence is below.
+- Implemented scope: data-only application apply with exact review approval,
+  complete installed preimages, durable journal, explicit conservative recovery,
+  independent trusted runtime, persistent operation guard, coordinated locks,
+  unit/process tests, documentation and GitHub plan/handoff updates.
+- Fixed production layout: `/opt/cgp-certificate-manager`, independent
+  `/opt/cgp-update-runtime`, and `/var/lib/cgp-update`. Tests inject an isolated
+  Layout internally; there is no environment or CLI bypass for installed apply.
+  The ordinary trusted installer bootstraps runtime and guard-capable launchers;
+  this transaction never replaces its own runtime or update launcher.
+- Lock order is manager -> monitor -> updater, noncreating/nonblocking for
+  review/apply/recovery. Normal guards read the fixed marker without acquiring
+  updater locks. A durable marker precedes timer and application changes and
+  survives restart; entrypoint guards run before application imports and again
+  under operation locks. Fixed-mode Certbot children retain the manager lock;
+  direct console timer changes acquire it and check the pending guard.
+- `update_files.py` implements bounded full snapshots, content-addressed private
+  backups and same-filesystem rename slots. Explicit absence, empty directories,
+  all bytes, owners/groups, modes and modification times are preserved. Links,
+  special files, hardlinks, cross-device descendants and xattrs/ACLs/capabilities
+  are unsupported and refused. Uncertain backup/slot evidence is not pruned.
+- `update_apply.py` binds signed package/trust, whole before/after inventories,
+  executor, machine, preserved configuration and prior receipt into a separate
+  domain-separated confirmation token. It requires the declared layout-1/schema-2
+  payload and trusted launcher/unit templates, performs no migration, and never
+  executes candidate code. All targets/backups are checked before rollback;
+  unknown/manual state refuses restoration. Status/recovery do not need the
+  original archive, fresh trust/signature, prepared stage or importable app.
+- Both timers are stopped and verified, with no automatic starts or enablement
+  changes. Effective unit fragments/drop-ins are restricted to the managed
+  layout. Configuration, Certbot data, manager/monitor evidence and independent
+  runtime remain outside application rollback. Timers can activate after reboot
+  while pending, but managed entrypoints refuse application execution.
+- Recovery now permits a unit absent in a verified rename gap to be reported
+  `not-found` after systemd cache loss. Only that exact absent managed target
+  is allowed, and only unloaded timers are omitted from `stop`; final reload
+  requires every unit loaded from its expected path. A guarded service left
+  `failed` is accepted only with zero MainPID/ControlPID and no ControlGroup.
+  Residual processes/cgroups prevent restoration. Failure state is preserved;
+  no `reset-failed`, start or enable is issued. Normal review/apply remain strict.
+- Review fixes include stage prefix/root ordering, unknown-state preflight,
+  expiry during backup/quiescence, global readback around reload/commit,
+  resynchronizing an uncertain terminal receipt before clearing the marker,
+  JSON-null and lost-pointer replay protection, reboot/cache-loss recovery and
+  strict refusal of missing/modified baseline unit files. Safe unit modes may
+  be normalized with exact rollback. Every fix has a regression.
+
+### Observed local validation
+
+Both complete profiles independently pass **1427 tests / 7793 statements /
+2546 branches / 100%**, with **124 additional tests** relative to checkpoint 14.
+There are zero missing statements, missing/partial branches or excluded lines.
+Each independent `--fail-under=100` gate covers `cgp_cert_manager,repo_tools`.
+Python is **3.12.14**, Node is **24.22.3**, and every explicitly pinned dependency
+matches its profile. Compatibility took **47.858 s**; current **47.047 s**.
+
+The complete commands, using the already provisioned isolated environments, were:
+
+```sh
+COVERAGE_FILE=.coverage.final15.compat ../cgp-compat-env/bin/python -m coverage run --branch --source=cgp_cert_manager,repo_tools -m unittest discover -s tests -v
+COVERAGE_FILE=.coverage.final15.compat ../cgp-compat-env/bin/python -m coverage report -m --fail-under=100
+COVERAGE_FILE=.coverage.final15.current ../cgp-current-env/bin/python -m coverage run --branch --source=cgp_cert_manager,repo_tools -m unittest discover -s tests -v
+COVERAGE_FILE=.coverage.final15.current ../cgp-current-env/bin/python -m coverage report -m --fail-under=100
+```
+
+The process suite contains **20 tests** using real fresh Python processes,
+`SIGKILL`/abrupt exit, private temporary trees and a bounded local systemctl
+stub. It covers every changed target's rename boundaries, interruption during
+rollback, terminal-marker clearance, four unit-cache-loss cases after restart,
+failed guarded services, and refusal of tracked/residual processes before undo.
+It removes original trust/artifacts/prepared state and forbids crypto imports
+during recovery. Backups, preserved configuration/evidence and timer enablement
+remain unchanged. These tests model process crashes and systemd observations;
+they do not boot a real VM or establish physical power-loss recovery.
+
+Python compilation, all three installer shell scripts, all **21 workflow run
+blocks**, relative Markdown links, fenced shell examples and `git diff --check`
+passed. App/plugin metadata both report `2.2.0.dev12`. The installer harness now
+has **14 scenario sections**, retains **36 unsafe-path/metadata refusals**, and
+adds three pending-marker forms plus independent-runtime preservation/rollback.
+Docker, native promtool and CodeQL are unavailable locally. All eleven native
+CI jobs for this implementation remain pending until the actual pushed revision
+is observed; no previous green run is substituted and no gate was relaxed.
+
+### Continuation after checkpoint 15
+
+1. Commit/push the reviewed implementation with this handoff and roadmap;
+   inspect all eleven CI jobs for that exact revision. Fix any finding with a
+   regression, repeat affected/full required gates, and record observed native
+   results in this file, ROADMAP.md and draft PR #2. Preserve the draft.
+2. The next independent roadmap scope is **2.5 DNS provider abstraction**:
+   retain Cloudflare fixed/adaptive behavior and durable ownership receipts,
+   define provider capability/credential boundaries and add isolated provider
+   contract tests before a new backend. No provider account or live DNS test is
+   authorized by this continuation. Explicit update evidence retention/cleanup
+   is still outside this checkpoint; the documented four-transaction/stage caps
+   remain, with no automatic deletion of recovery evidence.
+3. Keep real VM/server/provider/recipient/broker and signing acceptance deferred.
+   Safe CGP bootstrap still needs the documented disposable-instance evidence.
+   Do not merge, tag, release, dispatch privileged release preparation, choose
+   production signing/trust keys or deploy this development code to a server.
+
+## Previous handoff — checkpoint 14
 
 - Development version: **`2.2.0.dev11`**, in the same draft
   [PR #2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).

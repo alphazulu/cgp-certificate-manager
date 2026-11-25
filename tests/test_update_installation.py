@@ -18,11 +18,13 @@ class UpdateInstallationTests(unittest.TestCase):
     def test_launcher_delegates_to_update_cli_without_an_implicit_action(self):
         launcher = ROOT / 'update-launcher'
         self.assertEqual(stat.S_IMODE(launcher.stat().st_mode), 0o755)
-        with patch.object(sys, 'path', list(sys.path)), patch.object(update_cli, 'main', return_value=7) as main:
+        with patch.object(sys, 'path', list(sys.path)), patch.object(sys, 'dont_write_bytecode', False), \
+                patch.object(update_cli, 'main', return_value=7) as main:
             with self.assertRaises(SystemExit) as exited:
                 runpy.run_path(str(launcher), run_name='__main__')
             self.assertEqual(exited.exception.code, 7)
-            self.assertEqual(sys.path[0], '/opt/cgp-certificate-manager')
+            self.assertEqual(sys.path[0], '/opt/cgp-update-runtime')
+            self.assertTrue(sys.dont_write_bytecode)
             main.assert_called_once_with()
 
     def test_exact_container_entrypoint_is_fresh_read_only_and_backend_independent(self):

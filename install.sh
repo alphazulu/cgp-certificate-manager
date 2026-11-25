@@ -3,6 +3,17 @@ set -euo pipefail
 cd "$(dirname "$0")"
 [[ $EUID == 0 ]] || { echo 'Run as root'; exit 1; }
 [[ $(pwd -P) != /opt/cgp-certificate-manager ]] || { echo "Extract into /tmp first"; exit 1; }
+export PYTHONDONTWRITEBYTECODE=1
+# Refuse a pending application update before the wizard or any installer writes.
+python3 -B - <<'UPDATE_GUARD'
+import sys
+from cgp_cert_manager.update_gate import PendingUpdateError, require_idle
+try:
+    require_idle()
+except PendingUpdateError as error:
+    print('Installation refused: ' + str(error), file=sys.stderr)
+    sys.exit(1)
+UPDATE_GUARD
 python3 -m compileall -q cgp_cert_manager
 mode=${1:---auto}
 case "$mode" in

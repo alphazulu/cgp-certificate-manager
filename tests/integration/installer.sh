@@ -70,6 +70,7 @@ chmod 755 /mock-bin/systemctl
 # Do not touch production paths outside this container.
 config=/etc/cgp-letsencrypt/config.json
 app=/opt/cgp-certificate-manager
+update_runtime=/opt/cgp-update-runtime
 launcher=/usr/local/sbin/cgp-letsencrypt
 certbot_launcher=/usr/local/sbin/cgp-certbot
 monitor_launcher=/usr/local/sbin/cgp-monitor
@@ -123,8 +124,10 @@ assert_update_data() {
     done
 }
 assert_update_cli() {
+    local before_runtime
+    before_runtime=$(tar -C "$update_runtime" -cf - . | sha256sum)
     for action in --help --version; do
-        python3 - "$app" "$update_launcher" "$action" "$(dirname "$update_trust")" "$update_state" /var/lib/cgp-letsencrypt "$monitor_state" <<'UPDATE_ENTRYPOINT'
+        python3 - "$update_runtime" "$update_launcher" "$action" "$(dirname "$update_trust")" "$update_state" /var/lib/cgp-letsencrypt "$monitor_state" <<'UPDATE_ENTRYPOINT'
 from contextlib import ExitStack, redirect_stdout, redirect_stderr
 import importlib.abc
 import io
@@ -136,14 +139,17 @@ import subprocess
 import sys
 from unittest.mock import patch
 
-application, launcher = (Path(value) for value in sys.argv[1:3])
+runtime, launcher = (Path(value) for value in sys.argv[1:3])
 action = sys.argv[3]
 roots = [Path(value) for value in sys.argv[4:]]
-sys.path.insert(0, str(application))
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(runtime))
+import cgp_cert_manager
 from cgp_cert_manager import __version__
+assert Path(cgp_cert_manager.__file__).resolve().parents[1] == runtime.resolve()
 
 blocked = ('cgp_cert_manager.update_plan', 'cgp_cert_manager.update_metadata',
-           'cgp_cert_manager.update_archive', 'cryptography')
+           'cgp_cert_manager.update_archive', 'cgp_cert_manager.update_apply', 'cryptography')
 assert 'cgp_cert_manager.update_cli' not in sys.modules, 'The entrypoint must import the updater afresh'
 assert not any(name == item or name.startswith(item + '.') for name in sys.modules for item in blocked)
 attempts = []
@@ -184,8 +190,8 @@ with ExitStack() as stack:
     if action == '--version':
         assert output.getvalue().strip() == __version__
     else:
-        assert all(value in output.getvalue() for value in ('--check', '--prepare', '--status'))
-        assert '--apply' not in output.getvalue()
+        assert all(value in output.getvalue() for value in ('--check', '--prepare', '--status',
+                                                          '--review', '--apply', '--recover'))
     for call in forbidden:
         call.assert_not_called()
 assert not attempts, 'Updater help/version attempted a verification backend import'
@@ -193,8 +199,28 @@ assert snapshot() == before, 'Updater help/version changed private data or creat
 UPDATE_ENTRYPOINT
     done
     test "$(stat -c %a "$update_launcher")" = 750
+    test "$(tar -C "$update_runtime" -cf - . | sha256sum)" = "$before_runtime"
     assert_update_data
     test ! -e /tmp/cgp-installer-network-attempted
+}
+assert_update_runtime() {
+    test -d "$update_runtime/cgp_cert_manager"
+    cmp "$update_runtime/cgp_update_gate.py" "$update_runtime/cgp_cert_manager/update_gate.py"
+    for file in launcher certbot-launcher monitor-launcher update-launcher; do
+        cmp "$update_runtime/templates/$file" "/tmp/candidate-writable/$file"
+    done
+    for file in cgp-letsencrypt.service cgp-letsencrypt.timer cgp-monitor.service cgp-monitor.timer; do
+        cmp "$update_runtime/templates/systemd/$file" "/tmp/candidate-writable/systemd/$file"
+    done
+    test "$(stat -c %a "$update_runtime")" = 755
+    test "$(stat -c %a "$update_runtime/cgp_update_gate.py")" = 644
+    python3 - "$app" "$update_runtime" <<'INSTALLED_OWNERS'
+from pathlib import Path
+import sys
+for root in map(Path, sys.argv[1:]):
+    for path in [root, *root.rglob('*')]:
+        assert path.lstat().st_uid == 0, 'Installed application/runtime must belong to root'
+INSTALLED_OWNERS
 }
 assert_monitor_data() {
     if [[ ! -f /tmp/monitor-config.expected ]]; then
@@ -526,12 +552,14 @@ assert_pending_journal
 assert_monitoring_cli
 assert_monitor_cli
 assert_update_cli
+assert_update_runtime
 
 echo '=== clean installation failure restores absent application ==='
-rm -rf "$app" "$launcher" "$certbot_launcher" "$monitor_launcher" "$update_launcher" "$drop" /etc/systemd/system/cgp-letsencrypt.{service,timer} /etc/systemd/system/cgp-monitor.{service,timer}
+rm -rf "$app" "$update_runtime" "$launcher" "$certbot_launcher" "$monitor_launcher" "$update_launcher" "$drop" /etc/systemd/system/cgp-letsencrypt.{service,timer} /etc/systemd/system/cgp-monitor.{service,timer}
 touch /tmp/fail-reload-once
 must_fail bash /tmp/candidate-writable/install.sh --non-interactive
 test ! -e "$app"
+test ! -e "$update_runtime"
 test ! -e "$launcher"
 test ! -e "$certbot_launcher"
 test ! -e "$monitor_launcher"
@@ -563,6 +591,7 @@ test -f "$app/cgp_cert_manager/stale.py"
 test ! -e "$certbot_launcher"
 test ! -e "$monitor_launcher"
 test ! -e "$update_launcher"
+test ! -e "$update_runtime"
 test ! -e /etc/systemd/system/cgp-monitor.service
 test ! -e /etc/systemd/system/cgp-monitor.timer
 test -f /tmp/timer-active
@@ -634,12 +663,15 @@ printf '%s\n' '{"synthetic":"retained updater checkpoint and rollback floors"}' 
 chmod 600 "$update_trust" "$update_evidence"
 cp "$update_trust" /tmp/update-trust.expected
 cp "$update_evidence" /tmp/update-checkpoint.expected
+printf '%s\n' 'Preserve the full prior trusted runtime during failed installation.' >"$update_runtime/prior-runtime.fixture"
+before_update_runtime=$(tar -C "$update_runtime" -cf - . | sha256sum)
 for file in "$monitor_launcher" "$update_launcher" /etc/systemd/system/cgp-monitor.service /etc/systemd/system/cgp-monitor.timer; do
     printf '\n# prior monitor installation fixture\n' >>"$file"
     cp -a "$file" "/tmp/$(basename "$file").prior"
 done
 touch /tmp/timer-active /tmp/monitor-timer-active /tmp/fail-reload-once
 must_fail bash /tmp/candidate-writable/install.sh --upgrade
+test "$(tar -C "$update_runtime" -cf - . | sha256sum)" = "$before_update_runtime"
 for file in "$monitor_launcher" "$update_launcher" /etc/systemd/system/cgp-monitor.service /etc/systemd/system/cgp-monitor.timer; do
     cmp "$file" "/tmp/$(basename "$file").prior"
 done
@@ -649,6 +681,7 @@ test "$("$launcher" --version)" = "$candidate_version"
 assert_pending_journal
 assert_monitor_cli
 assert_update_cli
+assert_update_runtime
 
 echo '=== successful monitor upgrade leaves both timers stopped ==='
 bash /tmp/candidate-writable/install.sh --upgrade
@@ -658,6 +691,8 @@ cmp "$monitor_launcher" /tmp/candidate-writable/monitor-launcher
 cmp "$update_launcher" /tmp/candidate-writable/update-launcher
 cmp /etc/systemd/system/cgp-monitor.service /tmp/candidate-writable/systemd/cgp-monitor.service
 cmp /etc/systemd/system/cgp-monitor.timer /tmp/candidate-writable/systemd/cgp-monitor.timer
+test ! -e "$update_runtime/prior-runtime.fixture"
+assert_update_runtime
 assert_pending_journal
 assert_monitor_cli
 assert_update_cli
@@ -700,18 +735,36 @@ assert_pending_journal
 
 echo '=== unsafe private paths are refused before installer mutations ==='
 assert_preflight_refused() {
-    local before_log before_app before_backups
+    local before_log before_app before_backups before_runtime
     before_log=$(sha256sum /tmp/systemctl.log)
     before_app=$(tar -C "$app" -cf - . | sha256sum)
+    before_runtime=$(tar -C "$update_runtime" -cf - . | sha256sum)
     before_backups=$(find /root -maxdepth 1 -type d -name 'cgp-manager-backup-*' | sort)
     must_fail bash /tmp/candidate-writable/install.sh --upgrade
     test "$(sha256sum /tmp/systemctl.log)" = "$before_log"
     test "$(tar -C "$app" -cf - . | sha256sum)" = "$before_app"
+    test "$(tar -C "$update_runtime" -cf - . | sha256sum)" = "$before_runtime"
     test "$(find /root -maxdepth 1 -type d -name 'cgp-manager-backup-*' | sort)" = "$before_backups"
     test -f /tmp/timer-active
     test -f /tmp/monitor-timer-active
     assert_pending_journal
 }
+echo '=== pending application update blocks normal commands and installer before effects ==='
+for pending_kind in regular symlink directory; do
+    case "$pending_kind" in
+        regular) printf '%s\n' 'Synthetic incomplete application transaction' >"$update_state/pending.json"; chmod 600 "$update_state/pending.json" ;;
+        symlink) ln -s /tmp/nonexistent-updater-evidence "$update_state/pending.json" ;;
+        directory) mkdir -m 700 "$update_state/pending.json" ;;
+    esac
+    assert_preflight_refused
+    for command in "$launcher" "$monitor_launcher" "$certbot_launcher"; do
+        must_fail "$command" --version
+    done
+    # Recovery entrypoint remains independent of the replaceable application.
+    assert_update_cli
+    if [[ "$pending_kind" == directory ]]; then rmdir "$update_state/pending.json"; else rm "$update_state/pending.json"; fi
+done
+assert_update_runtime
 path_contents() {
     if [[ -d $1 ]]; then
         tar -C "$1" -cf - . | sha256sum

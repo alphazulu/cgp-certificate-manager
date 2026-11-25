@@ -26,7 +26,27 @@
 - [x] Implement operator-assisted resolution: exact-preview confirmation, private authorization/completion evidence, incomplete-decision guard and explicit retry without claiming TLS success. See docs/RESOLUTION.md and checkpoint 5 evidence below.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 14 (`2.2.0.dev11`) implements authenticated offline update checking
+Checkpoint 15 (`2.2.0.dev12`) implements explicitly approved application
+replacement and independent recovery. The trusted runtime lives outside the
+replaceable application; a persistent pending marker guards supported operations
+before import and under their locks. Approval binds complete before/after file
+inventories, package/trust identity, machine, configuration, executor and prior
+receipt. Full preimages and same-filesystem rename slots support conservative
+rollback after process death; candidate code and migrations are never executed.
+Both timers remain stopped after apply/recovery and their enablement is preserved.
+Recovery handles verified unit-file rename gaps after systemd cache loss and
+failed guarded services only when no tracked process or retained cgroup exists.
+Missing or administrator-modified baseline units refuse installation.
+Both complete local profiles pass **1427 tests / 7793 statements / 2546 branches
+/ 100%**, zero missing/partial/excluded, with **124 additional tests** including
+20 fresh-process cases. Python/shell/workflow/documentation checks pass. Native
+CI for the implementation is pending; do not infer it from checkpoint 14.
+See DEVELOPMENT.md for observed evidence and continuation. The next independent
+roadmap scope is DNS provider abstraction with Cloudflare compatibility and
+isolated contract tests. All real VM/server/signing/production acceptance remains
+deferred; no merge, release, signing key or real update is activated.
+
+Previous checkpoint 14 (`2.2.0.dev11`) implements authenticated offline update checking
 and preparation. `cgp-update` verifies domain-separated Ed25519 metadata against
 separately provisioned trust, preserves per-channel rollback floors, checks the
 exact deterministic archive and stages its validated files privately. Read-only
@@ -240,7 +260,7 @@ passed tests, both installer baselines and package. Each installer job passed
 18 new unsafe-path refusal cases and preserved pending journals. This follow-up
 documentation commit records the observed result; inspect current-head checks
 when resuming. See DEVELOPMENT.md for exact next steps and remaining limits.
-Operator-assisted resolution was completed in checkpoint 5; checkpoint 14 is active above.
+Operator-assisted resolution was completed in checkpoint 5; checkpoint 15 is active above.
 This remains a development checkpoint, not a production release.
 
 ## 2.3 — Monitoring
@@ -255,7 +275,7 @@ This remains a development checkpoint, not a production release.
 - [x] Define and implement canonical signed manifests, separate local trusted keys, project/channel/version/expiry checks and per-channel anti-rollback floors, with unit tests (checkpoint 14).
 - [x] Inspect exact archive bytes, safely prepare a private source tree, persist an informational plan and revalidate saved status without executing candidate code (checkpoint 14; see docs/UPDATES.md).
 - [x] Add the offline command to installer preservation/handled rollback and an unsigned publisher manifest assembler, with unit and container checks (checkpoint 14; observed evidence in DEVELOPMENT.md).
-- [ ] Implement explicit administrator-approved application replacement with a complete baseline/preimage, approval bound to that baseline and target, installer/manager/monitor locking, durable phases, restart recovery and refusal of unknown/manual changes.
+- [x] Implement explicit administrator-approved application replacement with complete preimages, bound approval, shared locks, durable phases, independent restart recovery and refusal of unknown/manual changes (checkpoint 15; local gates passed, native CI evidence tracked above).
 - [ ] Select and provision real signing/trust keys, decide rotation/revocation operations and separately authorize release-workflow signing integration. No keys are shipped or generated automatically.
 - [ ] Perform deferred real VM/server update, interruption/recovery and trust-rotation acceptance before RC/production use.
 

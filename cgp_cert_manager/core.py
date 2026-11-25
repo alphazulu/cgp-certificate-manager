@@ -284,7 +284,8 @@ def issue(cfg,d,z,args):
         from . import certbot_runner
         certbot_runner.run(cmd,cfg,lock_fd=getattr(args,'operation_lock_fd',None))
     else:
-        subprocess.run(cmd,check=True,timeout=3600)
+        lock_fd=getattr(args,'operation_lock_fd',None)
+        subprocess.run(cmd,check=True,timeout=3600,pass_fds=() if lock_fd is None else (lock_fd,))
 
 def backup_files(name):
     from . import storage

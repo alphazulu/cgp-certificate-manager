@@ -26,7 +26,8 @@ MAX_STAGES = 4
 CODES = metadata.CODES | archive.CODES | frozenset({
     "invalid_path", "unsafe_state_path", "input_missing", "input_unsafe", "input_changed", "input_limits",
     "input_unavailable", "installed_invalid", "state_invalid", "state_missing", "lock_missing",
-    "prepared_missing", "state_busy", "state_write_failed", "state_changed", "stage_limit", "configuration_changed", "update_failed"})
+    "prepared_missing", "state_busy", "state_write_failed", "state_changed", "stage_limit", "configuration_changed", "update_failed",
+    "update_pending", "update_gate_unsafe"})
 _RECORD_FIELDS = {"manifest", "signature", "trust_sha256", "installed_root", "installed_version",
                   "installed_version_sha256", "stage", "inventory", "created_at", "plan_id"}
 _STAGE = re.compile(r"release-[a-z0-9_]{8}")
@@ -309,7 +310,16 @@ def _check(paths):
     return _public_plan(_new_record(inputs, inventory, now), verified)
 
 
+def _idle(state):
+    from . import update_gate
+    try:
+        update_gate.require_idle(state)
+    except update_gate.PendingUpdateError as exc:
+        raise UpdateError(exc.code) from None
+
+
 def _prepare(paths):
+    _idle(paths["state_dir"])
     now = _now()
     inputs = _inputs(paths)
     # Authentication and whole-archive inspection precede every state creation.
@@ -319,6 +329,7 @@ def _prepare(paths):
     state = paths["state_dir"]
     with storage.operation_lock(state) as lock, storage._directory(state) as state_fd:
         _binding(state, state_fd, lock)
+        _idle(state)
         checkpoint = _load(state)
         now = _now()
         _require(now >= verified["floor"]["checked_at"], "clock_moved_backwards")

@@ -25,6 +25,8 @@ class ScreenTests(unittest.TestCase):
         self.stack.enter_context(patch.object(c,'language',return_value='en'))
         self.stack.enter_context(patch.object(c.curses,'has_colors',return_value=False))
         self.stack.enter_context(patch.object(c.curses,'curs_set'))
+        directory=self.stack.enter_context(tempfile.TemporaryDirectory())
+        self.stack.enter_context(patch.object(core,'STATE',Path(directory)/'state'))
         self.screen=c.Screen(self.w)
         self.screen.all_rows=[row()]
         self.screen.apply_view()

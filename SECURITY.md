@@ -143,7 +143,7 @@ third-party plugins, services and surrounding tools maintain their own logs.
 The manager does not promise that every third-party log is secret-free. Review
 and minimize any excerpt before sharing it; do not publish production logs.
 
-## Update trust and preparation
+## Update trust and installation
 
 The offline `cgp-update` verifier must come from an already trusted installation
 or checkout, never from the unverified candidate it is checking. Ed25519 public
@@ -156,7 +156,7 @@ from this offline manifest contract.
 
 The verifier checks exact archive bytes before bounded decompression, validates
 metadata without executing candidate code and stages only the narrow supported
-file format. Status rehashes every prepared file and rechecks current trust,
+file format. Package status rehashes every prepared file and rechecks current trust,
 the installed version file and signed freshness. Persistent per-channel floors
 survive key changes; deleting updater state discards this rollback protection.
 Local root/effective-UID processes, the verification runtime, selected trust
@@ -166,11 +166,35 @@ TUF role/threshold/root-rotation implementation.
 
 Preparation does not replace installed code or authorize a later installation.
 Its baseline binds only the version file, and its own lock does not serialize
-the existing installer. The public plan ID is informational. Full installed
-preimages, fresh explicit approval, shared installation locking and durable
-recovery after process death are future apply requirements. Current shell
-installer traps cannot provide that crash-recovery guarantee. Read the
-[update contract](docs/UPDATES.md) before interpreting a `prepared` result.
+the existing installer. The public plan ID is informational. Installation is a
+separate, explicit action: the independently installed trusted runtime reviews
+complete before/after snapshots and binds the approval token to the candidate,
+trust, machine, configuration, executor, service observations and prior receipt.
+It recomputes that approval under manager, monitor and updater locks in that
+order, and rechecks freshness and the actual files before replacement. Candidate
+installers, hooks, migrations and application code are never executed by apply.
+
+Before replacement, apply preserves complete preimages and publishes a durable
+journal and pending marker. Supported launchers check the independent marker
+before importing application code and again under their operation locks. A
+pending or unreadable marker blocks normal operations across process exits and
+reboots. Explicit recovery runs outside the replaceable application and refuses
+unknown/manual state, changed preserved resources or corrupt evidence before
+restoration. It restores a nonterminal transaction's preimages, or validates a
+terminal receipt before finishing marker clearance; it does not resume a
+partially applied candidate or reinterpret a committed update as a rollback.
+Configuration, credentials, certificate state and the trusted runtime stay
+outside application rollback. Both timers remain stopped after apply/recovery,
+with enablement preserved; reactivation requires an administrator's decision.
+
+Recovery relies on retained local evidence, not on a fresh signature, current
+trust file, original archive or usable application tree. Do not remove pending
+markers, pointers or backups to bypass a refusal. The ordinary shell installer
+still has handled-failure traps, not this durable update protocol. Process-crash
+tests do not establish universal storage power-loss recovery. Real VM/server
+acceptance, production trust/signing and deployment remain deferred. Read the
+[update contract](docs/UPDATES.md) for the supported layout, metadata limits,
+recovery boundaries and the meaning of a `prepared` result.
 
 ## Dependency and source scanning
 

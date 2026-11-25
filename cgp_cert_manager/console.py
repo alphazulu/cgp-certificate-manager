@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import __version__, core, storage
+from . import __version__, core, storage, update_gate
 from .localization import language, translate
 
 # The module path must refer to the same checkout, even when testing from /tmp.
@@ -467,7 +467,17 @@ class Screen:
             return
         if not self.confirm(options[choice]): return
         commands={1:CLI+['--apply-schedule'],2:['systemctl','enable','--now','cgp-letsencrypt.timer'],3:['systemctl','stop','cgp-letsencrypt.timer'],4:['systemctl','disable','--now','cgp-letsencrypt.timer']}
-        self.execute(commands[choice],options[choice])
+        # The CLI acquires its own lock. Direct systemctl actions need this one.
+        if choice==1:
+            self.execute(commands[choice],options[choice])
+            return
+        try:
+            update_gate.require_idle()
+            with storage.operation_lock(core.STATE):
+                update_gate.require_idle()
+                self.execute(commands[choice],options[choice])
+        except (BlockingIOError,core.Error,update_gate.PendingUpdateError):
+            self.view(options[choice],['Timer change refused: manager busy or update pending; inspect update status.'])
 
     def transaction_menu(self):
         # Recovery must remain available even when discovery returns no domains.

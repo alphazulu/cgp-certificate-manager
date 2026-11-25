@@ -26,6 +26,7 @@ PLAN = {
     'total_bytes': 8192, 'inventory_sha256': '6' * 64, 'created_at': 1700000001,
     'apply_supported': False,
 }
+TOKEN = 'f' * 64
 
 
 def response(action, status, plan=None, error=None):
@@ -40,6 +41,13 @@ class UpdateCLITests(unittest.TestCase):
         self.backend.status = Mock(return_value=response('status', 'missing'))
         self.enterContext(patch.object(cgp_cert_manager, 'update_plan', self.backend, create=True))
         self.enterContext(patch.dict(sys.modules, {'cgp_cert_manager.update_plan': self.backend}))
+        self.installation = ModuleType('cgp_cert_manager.update_apply')
+        self.installation.review = Mock(return_value=response('review', 'review_ready', {'confirmation_token': TOKEN}))
+        self.installation.apply = Mock(return_value=response('apply', 'applied'))
+        self.installation.recover = Mock(return_value=response('recover', 'rolled_back'))
+        self.installation.status = Mock(return_value=None)
+        self.enterContext(patch.object(cgp_cert_manager, 'update_apply', self.installation, create=True))
+        self.enterContext(patch.dict(sys.modules, {'cgp_cert_manager.update_apply': self.installation}))
         self.forbidden = [self.enterContext(patch.object(owner, name,
                           side_effect=AssertionError('CLI crossed its backend boundary')))
                           for owner, name in ((Path, 'open'), (Path, 'mkdir'),
@@ -70,6 +78,13 @@ class UpdateCLITests(unittest.TestCase):
     def untouched(self):
         for name in ('check', 'prepare', 'status'):
             getattr(self.backend, name).assert_not_called()
+        for name in ('review', 'apply', 'recover', 'status'):
+            getattr(self.installation, name).assert_not_called()
+
+    def arguments(self, action):
+        if action in ('check', 'prepare'):
+            return ['--' + action, *self.artifacts]
+        return ['--' + action, *(['--confirm-update', TOKEN] if action == 'apply' else [])]
 
     def test_help_and_version_bypass_artifacts_trust_state_and_backend(self):
         for option in ('--help', '--version'):
@@ -83,9 +98,11 @@ class UpdateCLITests(unittest.TestCase):
     def test_action_and_artifact_combinations_refuse_before_any_backend_call(self):
         cases = [(), ('--json',), ('--check', '--prepare'), ('--status', '--check'),
                  ('--check',), ('--prepare',), ('--apply',),
+                 ('--review', '--recover'), ('--apply', '--review'), ('--status', '--recover'),
                  ('--check', '--manifest', '/manifest'),
                  ('--prepare', '--manifest', '/manifest', '--signature', '/signature')]
-        cases.extend(('--status', option, '/synthetic/file')
+        cases.extend((*self.arguments(action), option, '/synthetic/file')
+                     for action in ('status', 'review', 'apply', 'recover')
                      for option in ('--manifest', '--signature', '--archive'))
         for arguments in cases:
             with self.subTest(arguments=arguments):
@@ -95,18 +112,142 @@ class UpdateCLITests(unittest.TestCase):
         self.untouched()
 
     def test_every_path_requires_absolute_form_without_parent_traversal(self):
-        for action in ('check', 'prepare', 'status'):
+        for action in ('check', 'prepare', 'status', 'review', 'apply', 'recover'):
             names = ['trust-file', 'state-dir', 'installed-root']
-            if action != 'status':
+            if action in ('check', 'prepare'):
                 names += ['manifest', 'signature', 'archive']
             for name in names:
                 for value in ('relative', '/synthetic/../changed'):
                     with self.subTest(action=action, name=name, value=value):
-                        arguments = ['--' + action] + (self.artifacts if action != 'status' else [])
+                        arguments = self.arguments(action)
                         code, output, errors = self.invoke(*arguments, '--' + name, value)
                         self.assertEqual((code, output), (2, ''))
                         self.assertIn('--' + name + ' requires an absolute path without parent traversal', errors)
         self.untouched()
+
+    def test_confirmation_is_required_exact_and_exclusive_to_apply(self):
+        for action in ('check', 'prepare', 'status', 'review', 'recover'):
+            with self.subTest(action=action):
+                code, output, errors = self.invoke(*self.arguments(action), '--confirm-update', TOKEN)
+                self.assertEqual((code, output), (2, ''))
+                self.assertIn('--confirm-update requires --apply', errors)
+        for value in (None, '', 'f' * 63, 'f' * 65, 'F' * 64, 'g' * 64,
+                      ' ' + TOKEN, TOKEN + '\n', '0x' + TOKEN, 'PRIVATE_EXTERNAL_DETAIL'):
+            with self.subTest(value=value):
+                options = [] if value is None else ['--confirm-update', value]
+                code, output, errors = self.invoke('--apply', *options)
+                self.assertEqual((code, output), (2, ''))
+                self.assertIn('exact lowercase 64-hex token', errors)
+        self.untouched()
+
+    def test_new_actions_forward_exact_common_paths_and_explicit_confirmation(self):
+        common = {'trust_path': Path('/etc/cgp-update/trust.json'),
+                  'installed_root': Path('/opt/cgp-certificate-manager'), 'state_dir': Path('/var/lib/cgp-update')}
+        for action, status in (('review', 'review_ready'), ('apply', 'applied'), ('recover', 'rolled_back')):
+            with self.subTest(action=action):
+                expected = getattr(self.installation, action).return_value
+                code, output, errors = self.invoke(*self.arguments(action), '--json')
+                self.assertEqual((code, errors), (0, ''))
+                self.assertEqual(json.loads(output), expected)
+                self.assertEqual(json.loads(output)['status'], status)
+                getattr(self.installation, action).assert_called_once_with(
+                    **common, **({'confirmation_token': TOKEN} if action == 'apply' else {}))
+        for action in ('check', 'prepare', 'status'):
+            getattr(self.backend, action).assert_not_called()
+        self.installation.status.assert_not_called()
+
+    def test_installation_backend_receives_override_paths_and_refuses_unsupported_layout(self):
+        options = ['--trust-file', '/synthetic/trust.json', '--state-dir', '/synthetic/update-state',
+                   '--installed-root', '/synthetic/application']
+        common = {'trust_path': Path(options[1]), 'state_dir': Path(options[3]),
+                  'installed_root': Path(options[5])}
+        for action in ('review', 'apply', 'recover'):
+            with self.subTest(action=action):
+                expected = response(action, 'invalid', error='unsupported_layout')
+                getattr(self.installation, action).return_value = expected
+                code, output, errors = self.invoke(*self.arguments(action), *options, '--json')
+                self.assertEqual((code, errors), (2, ''))
+                self.assertEqual(json.loads(output), expected)
+                getattr(self.installation, action).assert_called_once_with(
+                    **common, **({'confirmation_token': TOKEN} if action == 'apply' else {}))
+        self.backend.status.assert_not_called()
+
+    def test_status_reports_installation_before_package_or_trust_failures(self):
+        self.backend.status.side_effect = AssertionError('Package validation must not hide an installation record')
+        for status, code in (('recovery_required', 2), ('error', 2), ('busy', 2), ('invalid', 2),
+                             ('applied', 0), ('rolled_back', 0)):
+            with self.subTest(status=status):
+                expected = response('status', status, {'phase': 'applying', 'target_version': '2.3.0'})
+                self.installation.status.return_value = expected
+                actual, output, errors = self.invoke('--status', '--json')
+                self.assertEqual((actual, errors), (code, ''))
+                self.assertEqual(json.loads(output), expected)
+        self.backend.status.assert_not_called()
+        self.installation.recover.assert_not_called()
+        self.installation.apply.assert_not_called()
+
+    def test_status_falls_back_only_for_explicit_absence_of_an_installation_record(self):
+        calls = Mock()
+        calls.attach_mock(self.installation.status, 'installation')
+        calls.attach_mock(self.backend.status, 'package')
+        self.backend.status.return_value = response('status', 'prepared', deepcopy(PLAN))
+        code, output, errors = self.invoke('--status', '--json')
+        self.assertEqual((code, errors), (0, ''))
+        self.assertEqual(json.loads(output), response('status', 'prepared', PLAN))
+        self.assertEqual([call[0] for call in calls.mock_calls], ['installation', 'package'])
+        self.assertEqual(calls.mock_calls[0].kwargs, calls.mock_calls[1].kwargs)
+
+        self.backend.status.reset_mock()
+        for malformed in ({}, False):
+            with self.subTest(malformed=malformed):
+                self.installation.status.return_value = malformed
+                code, output, errors = self.invoke('--status', '--json')
+                self.assertEqual((code, errors), (2, ''))
+                self.assertEqual(json.loads(output), response('status', 'error', error='update_failed'))
+        self.backend.status.assert_not_called()
+
+    def test_refused_or_interrupted_apply_does_not_retry_or_recover_implicitly(self):
+        for status, error in (('invalid', 'confirmation_changed'), ('recovery_required', 'installation_incomplete')):
+            with self.subTest(status=status):
+                expected = response('apply', status, error=error)
+                self.installation.apply.return_value = expected
+                code, output, errors = self.invoke('--apply', '--confirm-update', PLAN['plan_id'], '--json')
+                self.assertEqual((code, errors), (2, ''))
+                self.assertEqual(json.loads(output), expected)
+                self.assertEqual(self.installation.apply.call_args.kwargs['confirmation_token'], PLAN['plan_id'])
+        self.installation.apply.side_effect = KeyboardInterrupt
+        code, output, errors = self.invoke(*self.arguments('apply'), '--json')
+        self.assertEqual((code, errors), (130, ''))
+        self.assertEqual(json.loads(output), response('apply', 'error', error='interrupted'))
+        self.assertEqual(self.installation.apply.call_count, 3)
+        self.installation.recover.assert_not_called()
+        self.installation.review.assert_not_called()
+        self.backend.prepare.assert_not_called()
+
+    def test_installation_errors_and_interrupts_are_sanitized_without_fallback(self):
+        for action in ('review', 'apply', 'recover', 'status'):
+            for failure, code, error in ((OSError('PRIVATE_EXTERNAL_DETAIL'), 2, 'update_failed'),
+                                         (RuntimeError('PRIVATE_EXTERNAL_DETAIL'), 2, 'update_failed'),
+                                         (KeyboardInterrupt(), 130, 'interrupted')):
+                with self.subTest(action=action, failure=type(failure).__name__):
+                    getattr(self.installation, action).side_effect = failure
+                    actual, output, errors = self.invoke(*self.arguments(action), '--json')
+                    self.assertEqual((actual, errors), (code, ''))
+                    self.assertEqual(json.loads(output), response(action, 'error', error=error))
+            getattr(self.installation, action).side_effect = None
+        self.backend.status.assert_not_called()
+
+    def test_review_text_exposes_the_new_token_without_reinterpreting_package_id(self):
+        review = {'confirmation_token': TOKEN, 'plan_id': PLAN['plan_id'],
+                  'installed_version': PLAN['installed_version'], 'target_version': PLAN['target_version']}
+        self.installation.review.return_value = response('review', 'review_ready', review)
+        code, output, errors = self.invoke('--review')
+        self.assertEqual((code, errors), (0, ''))
+        heading, encoded = output.split('Plan:\n', 1)
+        self.assertEqual(heading, 'CGP update: review_ready\n')
+        self.assertEqual(json.loads(encoded), review)
+        self.installation.apply.assert_not_called()
+        self.installation.recover.assert_not_called()
 
     def test_check_and_prepare_forward_exact_paths_and_return_the_public_plan(self):
         for action, status in (('check', 'verified'), ('prepare', 'prepared')):

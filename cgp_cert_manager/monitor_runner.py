@@ -6,7 +6,7 @@ from pathlib import Path
 import time
 import uuid
 
-from . import core, monitor_config as config, monitor_state as state, monitor_worker, storage
+from . import core, monitor_config as config, monitor_state as state, monitor_worker, storage, update_gate
 
 
 STATE_FILE = 'observations.json'
@@ -210,11 +210,13 @@ def _send(cfg, checkpoint, path, descriptor, config_path):
 def run(cfg, directory=config.STATE, send=False, config_path=None):
     if not cfg['enabled']:
         return _result('run', 'disabled')
+    update_gate.require_idle()
     directory = _path(directory)
     config.require(Path(__file__).resolve().parents[1] != INSTALLED_ROOT.resolve()
                    or directory == config.STATE, 'installed_state_override')
     storage.validate_tree(directory)
     with storage.operation_lock(directory) as lock:
+        update_gate.require_idle()
         storage.validate_tree(directory, missing_ok=False)
         path = directory / STATE_FILE
         checkpoint = _load(path, cfg['identity'])

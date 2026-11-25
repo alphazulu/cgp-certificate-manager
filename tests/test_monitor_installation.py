@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from cgp_cert_manager import monitor_cli
+from cgp_cert_manager import monitor_cli, update_gate
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,11 +23,14 @@ class MonitorInstallationTests(unittest.TestCase):
         return config
 
     def test_launcher_delegates_only_to_independent_monitor_cli(self):
-        with patch.object(sys, 'path', list(sys.path)), patch.object(monitor_cli, 'main', return_value=7) as main:
+        with patch.object(sys, 'path', list(sys.path)), patch.object(sys, 'dont_write_bytecode', False), \
+                patch.dict(sys.modules, {'cgp_update_gate': update_gate}), \
+                patch.object(monitor_cli, 'main', return_value=7) as main:
             with self.assertRaises(SystemExit) as exited:
                 runpy.run_path(str(ROOT / 'monitor-launcher'), run_name='__main__')
             self.assertEqual(exited.exception.code, 7)
             self.assertEqual(sys.path[0], '/opt/cgp-certificate-manager')
+            self.assertTrue(sys.dont_write_bytecode)
             main.assert_called_once_with()
 
     def test_container_entrypoint_fresh_import_preserves_smtp_classes(self):
@@ -45,6 +48,9 @@ exec(compile((fixtures / 'guard.py').read_text(), 'guard.py', 'exec'), guard)
 guard['_attempt_marker'] = fixtures / 'network-attempted'
 from cgp_cert_manager import core
 core.STATE = fixtures / 'manager-state'
+sys.path.insert(0, str(fixtures))
+import cgp_update_gate
+cgp_update_gate.STATE_DIR = fixtures / 'updater-state'
 assert {
     'cgp_cert_manager.monitor_cli', 'cgp_cert_manager.monitor_runner',
     'cgp_cert_manager.monitor_state', 'cgp_cert_manager.notify_transport',
@@ -66,6 +72,7 @@ assert not guard['_attempt_marker'].exists(), 'The entrypoint attempted network 
             fixtures = Path(directory)
             (fixtures / 'guard.py').write_text(guard)
             (fixtures / 'entrypoint.py').write_text(entrypoint)
+            (fixtures / 'cgp_update_gate.py').write_bytes((ROOT / 'cgp_cert_manager/update_gate.py').read_bytes())
             for name in ('manager-state', 'monitor-state'):
                 state = fixtures / name
                 state.mkdir(mode=0o700)

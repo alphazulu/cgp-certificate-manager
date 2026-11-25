@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from . import core, dnsconfig, monitor_config, storage
+from . import core, dnsconfig, monitor_config, storage, update_gate
 from .cli import migrate
 from .monitor_config import CONFIG as MONITOR_CONFIG, STATE as MONITOR_STATE
 from .schedule import render
@@ -28,6 +28,7 @@ def runtime_dependencies(options):
 
 def preflight():
     """Validate existing secrets and recovery data without changing permissions."""
+    update_gate.require_idle()
     storage.validate_tree(core.STATE)
     storage.validate_tree(MONITOR_STATE)
     if storage.check_private_file(MONITOR_CONFIG, missing_ok=True):
@@ -47,6 +48,7 @@ def check_lock(fd, monitor_fd):
     descriptor if the internal payload was invoked directly. The shell retains
     that descriptor after this checker exits.
     """
+    update_gate.require_idle()
     for state, descriptor, name in ((core.STATE, fd, "manager"),
                                     (MONITOR_STATE, monitor_fd, "monitor")):
         storage.check_private_directory(state)
@@ -61,6 +63,7 @@ def check_lock(fd, monitor_fd):
 
 def run():
     """Keep both locks alive until installation or shell rollback completes."""
+    update_gate.require_idle()
     os.umask(0o077)
     source = Path(__file__).resolve().parents[1]
     with storage.operation_lock(core.STATE) as lock, storage.operation_lock(MONITOR_STATE) as monitor_lock:
@@ -84,7 +87,7 @@ def main(argv=None):
     except BlockingIOError:
         print("Certificate manager or monitor busy; retry after completion", file=sys.stderr)
         return 1
-    except (core.Error, OSError, ValueError) as exc:
+    except (core.Error, OSError, ValueError, update_gate.PendingUpdateError) as exc:
         print("Installation refused: " + str(exc), file=sys.stderr)
         return 1
     except KeyboardInterrupt:

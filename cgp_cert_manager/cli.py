@@ -1,9 +1,10 @@
 import argparse, shutil, sys, smtplib, socket
 from email.message import EmailMessage
 from .core import *
-from . import __version__, bootstrap, deployment, dnsconfig, storage
+from . import __version__, bootstrap, deployment, dnsconfig, storage, update_gate
 
 def hook(cfg,cleanup):
+    update_gate.require_idle()
     if cleanup:
         try: r=json.loads(os.environ['CERTBOT_AUTH_OUTPUT']); path=r['credentials']
         except (KeyError,ValueError): raise Error('Missing cleanup metadata')
@@ -76,6 +77,7 @@ def main():
         if not a.reason.isprintable() or not 1<=len(a.reason.strip())<=500:
             p.error('Reason must contain 1 to 500 printable characters without controls')
         a.reason=a.reason.strip()
+    update_gate.require_idle()
     if monitoring_action:
         try:
             from . import monitoring, monitoring_formats
@@ -149,6 +151,7 @@ def main():
         storage.validate_tree(STATE)
         hook(migrate(load(CONFIG)),a.hook_cleanup); return 0
     with storage.operation_lock(STATE) as lock:
+        update_gate.require_idle()
         storage.validate_tree(STATE)
         a.operation_lock_fd=lock.fileno()
         return locked_main(a,migrate(load(CONFIG)))
@@ -329,4 +332,4 @@ def locked_main(a,cfg):
 def entry():
     logging.basicConfig(level=logging.INFO,format='%(asctime)s [%(levelname)s] %(message)s')
     try: return main()
-    except Exception as e: LOG.error('%s',str(e) if isinstance(e,Error) else type(e).__name__); return 1
+    except Exception as e: LOG.error('%s',str(e) if isinstance(e,(Error,update_gate.PendingUpdateError)) else type(e).__name__); return 1
