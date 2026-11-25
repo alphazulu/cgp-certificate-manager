@@ -66,6 +66,7 @@ def _validate(path, record, credentials, identity, provider):
             or (record["phase"] == "intent" and record["record"] is not None)
             or (record["phase"] not in ("intent", "complete") and record["record"] is None)):
         raise DNSAuthError("Invalid DNS challenge receipt")
+    provider.validate_binding(record)
     return record
 
 
@@ -185,16 +186,19 @@ class Session:
                     or credentials not in dnsproviders.credentials(self.cfg, absolute=True)
                     or not provider.valid_zone_id(source["id"])):
                 raise DNSAuthError("Invalid DNS challenge zone")
-            storage.check_private_file(credentials)
             nonce = secrets.token_hex(16)
-            path = _directory(create=True) / (nonce + ".json")
-            if storage.check_private_file(path, missing_ok=True):
-                raise DNSAuthError("DNS challenge receipt already exists")
             record = {"schema": 2, "provider": provider.provider_id,
                       "identity": recovery.server_identity(self.cfg), "attempt": self.attempt,
                       "owner": "cgp-certificate-manager:" + nonce,
                       "credentials": credentials, "zone": source["id"], "name": name,
                       "value": value, "record": None, "phase": "intent"}
+            # Backend identity must be checked before opening credentials or
+            # creating private state, as well as when loading saved receipts.
+            provider.validate_binding(record)
+            storage.check_private_file(credentials)
+            path = _directory(create=True) / (nonce + ".json")
+            if storage.check_private_file(path, missing_ok=True):
+                raise DNSAuthError("DNS challenge receipt already exists")
             existing = [remote for remote in provider.list_records(record) if provider.matches(remote, record)]
             if existing:
                 record.update(phase="borrowed", record=provider.record_id(existing[0]))
@@ -204,7 +208,7 @@ class Session:
             try:
                 remote = provider.create_txt(record)
             except dnsproviders.ProviderRejected:
-                # A validated rejection proves this single-record POST had no
+                # A validated rejection proves this create request had no
                 # effect.  Persist completion before removing its intent so an
                 # interrupted unlink can finish without guessing remote state.
                 _finish(path, record)

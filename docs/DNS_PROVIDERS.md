@@ -1,10 +1,10 @@
 # DNS provider contract
 
-Checkpoint 16 (`2.2.0.dev13`, unreleased) centralizes provider operations while
-preserving the existing Cloudflare paths. **Cloudflare is the only enabled
-provider.** This checkpoint supplies the extension boundary and its isolated
-tests; it does not enable RFC2136, PowerDNS, Route53, acme-dns or a new manual
-workflow. Stable production remains `2.1.0`.
+The interface introduced in checkpoint 16 preserves Cloudflare compatibility.
+Checkpoint 17 (`2.2.0.dev14`, unreleased) adds the explicitly selected
+[RFC2136 adaptive provider](RFC2136.md). Cloudflare remains the default;
+PowerDNS, Route53, acme-dns and another manual workflow remain separate work.
+Stable production is `2.1.0`; real provider acceptance remains deferred.
 
 ## Selection and credentials
 
@@ -20,7 +20,7 @@ module name, command or import path. Unsupported strings and malformed values
 refuse before provider or credential use. Selection and credential-path
 enumeration do not read token contents, contact an account or mutate settings.
 
-Existing `cloudflare_accounts` entries retain their order and take precedence
+For Cloudflare, existing `cloudflare_accounts` entries retain their order and take precedence
 over the legacy `cloudflare_credentials` field for discovery and new work.
 When the account list is absent or empty, the legacy field remains the source.
 Discovery preserves its existing map of zone name to `id`, `credentials` and
@@ -32,8 +32,10 @@ Fixed-hook cleanup preserves its older allowlist: a retained legacy
 That compatibility rule does not make the fallback account participate in
 discovery, new authentication or adaptive receipt cleanup.
 
-The wizard remains a Cloudflare configuration editor. It refuses an unsupported
-provider before opening the menu or staging token files. It still permits
+RFC2136 uses strict `rfc2136.zones` entries for primary, key, private secret path
+and public nameservers. See its [configuration and ownership guide](RFC2136.md).
+The wizard remains a Cloudflare configuration editor. It refuses other provider
+editing before opening the menu or staging token files. It still permits
 editing invalid propagation settings. No installer, read-only status operation
 or configuration validation automatically inserts the optional selector.
 
@@ -54,12 +56,22 @@ files, running preflight or starting Certbot. Adaptive configuration requires
 `owned_txt`; fixed configuration selects native or hook capability from the
 actual credential set. Source-zone provider tags must match the selected
 adapter. Legacy untagged source zones retain their Cloudflare meaning.
+Historical public discovery names such as `cloudflare_available` and
+`cloudflare_zone_unavailable` are retained for schema compatibility; they
+represent availability in the selected provider inventory.
 
-`core.zones()` remains a compatibility entry point. The transport remains
-`core.cf`, resolved at call time or explicitly injected by the caller, while
-the adapter owns Cloudflare endpoints, wire payloads, record IDs, pagination,
-matching and response interpretation. Coordinator code in `dnsauth` owns the
-durable state machine and filesystem operations rather than Cloudflare fields.
+Cloudflare advertises all four capabilities; RFC2136 advertises only
+`zone_discovery` (explicit configured inventory) and `owned_txt`. RFC2136 fixed
+mode is rejected by shared configuration validation; it uses the existing
+supervised adaptive authenticator and propagation checks.
+
+`core.zones()` remains a compatibility entry point. Cloudflare's transport is
+`core.cf`, resolved at call time or injected by its caller. The RFC adapter uses
+signed DNS TCP and never receives that HTTP transport. Each adapter owns wire
+payloads, identities, matching and response interpretation. `dnsauth` retains
+the durable state machine and filesystem operations. Its pure
+`validate_binding(record)` hook checks provider-specific configuration identity
+before credential/state access and validates every saved receipt before cleanup.
 
 ## Compatibility of hooks and receipts
 
@@ -89,9 +101,9 @@ token must still access the saved zone, and every required remote record and
 ownership check must pass. Removing a receipt's path from the active accounts
 does not silently transfer its ownership to another credential.
 
-## Owned TXT evidence
+## Cloudflare owned TXT evidence
 
-The existing adaptive invariants are unchanged:
+The existing Cloudflare adaptive invariants are unchanged:
 
 - Save intent before POST. A lost or ambiguous response keeps intent pending;
   an empty search never proves that POST had no effect.
@@ -118,14 +130,22 @@ provider-side compare-and-swap or prevent a concurrent administrator from
 changing a record between observations. See [DNS ownership and process
 lifetime](DNS.md) for supervision, propagation and recovery limits.
 
-## Adding the next backend
+## RFC2136 ownership and further backends
 
-RFC2136 is the next independent roadmap item. Its implementation must first
-define credential and zone identity, discovery or explicit zone configuration,
-supported authentication routes, and its own durable ownership/recovery
-evidence. A new adapter must not claim `owned_txt` merely because it can send
-an update or delete a TXT value. Cloudflare record IDs and ownership comments
-are specific to this adapter and cannot be assumed for another backend.
+RFC2136 schema-2 zone IDs bind the configured zone, primary endpoint, key
+identity and credential path. Its record reference is an ownership nonce,
+not a Cloudflare API ID. It uses an exact full TXT RRset prerequisite, an
+in-band owner marker and one persistent generation marker. An old signed
+request cannot match a preimage restored by cleanup while that generation
+protocol is respected. Remote errors retain uncertainty; absence retirement
+also requires an authenticated prerequisite-only update in the original zone.
+See [RFC2136.md](RFC2136.md) for complete operational limits and examples.
+
+Further backends must define their own credential/zone identity, supported
+routes and durable ownership/recovery evidence. An adapter must not claim
+`owned_txt` merely because it can send an update or delete a TXT value.
+Cloudflare record IDs/comments and RFC2136 conditional updates are specific
+contracts and cannot be assumed for another API.
 
 New implementations must reject unsupported routes, preserve foreign TXT
 records, handle uncertain mutations and bind receipts to their original
@@ -135,7 +155,7 @@ The static selector should enable a new provider only after its contract is
 implemented and tested. Mixed-provider configuration and real provider
 acceptance remain separately scoped work.
 
-All current tests use synthetic transports, local files and isolated processes;
+All current tests use synthetic transports, local files, loopback fixtures and isolated processes;
 they do not establish real provider or ACME behavior. Real VM/server/provider
 acceptance remains deferred under the maintainer's decision. Exact observed
 results and the continuation point are in [DEVELOPMENT.md](../DEVELOPMENT.md)

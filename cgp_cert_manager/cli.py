@@ -157,7 +157,7 @@ def main():
     # Certbot hooks are children of the process holding this lock.
     if a.hook_auth or a.hook_cleanup:
         cfg=migrate(load(CONFIG))
-        dnsproviders.provider_name(cfg)
+        dnsproviders.get_provider(cfg).require('fixed_hooks')
         storage.ensure_private_directory(STATE)
         storage.validate_tree(STATE)
         hook(cfg,a.hook_cleanup); return 0

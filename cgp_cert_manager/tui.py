@@ -247,7 +247,8 @@ def edit():
     cfg = migrate(core.load(core.CONFIG, default_config()))
     # Only the configured backend may validate or stage its own credentials.
     # Keep propagation editing available even when those settings are invalid.
-    dnsproviders.provider_name(cfg)
+    if dnsproviders.provider_name(cfg) != 'cloudflare':
+        raise core.Error('RFC2136 configuration requires manual JSON editing')
     global LANGUAGE
     LANGUAGE=cfg.get('tui_language','en')
     cfg.setdefault('auto_enable_new_domains', True)

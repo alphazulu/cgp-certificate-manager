@@ -1,4 +1,4 @@
-"""Explicit DNS provider operations and the current Cloudflare implementation.
+"""Explicit DNS provider selection and the compatible Cloudflare implementation.
 
 Selection and credential paths are pure configuration data. Only this fixed
 registry is supported: no account lookup, dynamic import or credential read is
@@ -29,14 +29,15 @@ def provider_name(cfg):
     if not isinstance(cfg, dict):
         raise ProviderError("DNS configuration must be an object")
     name = cfg.get("dns_provider", "cloudflare")
-    if type(name) is not str or name != "cloudflare":
+    if type(name) is not str or name not in ("cloudflare", "rfc2136"):
         raise ProviderError("Unsupported DNS provider")
     return name
 
 
 def credentials(cfg, absolute=False):
     """Return ordered configured paths, preserving legacy account precedence."""
-    provider_name(cfg)
+    if provider_name(cfg) == "rfc2136":
+        return get_provider(cfg).credentials(cfg, absolute=absolute)
     accounts = cfg.get("cloudflare_accounts") or [{"credentials": cfg.get("cloudflare_credentials")}]
     if not isinstance(accounts, list):
         raise ProviderError("Invalid DNS credentials configuration")
@@ -50,8 +51,13 @@ def credentials(cfg, absolute=False):
 
 
 def get_provider(cfg, transport=None):
-    """Resolve the sole supported backend; supplied names never become imports."""
-    provider_name(cfg)
+    """Resolve a static backend; the optional HTTP transport is Cloudflare-only."""
+    if provider_name(cfg) == "rfc2136":
+        from . import rfc2136, rfc2136_config
+        try:
+            return rfc2136.RFC2136Provider(cfg)
+        except rfc2136_config.ConfigError:
+            raise ProviderError("Invalid RFC2136 configuration") from None
     return CloudflareProvider(transport)
 
 
@@ -80,6 +86,10 @@ class CloudflareProvider:
     def validate_credentials(self, cfg):
         for path in self.credentials(cfg):
             core.token(path)
+
+    def validate_binding(self, record):
+        """Cloudflare path/zone/server binding is checked by the shared ledger."""
+        return None
 
     def native_arguments(self, path, seconds):
         self.require("fixed_native")

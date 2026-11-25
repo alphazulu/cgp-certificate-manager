@@ -1,6 +1,6 @@
 # DNS preflight and adaptive DNS-01
 
-This describes the DNS foundation and unreleased `2.2.0.dev13` provider interface. Stable
+This describes the DNS foundation and unreleased `2.2.0.dev14` provider interface. Stable
 production remains `2.1.0`. The DNS checks do not enable CGP bootstrap writes
 or remove any certificate transaction/readiness gate.
 
@@ -13,7 +13,7 @@ cgp-letsencrypt --dns-transactions --json
 cgp-letsencrypt --dns-cleanup
 ```
 
-`--dns-check` reads the protected manager configuration, Cloudflare zone
+`--dns-check` reads the protected manager configuration, selected-provider zone
 metadata, CGP discovery and public DNS. It does not create STATE or a lock,
 save discovery, write DNS/CGP, issue certificates, recover transactions or send
 notifications. An explicit invalid domain is rejected before configuration or
@@ -36,15 +36,16 @@ described below. Both commands have global scope and reject `--domain`.
 
 ## Configuration and compatibility
 
-Cloudflare is the only enabled provider. The optional top-level selector
+Cloudflare remains the default. The optional top-level selector
 `"dns_provider": "cloudflare"` has the same meaning as omitting the field.
-Unknown or malformed selectors refuse provider operations before credential
-reads or API calls. Selection does not load arbitrary modules. Existing
-credential fields and account order are unchanged; no configuration migration
-is required. See the [provider contract](DNS_PROVIDERS.md) for capabilities,
-legacy compatibility and the boundary for future backends.
+The explicit `"rfc2136"` selector requires its configured zones and adaptive
+mode; see the [RFC2136 guide](RFC2136.md). Unknown or malformed selections
+refuse provider operations before credential reads or API calls. Selection
+never loads arbitrary modules. Existing Cloudflare credentials/account order
+are unchanged; no configuration migration is required. The [provider
+contract](DNS_PROVIDERS.md) describes capabilities and legacy compatibility.
 
-Existing configurations keep their fixed delay and existing authenticator:
+Existing Cloudflare configurations keep their fixed delay and existing authenticator:
 one credentials file uses `dns-cloudflare`; multiple credentials files retain
 the manual hooks. The absence of `dns_propagation` means `fixed`. The wizard's
 current prompts and defaults are unchanged. New adaptive mode is selected
@@ -162,7 +163,7 @@ an observation of policy, not a promise that the CA will issue.
 
 ## Delegation and TXT propagation
 
-Checks compare Cloudflare's configured nameservers with every observed parent
+Checks compare the selected provider's assigned/configured nameservers with every observed parent
 referral, the recursive apex NS set and every child NS's authoritative apex
 NS/SOA answers. A child-apex answer from a server also hosting the parent does
 not prove the parent referral and is refused. Missing provider nameservers,
@@ -195,11 +196,11 @@ vantage point. No production DNS or ACME queries are part of the unit suite.
 
 Adaptive mode stores private `STATE/dns-challenges/*.json` receipts with the
 selected provider/credentials/zone binding, server identity, exact TXT name/value and
-a random ownership comment. Values stay in the private receipt, not reports
+a random ownership marker. Challenge values stay in the private receipt, not reports
 or command arguments. Files are 0600, directories 0700, with the shared
 ownership/link/path checks and atomic file/directory fsync rules.
 
-New receipts use schema 2 with `"provider": "cloudflare"`. Schema 1 always
+New receipts use schema 2 with the explicit provider name. Schema 1 always
 means Cloudflare, independently of later settings; reading or cleaning it
 does not rewrite its schema. Every receipt is validated before any record is
 deleted. A provider mismatch refuses the complete cleanup operation. The
@@ -208,6 +209,11 @@ accounts, not a hash of token bytes or a frozen remote account identity.
 Rotating a token at the same path remains supported; remote zone access and
 record ownership must still pass the existing checks. Public status retains
 only `id`, `name`, `phase`, `owned` and `zone`, without reading token contents.
+RFC2136 additionally binds endpoint/key identity through its opaque zone ID;
+[its own ownership protocol](RFC2136.md) uses conditional TXT updates and a
+persistent generation instead of Cloudflare IDs/comments.
+
+### Cloudflare ownership and recovery
 
 Intent is durable **before POST**. The returned record ID is durable before
 proceeding. A pre-existing identical TXT is borrowed and never deleted. A lost
@@ -241,6 +247,8 @@ history before further work. There is no automatic abandonment or claim that
 an uncertain request never happened. Do not edit receipts to manufacture
 ownership or silence a refusal.
 
+### Shared process lifetime
+
 The installed `cgp-certbot` wrapper and manager adaptive launch use the same
 Python/Certbot environment and hold the manager lock. The internal child must
 prove that its descriptor names the private lock file and already carries an
@@ -268,8 +276,9 @@ the plugin and are not substitutes for the wrapper. Native Certbot must be
 available in `/usr/bin/python3` for the installed adaptive path. Existing fixed
 renewal configuration is preserved. Do not add a second renewal timer blindly.
 
-The receipt is not a distributed lock, and read-then-delete is not provider-side
-compare-and-swap. A concurrent administrator can still change DNS between
+The receipt is not a distributed lock. Cloudflare read-then-delete is not
+provider-side compare-and-swap; RFC2136 conditions its writes on the observed
+RRset but still depends on trusted server and reserved-marker behavior. A concurrent administrator can still change DNS between
 observations. Same-UID/root modification is outside the private-file boundary.
 Process-death tests prove restart handling, not hardware power-loss guarantees.
 Certbot and third-party plugins also maintain their own logs; the manager's

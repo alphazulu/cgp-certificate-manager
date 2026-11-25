@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.0.dev14 — unreleased
+
+- Add an opt-in adaptive RFC2136 provider using explicit primary/zone/key configuration and the existing dnspython dependency. Keep Cloudflare defaults, fixed routes and legacy receipt schemas compatible; refuse RFC fixed hooks and Cloudflare-specific wizard editing before side effects.
+- Validate private bounded TSIG secret JSON and pure target identities. Bind schema-2 receipts to zone, primary IP/port, key name/algorithm and credential path without freezing rotating secret contents. Preserve read-only status fields and all-ledger validation before cleanup.
+- Authenticate TCP queries and updates with HMAC-SHA256, including an explicit signed-response guard for the compatibility library. Use exact raw TXT RRset prerequisites, alias/delegation guards, nonce ownership and a persistent changing generation marker; retain foreign values and prevent old signed updates from matching a restored preimage.
+- Keep remote error responses and lost acknowledgements uncertain. Reconcile the exact owned pair, never blindly replay creation, and require a prerequisite-only update before retiring a previously created pair observed absent. Check metadata count/byte headroom before writes and refuse malformed or lost generation state.
+- Add pure configuration, signed-wire, actual loopback TCP, public-flow, binding and fresh-process tests alongside the implementation. Preserve both strict 100% coverage profiles and all native CI gates; exact observed evidence is in DEVELOPMENT.md and ROADMAP.md.
+- Document explicit activation, persistent DNS metadata, unsupported modes and deferred real provider/ACME/VM/server acceptance. No new production key, timer, merge, tag, release or deployment is activated.
+
 ## 2.2.0.dev13 — unreleased
 
 - Add a static DNS provider interface and integrated Cloudflare adapter with explicit discovery, fixed-native, fixed-hook and owned-TXT capabilities. Route discovery, Certbot arguments/hooks, adaptive lifecycle and installer credential checks through it without adding dependencies or enabling another backend.

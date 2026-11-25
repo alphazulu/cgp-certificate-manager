@@ -13,6 +13,8 @@ def validate(cfg):
     try:
         provider = dnsproviders.get_provider(cfg)
     except dnsproviders.ProviderError:
+        if cfg.get('dns_provider') == 'rfc2136':
+            raise DNSConfigError('Invalid RFC2136 configuration') from None
         raise DNSConfigError('Unsupported DNS provider') from None
     propagation = cfg.get('dns_propagation', {})
     if not isinstance(propagation, dict) or set(propagation) - {'mode', 'timeout_seconds', 'poll_interval_seconds'}:
@@ -20,6 +22,8 @@ def validate(cfg):
     mode = propagation.get('mode', 'fixed')
     if mode not in ('fixed', 'adaptive'):
         raise DNSConfigError('DNS propagation mode must be fixed or adaptive')
+    if provider.name == 'rfc2136' and mode != 'adaptive':
+        raise DNSConfigError('RFC2136 requires adaptive DNS propagation')
     result = {'mode': mode, 'preflight': cfg.get('dns_preflight', True),
               'propagation_seconds': cfg.get('propagation_seconds', 60),
               'timeout_seconds': propagation.get('timeout_seconds', 300),

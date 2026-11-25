@@ -121,19 +121,28 @@ and the stateless probe is not serialized against application replacement.
   trusted. Snapshot readback and TLS verification are separate checks; neither
   creates a server-side atomic transaction or excludes a concurrent WebAdmin
   change. See [certificate recovery](docs/TRANSACTIONS.md).
-- **DNS and ACME:** issuance relies on Cloudflare, the CA and public DNS.
+- **DNS and ACME:** issuance relies on the selected DNS provider, the CA and public DNS.
   Preflight uses authenticated HTTPS resolver views; DNSSEC evidence is a
   resolver assertion, not local DNSSEC validation. A successful observation does
   not prove global propagation. Provider read-then-delete is not an atomic
   compare-and-swap. See [DNS trust, ownership and cleanup](docs/DNS.md).
-- **DNS provider binding:** only the static Cloudflare adapter is enabled.
-  Missing selection and legacy receipt schema 1 always mean Cloudflare; new
-  schema 2 names the provider. Unknown selection or mismatched receipt/zone
-  binding refuses provider mutation. Credential paths, server identity and
-  exact remote ownership remain checked, but token contents are not frozen:
-  ordinary rotation at the same configured path is supported. Fixed hooks
-  keep their historical unowned lifecycle. The adapter does not turn them
-  into durable owned-record cleanup. See [provider contracts](docs/DNS_PROVIDERS.md).
+- **DNS provider binding:** Cloudflare remains the default; RFC2136 is an
+  explicit adaptive-only selection. Missing selection and legacy schema 1
+  always mean Cloudflare. Schema 2 names the provider; each complete ledger
+  is checked before cleanup. RFC zone IDs additionally bind primary IP/port,
+  zone, key identity and credential path, preventing redirected cleanup after
+  configuration changes. Rotating secrets are not frozen in receipts. Fixed
+  Cloudflare hooks retain their historical unowned lifecycle. See the
+  [provider contract](docs/DNS_PROVIDERS.md).
+- **RFC2136 updates:** require TSIG-authenticated TCP, complete RRset
+  prerequisites, exact ownership pairs and alias/cut guards. A persistent
+  generation marker prevents signed replay after cleanup; reserved markers
+  must not be deleted, reused or rolled back outside the protocol. Remote
+  errors retain uncertainty, including signed prerequisite failures. The
+  primary, shared key and its consistent view are trusted; TSIG does not
+  encrypt DNS traffic. Raw foreign TXT is preserved, but TTL-only concurrency
+  is outside prerequisite equality. Real server/ACME acceptance is deferred.
+  See [RFC2136 ownership and limits](docs/RFC2136.md).
 - **Interrupted operations:** the shared lock coordinates cooperating manager
   processes. Durable journals and receipts preserve unresolved effects; an
   unknown state is not permission to overwrite it or discard evidence.

@@ -2,7 +2,115 @@
 
 Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 16 (implementation and native CI passed)
+## Current handoff — checkpoint 17 (implementation and local gates passed)
+
+- Development version **`2.2.0.dev14`**, feature branch and draft PR #2. Starting
+  clean HEAD `ffbc57736b5da8f1e07319b23a5b7071213a4e3e`, tree
+  `c609deb2def85bbb9828c7e10a769f173745f445`. Stable main remains
+  `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` (`2.1.0`). Starting-head PR CI
+  45541040175 and push CI 45541033758 passed all eleven jobs; those results
+  belong to checkpoint 16 and do not validate this implementation.
+- Added the explicit **RFC2136 adaptive-only provider**, preserving Cloudflare
+  defaults, fixed paths, schema-1/2 receipts and public report shapes. It uses
+  existing dnspython and the supervised `cgp-dns` authenticator. No dependency,
+  timer, production key, provider mutation or renewal migration was activated.
+- Configuration uses strict `rfc2136.zones` entries: canonical zone, primary IP
+  literal/port, absolute private secret path, TSIG key name, HMAC-SHA256 and
+  public nameservers. Discovery is a pure configured inventory, with no AXFR,
+  automatic primary lookup or HTTP transport reuse. RFC fixed mode/hooks and
+  Cloudflare-specific wizard editing refuse before their effects.
+- The private secret parser accepts exactly canonical-base64 JSON `secret`,
+  32–128 decoded bytes, a bounded 4096-character file and existing secure
+  descriptor/path rules. Duplicate/extra fields, malformed input and unsafe
+  files produce fixed errors. Pure configuration validation reads no secrets.
+- RFC schema-2 zone IDs hash normalized zone, primary address/port, key name,
+  algorithm and credential path. Pure `validate_binding` runs before creation
+  effects and across the entire saved ledger before cleanup. It checks exact
+  zone/path/name/nonce identity. Secret bytes and public nameservers are excluded
+  so same-key/path rotation and NS metadata adjustments remain possible.
+- RFC record IDs are receipt nonces, not remote API IDs. The exact TXT RRset
+  contains actual challenges, one owner marker per managed challenge and one
+  persistent generation marker. Every create/delete conditions on the complete
+  raw RDATA set, advances generation and changes only its own pair plus prior
+  generation. Other TXT/chunk boundaries are preserved; existing TTL is reused.
+  TTL-only concurrency is outside RDATA equality. Reserved metadata must not
+  be externally removed, reused or restored to an older generation.
+- Conditional updates also guard CNAME at the owner, DNAME through the zone
+  apex and more-specific NS cuts. All TCP responses require TSIG, expected key
+  and algorithm, request identity and no truncation. Authoritative TXT snapshots
+  are bounded to 128 records / 32768 data bytes, with exact-zone negative SOA
+  proof. Added byte/count headroom checks before creating ownership metadata.
+- Creation saves intent before update and requires owned-pair/generation
+  readback before recording success. Every remote update error retains intent,
+  including signed prerequisite failure: a copied request may already have
+  applied. Only proven local pre-send refusals retire unused intent. No blind
+  recreate occurs. Partial/missing ownership or lost generation retains evidence.
+- Previously created pairs observed absent require an authenticated UPDATE with
+  prerequisites only in the original zone, including cut/alias guards; a child
+  zone's answer cannot substitute. The proof requests no TXT/generation changes.
+  Completion remains durable before receipt removal. One generation TXT remains
+  per used challenge owner after successful cleanup, preventing restored-preimage
+  replay while the protocol state is respected.
+- Independent review fixed byte-limit headroom, owner markers without generation,
+  and strict UPDATE acknowledgement shape. Signed replies may be empty, contain
+  the exact zone only, or echo the full request. Canonical comparison preserves
+  emitted class/deleting metavalues, TTL, raw RDATA and multiplicity across parser
+  grouping; unrelated/partial echoes and extra/OPT data are refused. Compatibility
+  tests explicitly cover dnspython 2.6.1 accepting unsigned responses by default.
+- Added **71 tests**: 27 adapter/protocol, 11 configuration/private-secret,
+  13 public-flow integration, 17 receipt/binding/lifecycle and 3 fresh-process
+  crash cases. Signed-wire and actual local TCP fixtures test bad MAC/unsigned
+  replies, replay, uncertain create/delete, conditional races, foreign TXT and
+  rotation. Both full profiles and strict gates passed as recorded below.
+- Updated README translations, changelog, DNS/provider/security/staging guides,
+  and explicit invalid-secret/synthetic configuration examples. The full
+  [RFC2136 contract](docs/RFC2136.md) records persistent metadata, exact supported
+  modes, primary/view trust and deferred external acceptance.
+
+### Observed local validation — checkpoint 17
+
+Both complete profiles independently pass **1549 tests / 8234 statements /
+2690 branches / 100%**, with zero missing statements, missing/partial branches
+or excluded lines. Compatibility took **51.095 s**, current **51.239 s**, on
+Python **3.12.14**. These are the final results after acknowledgement validation;
+the earlier 1544-test run is superseded. Each `--fail-under=100` gate covers
+`cgp_cert_manager,repo_tools` without exclusions or relaxed checks.
+
+```bash
+COVERAGE_FILE=.coverage.cp17.compat /workspace/scratch/cf31ba780290/cgp-compat-env/bin/python -m coverage run --branch --source=cgp_cert_manager,repo_tools -m unittest discover -s tests -v
+COVERAGE_FILE=.coverage.cp17.compat /workspace/scratch/cf31ba780290/cgp-compat-env/bin/python -m coverage report -m --fail-under=100
+COVERAGE_FILE=.coverage.cp17.current /workspace/scratch/cf31ba780290/cgp-current-env/bin/python -m coverage run --branch --source=cgp_cert_manager,repo_tools -m unittest discover -s tests -v
+COVERAGE_FILE=.coverage.cp17.current /workspace/scratch/cf31ba780290/cgp-current-env/bin/python -m coverage report -m --fail-under=100
+```
+
+The adapter independently covers 219 statements / 74 branches / 100%; config
+covers 100 / 38 / 100%; shared receipts cover 146 / 40 / 100%. Logs and independent
+JSON reports are `/workspace/scratch/9e49bdf23b66/cp17-full-{compat,current}.log`
+and `/workspace/scratch/9e49bdf23b66/cp17-coverage-{compat,current}.json` (transient
+local evidence, not repository inputs). Compilation of **138 Python files**,
+three shell entrypoints, **21 workflow shell blocks**, relative Markdown links,
+shell examples, application/plugin version metadata, both provider configuration
+examples and `git diff --check` passed. Native CI is still pending for this exact
+implementation; record it only after observing the published revision.
+
+### Resume checkpoint 17
+
+1. Inspect actual HEAD/tree, worktree and draft PR #2; preserve unfinished work.
+   Publish this implementation and inspect all eleven exact-revision CI jobs.
+2. Record implementation/run/artifact identities and observed native results in
+   this handoff, ROADMAP.md and the draft PR; publish the documentation follow-up
+   and verify its own current-head CI before declaring the checkpoint complete.
+3. Next independent scope is the PowerDNS provider, beginning with explicit
+   endpoint/credential/zone identity and its own ownership, concurrency and
+   uncertain-mutation recovery contract. Do not transfer RFC2136 or Cloudflare
+   guarantees to a different API without implementing and testing them.
+4. All real VM/server/provider/recipient/broker/signing acceptance remains
+   deferred. Do not merge, tag, release, deploy, select production keys or run
+   real DNS mutations. Keep automatic CGP bootstrap blocked on its separate
+   restoration/deletion evidence. Every new code path requires tests and both
+   complete independent 100% coverage gates.
+
+## Previous handoff — checkpoint 16 (implementation and native CI passed)
 
 - Development version **`2.2.0.dev13`**, feature branch and draft PR #2. Starting
   clean HEAD `9ba0915bc02c33b9fe5b0982457d982165bab303`, tree

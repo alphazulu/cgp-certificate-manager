@@ -21,6 +21,7 @@ DNS propagation, ACME acceptance, a running systemd timer or CGP field removal.
 | Track | Resources | What it can establish |
 |---|---|---|
 | DNS and renewal | Disposable Linux VM, native Certbot, dedicated Cloudflare zone(s)/tokens, ACME staging account | Actual provider API, DNS evidence, challenge lifecycle, recovery and renewal migration |
+| RFC2136 DNS and renewal | Disposable authoritative primary and public test zone, dedicated TSIG key, native Certbot and ACME staging account | Signed query/update policy, exact RRset prerequisites, persistent metadata, replay/uncertainty recovery and public propagation |
 | CGP deployment/bootstrap | Disposable CGP instance with its exact build recorded, synthetic domains/keys and test TLS clients | Field provenance, write/removal cascades, restoration, SNI/chain and real service behavior |
 | External TLS monitoring and delivery | Separate observer VM, allocated TLS/STARTTLS test endpoints and approved test-only SMTP/webhook receivers | Observer trust/network view, live systemd scheduling, receiver acknowledgements, retry/recovery and upgrade behavior |
 
@@ -134,6 +135,33 @@ the operation lock remains part of the contract. Do not remove or edit receipts
 to obtain a clean result. Uncertain absence and manual changes are expected to
 remain blocking until the provider history can be reconciled. No automatic
 abandonment protocol is implemented.
+
+## RFC2136 provider acceptance — pending
+
+This is a separate later track. The [RFC2136 contract](RFC2136.md), signed-wire
+fixtures and loopback tests do not establish behavior on a real DNS server.
+Use only a dedicated test zone/key and record server build, configuration,
+candidate commit, key algorithm and primary/public-nameserver topology. Keep
+the secret and raw private receipts out of published evidence.
+
+| Case | Required observation | Status |
+|---|---|---|
+| Signed authoritative reads and conditional writes | Exact primary/view, correct TSIG/key policy, unsigned/bad-MAC refusal and supported response shapes | Pending |
+| Foreign TXT and shared apex/wildcard owner | Raw foreign values survive; each own pair is cleaned separately; one generation remains | Pending |
+| Changed RRset or new CNAME/DNAME/NS cut | Atomic prerequisites refuse without deleting foreign data | Pending |
+| Lost create reply or signed failure after a duplicate applies | Intent remains until its exact pair can be reconciled; no blind recreate | Pending |
+| Lost delete reply | Retained receipt can complete through a prerequisite-only absence proof without repeating deletion | Pending |
+| Replay after cleanup | Old signed create cannot restore a challenge while the retained generation protocol is respected | Pending |
+| Key rotation and changed target settings | Same-key/path secret rotation works; changed endpoint/key identity cannot redirect old cleanup | Pending |
+| Missing/corrupt reserved metadata or capacity limit | Evidence remains pending or creation refuses before mutation, with no automatic metadata repair | Pending |
+| Hidden primary and public nameservers | Public delegation and adaptive propagation checks pass independently of the primary endpoint | Pending |
+
+Keep the persistent generation marker after successful cleanup. Deliberately
+removing or rolling back reserved metadata changes the protocol assumptions;
+such experiments belong only in the disposable zone and must be recorded
+separately. Finish pending receipts under their original configuration before
+switching providers. Test renewal migration with a disposable staging lineage;
+installation alone must not rewrite existing renewal parameters.
 
 ## Renewal migration and scheduling
 

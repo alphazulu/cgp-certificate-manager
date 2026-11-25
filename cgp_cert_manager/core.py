@@ -129,7 +129,7 @@ def covered(n,w): return w.startswith('*.') and not n.startswith('*.') and n.end
 
 def discover(cfg,z):
     from . import dnsproviders
-    dnsproviders.provider_name(cfg)
+    dnsproviders.get_provider(cfg)
     overrides={d['cgp_domain']:d for d in cfg.get('domains',[])}
     out=[]
     for name in sorted(set(array(cli(cfg,'LISTDOMAINS')))):
