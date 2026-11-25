@@ -59,11 +59,16 @@ def main():
     p.add_argument('--confirm-transaction'); p.add_argument('--reason')
     p.add_argument('--metrics-file',metavar='PATH')
     g=p.add_mutually_exclusive_group()
-    for x in ('sync','list','show-domains','status','plan','verify','doctor','dry-run','install-only','history','hook-auth','hook-cleanup','reset-backoff','discover-listeners','verify-listeners','repair-chain','tui','apply-schedule','console','transactions','recover','acknowledge-restored','bootstrap-check','dns-check','dns-transactions','dns-cleanup','monitoring','metrics','zabbix-discovery'): g.add_argument('--'+x,action='store_true')
+    for x in ('sync','list','show-domains','status','plan','verify','doctor','dry-run','install-only','history','hook-auth','hook-cleanup','reset-backoff','discover-listeners','verify-listeners','repair-chain','tui','apply-schedule','console','transactions','recover','acknowledge-restored','bootstrap-check','dns-check','dns-transactions','dns-cleanup','powerdns-check','monitoring','metrics','zabbix-discovery'): g.add_argument('--'+x,action='store_true')
     g.add_argument('--backups',metavar='DOMAIN'); g.add_argument('--rollback',metavar='DOMAIN'); g.add_argument('--migrate',action='store_true')
     a=p.parse_args()
     monitoring_action=a.monitoring or a.metrics or a.zabbix_discovery
     if a.metrics_file is not None and not a.metrics: p.error('--metrics-file requires --metrics')
+    if a.powerdns_check:
+        if a.domain is not None: p.error('PowerDNS observation is global; omit --domain')
+        if (a.force_renew or a.retry_now or a.allow_shrink or a.backup_file is not None
+                or a.confirm_transaction is not None or a.reason is not None):
+            p.error('PowerDNS observation does not accept mutation options')
     if monitoring_action:
         if a.domain is not None: p.error('Monitoring actions are global; omit --domain')
         if (a.force_renew or a.retry_now or a.allow_shrink or a.backup_file is not None
@@ -87,6 +92,19 @@ def main():
             p.error('Reason must contain 1 to 500 printable characters without controls')
         a.reason=a.reason.strip()
     update_gate.require_idle()
+    if a.powerdns_check:
+        try:
+            from . import powerdns
+            result=powerdns.check(load(CONFIG))
+            if a.json: print(json.dumps(result,indent=2,ensure_ascii=False,allow_nan=False))
+            else:
+                for row in result['zones']:
+                    print(row['zone']+': API identity '+row['status']+'; reason='+row['reason'])
+                print('Managed TXT issuance: unavailable')
+            return int(not result['complete'])
+        except Exception:
+            print('PowerDNS observation failed',file=sys.stderr)
+            return 1
     if monitoring_action:
         try:
             from . import monitoring, monitoring_formats

@@ -26,7 +26,24 @@
 - [x] Implement operator-assisted resolution: exact-preview confirmation, private authorization/completion evidence, incomplete-decision guard and explicit retry without claiming TLS success. See docs/RESOLUTION.md and checkpoint 5 evidence below.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 17 (`2.2.0.dev14`) implements an explicit adaptive RFC2136 provider
+Checkpoint 18 (`2.2.0.dev15`) implements a separate read-only PowerDNS API
+observation, `--powerdns-check [--json]`. Pure explicit target identities,
+protected bounded API keys, verified HTTPS/literal-loopback HTTP, GET-only exact
+server/zone checks and fixed public reports run before manager state/CGP/Certbot
+effects. No proxy, redirect, retry or mutation path is added. Independent review
+closed a chunked framing/trailer budget gap by refusing all Transfer-Encoding
+before body reads. Actual HTTP/TLS loopback and refusal tests accompany the code.
+Both complete local profiles pass **1604 tests / 8471 statements / 2778 branches
+/ 100%**, with **55 new tests** and zero missing/partial/excluded paths. Static
+and documentation checks pass; this implementation's native CI is pending until
+its exact published revision is observed. A successful API observation does not
+enable PowerDNS issuance. Current EXTEND/PRUNE operations cannot prove ownership
+of an identical value concurrently added by another writer; HTTP writes remain
+pending an enforced acquisition/cleanup contract. See [POWERDNS.md](docs/POWERDNS.md)
+and DEVELOPMENT.md. Next independent provider scope is Route53. Real provider,
+API gateway, ACME, VM/server and signing acceptance remains deferred.
+
+Previous checkpoint 17 (`2.2.0.dev14`) implements an explicit adaptive RFC2136 provider
 with configured primary/zone/key identity, bounded private TSIG secrets and
 signed TCP. Schema-2 receipt zone IDs bind the mutation target without freezing
 rotating secret bytes. Exact full TXT prerequisites, alias/delegation guards,
@@ -310,7 +327,7 @@ passed tests, both installer baselines and package. Each installer job passed
 18 new unsafe-path refusal cases and preserved pending journals. This follow-up
 documentation commit records the observed result; inspect current-head checks
 when resuming. See DEVELOPMENT.md for exact next steps and remaining limits.
-Operator-assisted resolution was completed in checkpoint 5; checkpoint 17 is active above.
+Operator-assisted resolution was completed in checkpoint 5; checkpoint 18 is active above.
 This remains a development checkpoint, not a production release.
 
 ## 2.3 — Monitoring
@@ -332,7 +349,9 @@ This remains a development checkpoint, not a production release.
 ## 2.5 — DNS providers
 - [x] Provider abstraction and integrated Cloudflare compatibility, with explicit capabilities, provider-bound receipts and isolated contract tests (checkpoint 16; both complete local 100% gates and all eleven implementation CI jobs passed, evidence above).
 - [x] RFC2136 adaptive provider with target-bound receipts, signed TCP, conditional TXT ownership/recovery and isolated tests (checkpoint 17; both full local 100% gates and all eleven implementation CI jobs passed, evidence above).
-- [ ] PowerDNS, Route53, acme-dns and manual workflow, each with explicit capability and credential boundaries.
+- [x] PowerDNS explicit target/key contract and separate GET-only API observation, with isolated HTTP/TLS and refusal tests (checkpoint 18; both full local 100% gates passed, native CI pending above).
+- [ ] PowerDNS HTTP TXT ownership and cleanup: require an enforced acquisition/conditional-cleanup mechanism; EXTEND/PRUNE plus an RRset marker does not meet the contract (see docs/POWERDNS.md).
+- [ ] Route53, acme-dns and manual workflow, each with explicit capability and credential boundaries. Route53 is the next independent scope.
 - [ ] Real provider acceptance in the later separately scoped test session.
 
 ## 3.0 — Multi-server administration

@@ -22,6 +22,7 @@ DNS propagation, ACME acceptance, a running systemd timer or CGP field removal.
 |---|---|---|
 | DNS and renewal | Disposable Linux VM, native Certbot, dedicated Cloudflare zone(s)/tokens, ACME staging account | Actual provider API, DNS evidence, challenge lifecycle, recovery and renewal migration |
 | RFC2136 DNS and renewal | Disposable authoritative primary and public test zone, dedicated TSIG key, native Certbot and ACME staging account | Signed query/update policy, exact RRset prerequisites, persistent metadata, replay/uncertainty recovery and public propagation |
+| PowerDNS API observation | Disposable Authoritative API or explicitly configured gateway, lab zone and key | Exact server/zone identity, verified transport and GET-only observation; no HTTP TXT issuance capability |
 | CGP deployment/bootstrap | Disposable CGP instance with its exact build recorded, synthetic domains/keys and test TLS clients | Field provenance, write/removal cascades, restoration, SNI/chain and real service behavior |
 | External TLS monitoring and delivery | Separate observer VM, allocated TLS/STARTTLS test endpoints and approved test-only SMTP/webhook receivers | Observer trust/network view, live systemd scheduling, receiver acknowledgements, retry/recovery and upgrade behavior |
 
@@ -162,6 +163,25 @@ such experiments belong only in the disposable zone and must be recorded
 separately. Finish pending receipts under their original configuration before
 switching providers. Test renewal migration with a disposable staging lineage;
 installation alone must not rewrite existing renewal parameters.
+
+## PowerDNS API observation acceptance — pending
+
+The [PowerDNS check](POWERDNS.md) is a separate read-only track. Synthetic HTTP
+fixtures do not establish behavior on a real Authoritative server, API gateway
+or deployment. Record candidate commit, server build, API route, TLS trust and
+lab-zone identity without publishing the API key or private configuration.
+
+Verify the exact configured server and zone, unexpected Recursor/zone refusal,
+key rejection, verified HTTPS and literal-loopback HTTP behavior, redirects and
+response limits. Confirm that every request is a GET, no returned API URL is
+followed, and configuration, manager state, DNS and CGP remain unchanged.
+Check that JSON and text distinguish an observed API identity from issuance
+readiness, including partial failure across configured targets.
+
+PowerDNS HTTP writes remain unavailable. A later write track requires a proven
+ownership acquisition/cleanup mechanism and independent-writer tests before
+any real mutation acceptance can be defined. An existing RFC2136 setup on a
+PowerDNS server belongs to the separate signed-DNS track above.
 
 ## Renewal migration and scheduling
 

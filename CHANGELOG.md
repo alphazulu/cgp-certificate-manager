@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.0.dev15 — unreleased
+
+- Add an explicit read-only `--powerdns-check` command with protected configuration and API-key parsing, exact server/zone identity checks, bounded GET-only HTTP responses and secret-safe reports. Keep it independent of manager state, CGP discovery, Certbot and the issuing provider selector.
+- Require configured API origins and identifiers, verified HTTPS or literal-loopback HTTP, and no redirects, implicit proxies or retries. Preserve Cloudflare/RFC2136 behavior and existing receipt schemas; a successful PowerDNS API observation does not enable issuance.
+- Document current PowerDNS `EXTEND`/`PRUNE` support and the concurrent same-value ownership race that prevents safely advertising `owned_txt`. Leave HTTP writes pending an enforced acquisition/cleanup contract rather than treating an RRset marker as individual ownership.
+- Add meaningful configuration, transport, loopback and CLI refusal tests alongside the code. Keep both complete 100% coverage profiles and all native CI gates; exact observed results are recorded in DEVELOPMENT.md and ROADMAP.md.
+- Provide diagnostic-only configuration and intentionally invalid secret examples. Real provider/ACME/VM/server acceptance remains deferred, and this checkpoint does not activate DNS writes, merge, release or production deployment.
+
 ## 2.2.0.dev14 — unreleased
 
 - Add an opt-in adaptive RFC2136 provider using explicit primary/zone/key configuration and the existing dnspython dependency. Keep Cloudflare defaults, fixed routes and legacy receipt schemas compatible; refuse RFC fixed hooks and Cloudflare-specific wizard editing before side effects.

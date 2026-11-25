@@ -1,0 +1,14 @@
+{
+  "powerdns": {
+    "zones": [
+      {
+        "zone": "example.com",
+        "endpoint": "https://dns-api.example.net",
+        "server_id": "localhost",
+        "zone_id": "example.com.",
+        "credentials": "/etc/cgp-letsencrypt/powerdns.json",
+        "nameservers": ["ns1.example.com", "ns2.example.com"]
+      }
+    ]
+  }
+}

@@ -1,9 +1,11 @@
 # DNS provider contract
 
 The interface introduced in checkpoint 16 preserves Cloudflare compatibility.
-Checkpoint 17 (`2.2.0.dev14`, unreleased) adds the explicitly selected
-[RFC2136 adaptive provider](RFC2136.md). Cloudflare remains the default;
-PowerDNS, Route53, acme-dns and another manual workflow remain separate work.
+Checkpoint 17 adds the explicitly selected [RFC2136 adaptive provider](RFC2136.md).
+Checkpoint 18 (`2.2.0.dev15`, unreleased) adds a separate [PowerDNS API
+observation](POWERDNS.md), without advertising an issuing capability.
+Cloudflare remains the default; PowerDNS HTTP writes, Route53, acme-dns and
+another manual workflow remain separate work.
 Stable production is `2.1.0`; real provider acceptance remains deferred.
 
 ## Selection and credentials
@@ -146,6 +148,14 @@ routes and durable ownership/recovery evidence. An adapter must not claim
 `owned_txt` merely because it can send an update or delete a TXT value.
 Cloudflare record IDs/comments and RFC2136 conditional updates are specific
 contracts and cannot be assumed for another API.
+
+PowerDNS `EXTEND` and `PRUNE` operate on individual values, but cannot by
+themselves distinguish a newly acquired challenge from an identical value
+inserted by another writer. An RRset comment or independently added nonce does
+not close that race. `--powerdns-check` therefore remains an independent GET-only
+observation; `dns_provider: "powerdns"` is not accepted. Its informational target
+binding is not a receipt. See the [concrete interleaving and continuation
+requirements](POWERDNS.md).
 
 New implementations must reject unsupported routes, preserve foreign TXT
 records, handle uncertain mutations and bind receipts to their original

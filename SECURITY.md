@@ -143,6 +143,16 @@ and the stateless probe is not serialized against application replacement.
   encrypt DNS traffic. Raw foreign TXT is preserved, but TTL-only concurrency
   is outside prerequisite equality. Real server/ACME acceptance is deferred.
   See [RFC2136 ownership and limits](docs/RFC2136.md).
+- **PowerDNS observation:** `--powerdns-check` uses only GET requests to explicit
+  configured origins and server/zone identities. It checks private keys, verifies
+  HTTPS or restricts HTTP to literal loopback, and refuses redirects, implicit
+  proxies and malformed or oversized responses. Reports omit keys, paths, endpoints
+  and raw errors. A successful read is not DNS/ACME readiness or proof of write
+  ownership. Native API credentials can carry broader server-side authority;
+  the client does not make that credential read-only. PowerDNS HTTP writes stay
+  disabled because per-value EXTEND/PRUNE and RRset comments do not prove
+  acquisition of an identical concurrently inserted value. See the
+  [PowerDNS boundary](docs/POWERDNS.md).
 - **Interrupted operations:** the shared lock coordinates cooperating manager
   processes. Durable journals and receipts preserve unresolved effects; an
   unknown state is not permission to overwrite it or discard evidence.

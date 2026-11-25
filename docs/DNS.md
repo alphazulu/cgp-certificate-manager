@@ -1,10 +1,14 @@
 # DNS preflight and adaptive DNS-01
 
-This describes the DNS foundation and unreleased `2.2.0.dev14` provider interface. Stable
+This describes the DNS foundation and unreleased `2.2.0.dev15` provider interface. Stable
 production remains `2.1.0`. The DNS checks do not enable CGP bootstrap writes
 or remove any certificate transaction/readiness gate.
 
 ## Operator commands
+
+The separate [PowerDNS API diagnostic](POWERDNS.md), `--powerdns-check`, observes
+explicit server/zone identities without CGP or public DNS discovery. It is not
+the DNS readiness check below and does not enable PowerDNS HTTP issuance.
 
 ```bash
 cgp-letsencrypt --dns-check

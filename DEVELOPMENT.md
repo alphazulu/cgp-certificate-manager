@@ -2,7 +2,112 @@
 
 Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 17 (implementation and native CI passed)
+## Current handoff — checkpoint 18 (local validation passed; native CI pending)
+
+- Development version **`2.2.0.dev15`**, feature branch and draft PR #2. Starting
+  clean HEAD `eda20c940e4d4a0c9749e68deb447a44f245fba6`, tree
+  `14a89e08ce045e08652a53d7fa8ff3c14578666b`. Its PR CI 45546124162 and push CI
+  45546117175 passed all eleven jobs. Those checkpoint-17 runs do not validate
+  this revision. Stable main remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f`
+  (`2.1.0`).
+- Implemented a separate **read-only PowerDNS API observation**,
+  `--powerdns-check [--json]`. It runs after the pending-update guard but before
+  manager locking/state creation, migration, recovery, CGP discovery, Certbot
+  or notifications. Other actions and domain/mutation modifiers are rejected
+  before configuration/credential access. Normal issuer selection is unchanged.
+- The strict `powerdns.zones` section identifies each expected zone, API origin,
+  server ID, opaque zone ID, protected credential path and public nameservers.
+  Pure validation accepts 1–128 unique zones/targets; DNS names and origins are
+  canonicalized. HTTPS is verified; HTTP is limited to literal loopback.
+  IDs are single encoded path components. An informational SHA-256 binding
+  covers the explicit target/path, not rotating key bytes or nameservers.
+  It is not an ownership receipt, account fingerprint or write authorization.
+- The API-key file is strict private JSON with exactly `api_key`, 1–1024 visible
+  ASCII characters and a 4096-byte input limit. Unsafe files, duplicate/extra
+  fields and malformed input produce fixed errors. All configuration validates
+  before any private key is opened or network request is sent.
+- Direct GET-only requests check the configured Authoritative server and exact
+  zone resource/name using `rrsets=false`. Native zone responses may omit `type`;
+  a present discriminator must match. Version/kind metadata is bounded and never
+  used to infer mutation safety. Returned API URLs are ignored; no proxy,
+  redirect, retry, arbitrary prefix or transport fallback is used.
+- Verified TLS uses the existing safe context with a TLS 1.2 minimum and ignores
+  `SSLKEYLOGFILE`. Headers and bodies each have a 64 KiB budget. Strict UTF-8 JSON
+  rejects duplicate properties, nonfinite numbers and ambiguous framing.
+  Independent review found unbounded stdlib chunk framing/trailers; all
+  Transfer-Encoding is now refused before body reads, with a regression test.
+  Content-Length and bounded close-delimited JSON remain supported. The ten-second
+  socket timeout is not a DNS-resolution or whole-command deadline.
+- Reports contain all requested zones, fixed reasons, informational bindings
+  and observed metadata, without keys, credential paths, endpoints or raw errors.
+  They explicitly say `mode: read_only` and `issuance_supported: false`.
+  Exit 0 means all requested API identities were observed, not ACME readiness;
+  exit 1 means partial observation/failure and parser errors use exit 2.
+- **PowerDNS HTTP writes remain unimplemented.** Current official APIs include
+  EXTEND/PRUNE, but a value concurrently inserted by another writer can make our
+  EXTEND a no-op while our nonce marker is added. Later PRUNE would delete that
+  writer's value. Batch atomicity and RRset comments do not prove per-value
+  acquisition. The [PowerDNS contract](docs/POWERDNS.md) records the exact
+  interleaving and inspected official source pin. An uncertain request can
+  remain pending; HTTP duplication is not RFC2136 packet replay.
+- The issuer registry, shared receipts and Cloudflare/RFC2136 behavior are
+  unchanged. `dns_provider: powerdns` remains unsupported. Added **55 tests**:
+  14 configuration/private-key, 23 transport/protocol and 18 CLI/integration
+  refusal cases. Actual HTTP and TLS loopback fixtures include an untrusted
+  certificate and synthetic local trust anchor; no real provider was contacted.
+- Updated both READMEs, changelog, DNS/provider/security/staging guides and
+  diagnostic-only/invalid-secret examples. No dependency, timer, production key,
+  DNS write, release or deployment was activated.
+
+### Observed local validation — checkpoint 18
+
+Both complete profiles independently pass **1604 tests / 8471 statements /
+2778 branches / 100%**, with zero missing statements, missing/partial branches
+or excluded lines. Compatibility took **50.902 s**, current **51.422 s**, on
+Python **3.12.14**. Each independent `--fail-under=100` gate covers
+`cgp_cert_manager,repo_tools` without exclusions or relaxed checks.
+
+```bash
+COVERAGE_FILE=.coverage.cp18.compat /workspace/scratch/cf31ba780290/cgp-compat-env/bin/python -m coverage run --branch --source=cgp_cert_manager,repo_tools -m unittest discover -s tests -v
+COVERAGE_FILE=.coverage.cp18.compat /workspace/scratch/cf31ba780290/cgp-compat-env/bin/python -m coverage report -m --fail-under=100
+COVERAGE_FILE=.coverage.cp18.current /workspace/scratch/cf31ba780290/cgp-current-env/bin/python -m coverage run --branch --source=cgp_cert_manager,repo_tools -m unittest discover -s tests -v
+COVERAGE_FILE=.coverage.cp18.current /workspace/scratch/cf31ba780290/cgp-current-env/bin/python -m coverage report -m --fail-under=100
+```
+
+Focused complete gates also cover configuration at 120 statements / 46 branches
+and transport at 101 / 32, each 100% in both profiles. Full logs and independent
+JSON reports are `/workspace/scratch/9e49bdf23b66/cp18-full-{compat,current}.log`
+and `/workspace/scratch/9e49bdf23b66/cp18-coverage-{compat,current}.json`
+(transient local evidence, not repository inputs). Compilation of 144 Python
+files, three shell entrypoints, all 21 workflow shell blocks, Markdown links and
+shell examples, version/plugin metadata, both provider examples and the PowerDNS
+diagnostic example passed. Documentation checks are repeated for the final handoff.
+
+### Native CI and packaging — checkpoint 18
+
+Pending for this implementation until its exact revision is published and
+observed. Local HTTP/TLS fixtures are not real PowerDNS, gateway, DNS/ACME,
+VM/server or production acceptance. Record actual eleven-job PR/push results,
+complete audits, CodeQL and reproducible archive identity only after completion.
+
+### Continuation after checkpoint 18
+
+1. Inspect actual HEAD/worktree, draft PR #2 and all eleven current-head CI
+   jobs. Distinguish the implementation and any later documentation evidence.
+   Keep both complete independent 100% coverage gates with meaningful tests.
+2. PowerDNS HTTP writes stay pending an **enforced ownership acquisition and
+   conditional cleanup mechanism**. Do not implement a read/replace loop,
+   value-plus-marker assumption, or inferred exclusive zone ownership.
+3. Next independent scope is **Route53**: first define explicit account/zone
+   identity, credential boundaries, authoritative API mutation semantics and
+   uncertainty recovery. Do not transfer another provider's guarantees.
+4. Update this handoff, ROADMAP.md and draft PR #2 at each substantive checkpoint,
+   recording only observed validation and exact revision/run identities.
+5. All real VM/server/provider/recipient/broker/signing acceptance remains
+   deferred. Do not merge, tag, release, deploy or select production keys.
+   Keep CGP bootstrap blocked on its separate restoration/deletion evidence.
+
+## Previous handoff — checkpoint 17 (implementation and native CI passed)
 
 - Development version **`2.2.0.dev14`**, feature branch and draft PR #2. Starting
   clean HEAD `ffbc57736b5da8f1e07319b23a5b7071213a4e3e`, tree
