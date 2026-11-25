@@ -39,8 +39,14 @@ Both complete local profiles pass **1303 tests / 6833 statements / 2350
 branches / 100%**, with **104 new tests** and no missing/partial/excluded paths.
 Review fixes have regressions for stage namespace replacement, descriptor
 closure, expired-during-operation metadata and double-slash path overlap.
-Exact-revision native CI is pending publication; observed validation and
-continuation are recorded in DEVELOPMENT.md. `plan_id` is informational
+Implementation
+[`82c5c63`](https://github.com/alphazulu/cgp-certificate-manager/commit/82c5c63f75a09b547193f939196a4c5c0ae0366c)
+passed [CI 45523784100](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45523784100),
+all eleven jobs, and push CI 45523774587. Both native full profiles retain the
+same counts; all installer combinations, complete audits, zero CodeQL findings,
+native monitoring and reproducible packaging passed. This documentation
+follow-up records that observed implementation run; inspect its own current-head
+CI on resume. Evidence and continuation are in DEVELOPMENT.md. `plan_id` is informational
 and `apply_supported` is false. The next independent checkpoint is explicit
 installation apply with full preimages, approval binding, shared locking and a
 durable journal/recovery protocol; current shell rollback does not survive

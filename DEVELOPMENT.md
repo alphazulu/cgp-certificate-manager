@@ -84,11 +84,41 @@ Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; 
   App/plugin metadata both report `2.2.0.dev11`. Updater preparation requires
   Python 3.11+ for descriptor-relative cleanup and the native interpreter's
   optional `cryptography` backend; help/version do not import that backend.
-- Exact-revision native CI is pending publication of this implementation.
-  Both complete coverage profiles, all four installer combinations, monitoring,
-  both complete dependency audits, CodeQL and reproducible packaging remain
-  required. Local Docker, promtool and CodeQL are unavailable; no synthetic
-  result is presented as a completed native check.
+- Implementation
+  [`82c5c63`](https://github.com/alphazulu/cgp-certificate-manager/commit/82c5c63f75a09b547193f939196a4c5c0ae0366c)
+  passed [PR CI 45523784100](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45523784100),
+  **all eleven jobs**, and push CI 45523774587. Both full native Python 3.12.16
+  profiles retained **1303 tests / 6833 statements / 2350 branches / 100%**,
+  with zero missing/partial paths: compat **49.223 seconds**, current
+  **47.511 seconds**. No CI finding or gate relaxation was required.
+- Native CodeQL CLI **2.27.5** completed analysis, upload and processing.
+  Its policy reports **1 SARIF report / 1 run / 0 findings / 0 errors**,
+  complete and passed. The current dependency audit was complete at **22/22/22**
+  expected/reported/audited packages with no findings and inventory/scanner/policy
+  exits **0/0/0**. Historical compat was complete at **23/23/23**, with
+  **23 raw records / 15 package-advisory-ID pairs / 4 historical packages**,
+  exits **0/1/0**, under the unchanged explicit `informational-findings` policy.
+  Missing/skipped/unexpected dependencies, mismatches and diagnostic problems
+  were empty in both. These are test-environment audits, not production scans.
+- All four Ubuntu 24.04 / Debian 13 x baseline 2.0.1 / 2.1.0 installer jobs
+  passed **13 scenario sections and 36 unsafe-path/metadata refusals each**,
+  including the exact fresh updater entrypoint, no default updater state/trust
+  creation, wrapper restoration and independently provisioned evidence
+  preservation. They use mock systemd; native Certbot was **2.9.0** on Ubuntu
+  and **4.0.0** on Debian. Native promtool **3.16.0** accepted all **19 rules**
+  and both alert/dashboard-expression fixtures.
+- Packaging reproduced two identical archive/checksum/provenance sets and
+  verified the checksum before upload. The **531070-byte** archive has SHA-256
+  `4db76d079492b9096f3cd59beef3c33352658293b90f432c2e0466a0c7f01e83`.
+  Provenance records tested PR preview
+  `8a73aefc8540aaff4673312d5ec530b9c7d06d16` and tree
+  `b808c54f4ccfea045fe07205e70a3092d99fa506`, equal to the implementation tree.
+  This development artifact is not a signed update target or published release.
+- This documentation-only follow-up records the observed implementation run.
+  Inspect its own exact current-head checks on resume instead of attributing
+  earlier CI to a later revision. All eleven gates remain required. Docker,
+  native promtool and CodeQL were unavailable locally; their evidence above
+  comes from the named CI revision.
 - Stable main remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / **2.1.0**.
   Application/plugin metadata and English/Russian documentation move together;
   the implementation contract is in [UPDATES.md](docs/UPDATES.md).
@@ -98,10 +128,11 @@ Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; 
 1. Inspect actual HEAD, worktree, draft PR and all eleven current-head checks.
    Preserve unfinished files. Read this handoff, ROADMAP.md and UPDATES.md;
    distinguish observed results for each revision from pending validation.
-2. The implementation, reviews and both complete local coverage profiles pass.
-   Observe all eleven exact-revision native CI gates before extending this
-   checkpoint. Resolve any finding with a regression, retain 100% coverage
-   without exclusions/gate relaxation, and record the actual successful revision.
+2. The implementation, reviews, both full local coverage profiles and all
+   eleven implementation CI jobs pass. Inspect the documentation follow-up's
+   own current-head checks before claiming its status. Retain both 100% gates
+   and all other checks; resolve any later finding with a regression and record
+   the actual successful revision without exclusions or gate relaxation.
 3. Next design a full installed preimage and explicit approval contract,
    shared installer/manager/monitor/updater lock ownership and a durable journal
    before application replacement. Revalidate signed freshness, trust, staged
