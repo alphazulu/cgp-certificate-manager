@@ -2,7 +2,7 @@
 
 Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 19 (local validation passed; native CI pending)
+## Current handoff — checkpoint 19 (implementation and native CI passed)
 
 - Development version **`2.2.0.dev16`**, feature branch and draft PR #2. Starting
   clean HEAD `98d61f93242a6e35675fc075757384c6b89598bf`, tree
@@ -104,14 +104,47 @@ validation, application/plugin version consistency and `git diff --check`
 passed. Full suites ran after both review corrections; subsequent edits only
 record documentation/evidence.
 
-### Native CI — checkpoint 19
+### Observed native CI and packaging — checkpoint 19
 
-Native CI for the implementation commit is pending publication and observation.
-Require all eleven jobs for this exact revision: both complete profiles, all
-four installer combinations, both complete dependency audits, CodeQL, native
-monitoring and reproducible packaging. Prior checkpoint runs are not evidence
-for this implementation. Record observed run IDs, totals, audit/analysis output
-and package provenance in the follow-up handoff and draft PR.
+Implementation commit
+[`cef0537e0fd4b122d896381433a0b469ea9cb7b5`](https://github.com/alphazulu/cgp-certificate-manager/commit/cef0537e0fd4b122d896381433a0b469ea9cb7b5)
+passed [PR CI 45625828551](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45625828551)
+and [push CI 45625821780](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45625821780),
+all **eleven jobs in each run**, on their first attempts. All eleven PR logs and
+push packaging were inspected. Native Python **3.12.16** profiles each passed
+**1711 tests / 9009 statements / 2988 branches / 100%**, zero missing/partial
+coverage: compatibility **58.942 s**, current **73.958 s**.
+
+| Required check | Observed implementation result |
+|---|---|
+| Both full test profiles | Complete suites and independent strict coverage gates passed |
+| Four installer combinations | Ubuntu 24.04 / Debian 13 x upgrade baselines 2.0.1 / 2.1.0; every scenario suite passed |
+| Current dependency audit | Complete 22 expected / 22 reported / 22 audited; zero findings; inventory/scanner/policy exits 0/0/0 |
+| Historical compatibility audit | Complete 23/23/23; 23 raw records / 15 package-advisory pairs / 4 historical packages; exits 0/1/0 under the unchanged informational-findings policy |
+| Native CodeQL | Complete analysis/upload/processing; 1 SARIF report / 1 run / 0 findings / 0 errors |
+| Native monitoring | promtool 3.16.0 validated 19 rules and passed alert/dashboard-expression fixtures |
+| Package | Two identical archive/checksum/provenance sets per run, checksum validation and artifact upload passed |
+
+Both audit inventories have no missing/skipped/unexpected packages, version
+mismatches or diagnostic problems. Compatibility findings remain visible;
+that historical fixture is not a production dependency recommendation or an
+audit of distribution backports. Native installer checks use mocked systemd in
+disposable containers. HTTP/TLS/process fixtures do not establish real
+AWS/provider/DNS/ACME/VM/server acceptance.
+
+The implementation tree is `91297de2ff0da078f4c265f090ec58ed11535c51`.
+PR package provenance records preview
+`2b7e6326a9a9440c9a2ba56540cbf04a42414d5b` with the same tree; push provenance
+records the implementation commit above. Both runs produced the same
+**695764-byte** `cgp-certificate-manager-v2.2.0.dev16.tar.gz`, SHA-256
+`607ad19db63b9ac583dd13a7440ceeda7cae851646161091987aed9c1a7cb80c`.
+This is an unsigned development CI artifact with no release tag, not a release
+or an activated update. No real provider/server/key was used.
+
+This documentation-only follow-up records observed implementation evidence.
+Inspect its own current-head CI on resume; earlier runs do not validate later
+revisions. The draft PR records the final handoff's own CI separately. Stable
+main remains 2.1.0 at `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f`.
 
 ### Continuation after checkpoint 19
 

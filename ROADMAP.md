@@ -37,8 +37,13 @@ signing vectors, TLS, race, receipt and fresh-process tests accompany the code.
 Both complete local profiles pass **1711 tests / 9009 statements / 2988 branches
 / 100%**, with **107 additional tests** and zero missing/partial/excluded paths.
 Compilation, shell/workflow, documentation, examples and version checks pass.
-Native CI for this implementation is pending publication and observation;
-earlier checkpoint runs do not validate this revision.
+Implementation
+[`cef0537`](https://github.com/alphazulu/cgp-certificate-manager/commit/cef0537e0fd4b122d896381433a0b469ea9cb7b5)
+passed [PR CI 45625828551](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45625828551)
+and push CI 45625821780, all eleven jobs each. Native full profiles retain the
+same counts; installers, complete audits, zero CodeQL findings, native monitoring
+and reproducible packaging passed. This documentation-only follow-up records
+implementation evidence; inspect its own current-head CI on resume.
 See [ROUTE53.md](docs/ROUTE53.md), DEVELOPMENT.md and the deferred staging plan.
 Next independent provider scope is acme-dns, followed by the manual workflow;
 PowerDNS HTTP writes retain their separate enforced-ownership prerequisite.
@@ -374,7 +379,7 @@ This remains a development checkpoint, not a production release.
 - [x] RFC2136 adaptive provider with target-bound receipts, signed TCP, conditional TXT ownership/recovery and isolated tests (checkpoint 17; both full local 100% gates and all eleven implementation CI jobs passed, evidence above).
 - [x] PowerDNS explicit target/key contract and separate GET-only API observation, with isolated HTTP/TLS and refusal tests (checkpoint 18; both full local 100% gates and all eleven implementation CI jobs passed, evidence above).
 - [ ] PowerDNS HTTP TXT ownership and cleanup: require an enforced acquisition/conditional-cleanup mechanism; EXTEND/PRUNE plus an RRset marker does not meet the contract (see docs/POWERDNS.md).
-- [x] Route53 adaptive provider with explicit account/zone credentials, signed API, conditional TXT ownership and recovery (checkpoint 19; both full local 100% gates passed, native CI pending above).
+- [x] Route53 adaptive provider with explicit account/zone credentials, signed API, conditional TXT ownership and recovery (checkpoint 19; both full local 100% gates and all eleven implementation CI jobs passed, evidence above).
 - [ ] acme-dns and manual workflow, each with explicit capability, credential and recovery boundaries. acme-dns is the next independent scope.
 - [ ] Real provider acceptance in the later separately scoped test session.
 
