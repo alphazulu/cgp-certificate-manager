@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "email": "postmaster@example.com",
+  "dns_provider": "rfc2136",
+  "dns_preflight": true,
+  "dns_propagation": {
+    "mode": "adaptive",
+    "timeout_seconds": 300,
+    "poll_interval_seconds": 5
+  },
+  "rfc2136": {
+    "zones": [
+      {
+        "zone": "example.com",
+        "server": "192.0.2.53",
+        "port": 53,
+        "credentials": "/etc/cgp-letsencrypt/rfc2136.json",
+        "key_name": "cgp-acme.example.com",
+        "algorithm": "hmac-sha256",
+        "nameservers": ["ns1.example.com", "ns2.example.com"]
+      }
+    ]
+  },
+  "communigate": {
+    "url": "http://127.0.0.1:8100/CLI/",
+    "username": "postmaster@example.com",
+    "password": "REPLACE_ME"
+  },
+  "domains": []
+}

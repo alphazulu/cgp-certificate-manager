@@ -1,0 +1,264 @@
+# Opt in only the node_exporter scrape targets that publish manager metrics:
+#   labels: {cgp_manager: "true"}
+# job + instance identifies a target; domain alone is never a safe join key.
+# These are local observations, not probes of the certificate served by CGP.
+groups:
+  - name: cgp-manager
+    interval: 1m
+    rules:
+      - record: cgp_manager:target_up
+        expr: max by (job, instance) (up{cgp_manager="true"})
+
+      - record: cgp_manager:snapshot_age_seconds
+        expr: |
+          (time() - max by (job, instance) (
+            cgp_manager_collection_timestamp_seconds{cgp_manager="true"}
+          ))
+          and on (job, instance) (cgp_manager:target_up == 1)
+
+      # A future timestamp is not fresh. Both freshness boundaries are inclusive.
+      - record: cgp_manager:snapshot_fresh
+        expr: |
+          (
+            (cgp_manager:snapshot_age_seconds >= 0)
+            and on (job, instance) (cgp_manager:snapshot_age_seconds <= 900)
+          ) * 0 + 1
+
+      - record: cgp_manager:snapshot_complete
+        expr: |
+          max by (job, instance) (
+            cgp_manager_collection_success{cgp_manager="true"} == 1
+          )
+          and on (job, instance) cgp_manager:snapshot_fresh
+
+      # Require every named source. A missing series cannot count as healthy.
+      - record: cgp_manager:local_sources_complete
+        expr: |
+          (sum by (job, instance) (
+            max by (job, instance, source) (
+              cgp_manager_source_status{
+                cgp_manager="true", status="ok",
+                source=~"config|inventory|state|transactions|resolutions|dns_challenges|lock"
+              } == 1
+            )
+          ) == 7) / 7
+          and on (job, instance) cgp_manager:snapshot_fresh
+
+      # Missing/unreadable certificates have no expiry measurement, not zero.
+      - record: cgp_manager:local_certificate_remaining_seconds
+        expr: |
+          (max by (job, instance, domain) (
+            cgp_manager_local_certificate_not_after_timestamp_seconds{cgp_manager="true"}
+          ) - time())
+          and on (job, instance, domain) max by (job, instance, domain) (
+            cgp_manager_local_certificate_status{cgp_manager="true", status="ok"} == 1
+          )
+          and on (job, instance, domain) max by (job, instance, domain) (
+            cgp_manager_domain_enabled{cgp_manager="true"} == 1
+          )
+          and on (job, instance) cgp_manager:snapshot_complete
+
+      - alert: CGPManagerExporterUnavailable
+        expr: cgp_manager:target_up == 0
+        for: 5m
+        labels:
+          component: cgp-certificate-manager
+          scope: observation
+          severity: critical
+        annotations:
+          summary: Expected manager metrics target is unavailable
+          description: An opted-in exporter cannot be scraped. Local manager and certificate observations are unknown; this does not establish a CGP TLS failure.
+
+      # Detect an absent textfile only for a known, successfully scraped target.
+      # Removing the entire target from service discovery also removes its up
+      # series; detecting that requires a separately maintained target inventory.
+      - alert: CGPManagerMonitoringMissing
+        expr: |
+          (cgp_manager:target_up == 1)
+          unless on (job, instance) (
+            max by (job, instance) (
+              cgp_manager_collection_success{cgp_manager="true"}
+            )
+            and on (job, instance) max by (job, instance) (
+              cgp_manager_collection_timestamp_seconds{cgp_manager="true"}
+            )
+          )
+        for: 5m
+        labels:
+          component: cgp-certificate-manager
+          scope: observation
+          severity: warning
+        annotations:
+          summary: Manager collection metadata is missing
+          description: The opted-in exporter is reachable but collection success or timestamp metadata is absent. Check collection scheduling and textfile publication; absence is not a healthy zero.
+
+      - alert: CGPManagerMonitoringStale
+        expr: cgp_manager:snapshot_age_seconds > 900
+        for: 5m
+        labels:
+          component: cgp-certificate-manager
+          scope: observation
+          severity: warning
+        annotations:
+          summary: Manager local snapshot is stale
+          description: The collection timestamp is more than 15 minutes old. Certificate, retained-artifact and saved-result alerts are suppressed until a fresh complete snapshot is available.
+
+      - alert: CGPManagerMonitoringTimestampFuture
+        expr: cgp_manager:snapshot_age_seconds < 0
+        for: 5m
+        labels:
+          component: cgp-certificate-manager
+          scope: observation
+          severity: warning
+        annotations:
+          summary: Manager collection timestamp is in the future
+          description: The collector and Prometheus clocks disagree. Future collection timestamps are not accepted as fresh; a future certificate expiry or retry time is a different, normally valid measurement.
+
+      - alert: CGPManagerCollectionFailed
+        expr: |
+          (
+            max by (job, instance) (
+              cgp_manager_collection_success{cgp_manager="true"} == 0
+            )
+            and on (job, instance) cgp_manager:snapshot_fresh
+          )
+          unless on (job, instance) max by (job, instance) (
+            cgp_manager_source_status{cgp_manager="true", status="busy"} == 1
+          )
+        for: 5m
+        labels:
+          component: cgp-certificate-manager
+          scope: observation
+          severity: warning
+        annotations:
+          summary: Manager local collection is incomplete
+          description: A fresh snapshot could not collect all required observations. Source and local-certificate read alerts identify available causes; this is not proof of a renewal or served TLS failure.
+
+      - alert: CGPManagerSourceUnavailable
+        expr: |
+          max by (job, instance, source, status) (
+            cgp_manager_source_status{cgp_manager="true", status=~"missing|error"} == 1
+          )
+          and on (job, instance) cgp_manager:snapshot_fresh
+        for: 5m
+        labels:
+          component: cgp-certificate-manager
+          scope: observation
+          severity: warning
+        annotations:
+          summary: A required manager source is unavailable
+          description: The source label names missing or rejected local evidence. Unknown state and counts are not zero; inspect the local monitoring diagnostic before changing any stored recovery evidence.
+
+      - alert: CGPManagerCollectionBusy
+        expr: |
+          max by (job, instance) (
+            cgp_manager_source_status{cgp_manager="true", status="busy"} == 1
+          )
+          and on (job, instance) cgp_manager:snapshot_fresh
+        for: 15m
+        labels:
+          component: cgp-certificate-manager
+          scope: observation
+          severity: warning
+        annotations:
+          summary: Manager observations remain busy
+          description: A required local source has remained busy for 15 minutes. Collection does not wait behind mutation or perform recovery; check the active operation before intervening.
+
+      # An explicit certificate read error makes collection_success zero. This
+      # observation-failure exception requires all seven other sources to be OK.
+      - alert: CGPManagerLocalCertificateReadError
+        expr: |
+          max by (job, instance, domain) (
+            cgp_manager_local_certificate_status{cgp_manager="true", status="error"} == 1
+          )
+          and on (job, instance, domain) max by (job, instance, domain) (
+            cgp_manager_domain_enabled{cgp_manager="true"} == 1
+          )
+          and on (job, instance) cgp_manager:local_sources_complete
+        for: 5m
+        labels:
+          component: cgp-certificate-manager
+          scope: observation
+          severity: warning
+        annotations:
+          summary: A local public certificate cannot be observed
+          description: The enabled domain's public local leaf was unreadable, unsafe or invalid while all other required sources were available. Its expiry is unknown; this does not establish the certificate currently served by CGP.
+
+      - alert: CGPManagerLocalCertificateMissing
+        expr: |
+          max by (job, instance, domain) (
+            cgp_manager_local_certificate_status{cgp_manager="true", status="missing"} == 1
+          )
+          and on (job, instance, domain) max by (job, instance, domain) (
+            cgp_manager_domain_enabled{cgp_manager="true"} == 1
+          )
+          and on (job, instance) cgp_manager:snapshot_complete
+        for: 5m
+        labels:
+          component: cgp-certificate-manager
+          scope: local_certificate
+          severity: warning
+        annotations:
+          summary: An enabled domain has no local public certificate
+          description: A fresh complete snapshot found no public leaf at the configured local lineage. Check the lineage and issuance history; this is not a live CGP certificate probe.
+
+      - alert: CGPManagerLocalCertificateExpiryCritical
+        expr: cgp_manager:local_certificate_remaining_seconds <= 7 * 24 * 3600
+        for: 5m
+        labels:
+          component: cgp-certificate-manager
+          scope: local_certificate
+          severity: critical
+        annotations:
+          summary: A local certificate expires within seven days or has expired
+          description: The enabled domain's readable public local leaf has at most seven days remaining. Verify renewal and the separately observed deployed certificate; these metrics do not prove served TLS health.
+
+      - alert: CGPManagerLocalCertificateExpiryWarning
+        expr: |
+          (cgp_manager:local_certificate_remaining_seconds > 7 * 24 * 3600)
+          and on (job, instance, domain)
+          (cgp_manager:local_certificate_remaining_seconds <= 21 * 24 * 3600)
+        for: 5m
+        labels:
+          component: cgp-certificate-manager
+          scope: local_certificate
+          severity: warning
+        annotations:
+          summary: A local certificate expires within twenty-one days
+          description: The enabled domain's readable public local leaf has more than seven and at most twenty-one days remaining. Check scheduled renewal; this observation concerns the local leaf, not live CGP TLS.
+
+      - alert: CGPManagerPendingArtifacts
+        expr: |
+          max by (job, instance, kind) (
+            cgp_manager_pending_artifacts{cgp_manager="true"} > 0
+          )
+          and on (job, instance) cgp_manager:snapshot_complete
+        for: 15m
+        labels:
+          component: cgp-certificate-manager
+          scope: retained_artifacts
+          severity: warning
+        annotations:
+          summary: Manager recovery evidence remains present
+          description: A validated retained-artifact count remains nonzero. Kinds may overlap and are not unique operations; use the corresponding transaction diagnostic before an explicitly authorized recovery or cleanup.
+
+      - alert: CGPManagerRecordedFailure
+        expr: |
+          max by (job, instance, domain) (
+            cgp_manager_recorded_failures{cgp_manager="true"} > 0
+          )
+          and on (job, instance, domain) max by (job, instance, domain) (
+            cgp_manager_domain_enabled{cgp_manager="true"} == 1
+          )
+          and on (job, instance, domain) max by (job, instance, domain) (
+            cgp_manager_local_certificate_status{cgp_manager="true", status=~"ok|missing|error"} == 1
+          )
+          and on (job, instance) cgp_manager:snapshot_complete
+        for: 15m
+        labels:
+          component: cgp-certificate-manager
+          scope: historical
+          severity: info
+        annotations:
+          summary: Manager state retains a previous failure
+          description: The saved failure gauge remains nonzero for an enabled domain. This is historical manager state, not a cumulative counter or proof of a current renewal or served TLS failure.

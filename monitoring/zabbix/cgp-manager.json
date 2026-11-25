@@ -1,0 +1,1481 @@
+{
+  "zabbix_export": {
+    "version": "7.0",
+    "template_groups": [
+      {
+        "uuid": "a571c0d144b14fd4a87a9d9b2aa9fcd6",
+        "name": "Templates/Applications"
+      }
+    ],
+    "templates": [
+      {
+        "uuid": "7034eb13983a5f50a7ae3131b2afb61f",
+        "template": "CGP Certificate Manager by HTTP",
+        "name": "CGP Certificate Manager by HTTP",
+        "description": "CGP Certificate Manager local monitoring via an existing public node_exporter endpoint. Requires manager monitoring metrics; no private files, root UserParameters, sudo, CGP, Cloudflare or ACME access. Local certificate expiry and saved manager state are observations, not proof of deployed TLS. Validates the complete metric structure before discovery. Operational signals require fresh complete data, and recovery expressions prevent stale or partial observations from clearing existing problems. No actions or notifications are configured. Offline schema contracts and ES5 preprocessing are tested; actual Zabbix 7.0 import/server acceptance remains a deployment check.",
+        "groups": [
+          {
+            "name": "Templates/Applications"
+          }
+        ],
+        "items": [
+          {
+            "uuid": "d349b54b85c559cba5753592dba87a75",
+            "name": "CGP: Raw public metrics",
+            "type": "HTTP_AGENT",
+            "key": "cgp.manager.metrics.raw",
+            "delay": "{$CGP.POLL.INTERVAL}",
+            "history": "0",
+            "value_type": "TEXT",
+            "trends": "0",
+            "url": "{$CGP.METRICS.URL}",
+            "request_method": "GET",
+            "retrieve_mode": "BODY",
+            "output_format": "RAW",
+            "status_codes": "200",
+            "follow_redirects": "NO",
+            "verify_peer": "YES",
+            "verify_host": "YES",
+            "timeout": "10s",
+            "description": "GET the existing node_exporter public endpoint. No CGP, Cloudflare, ACME, private files, local commands, or privileged agent checks. Restrict endpoint access to the monitoring network.",
+            "tags": [
+              {
+                "tag": "component",
+                "value": "cgp-certificates"
+              },
+              {
+                "tag": "scope",
+                "value": "raw"
+              }
+            ]
+          },
+          {
+            "uuid": "7018dd069d79575aa5808ad68211d1b8",
+            "name": "CGP: Validated local snapshot",
+            "type": "DEPENDENT",
+            "key": "cgp.manager.snapshot",
+            "delay": "0",
+            "history": "0",
+            "value_type": "TEXT",
+            "trends": "0",
+            "description": "Native Prometheus parsing followed by bounded, strict one-hot and series validation. Unknown quantities are absent. Raw metric input is never used as a discovery list.",
+            "master_item": {
+              "key": "cgp.manager.metrics.raw"
+            },
+            "tags": [
+              {
+                "tag": "component",
+                "value": "cgp-certificates"
+              },
+              {
+                "tag": "scope",
+                "value": "local-observation"
+              }
+            ],
+            "preprocessing": [
+              {
+                "type": "PROMETHEUS_TO_JSON",
+                "parameters": [
+                  "{__name__=~\"^cgp_manager_.*$\"}"
+                ]
+              },
+              {
+                "type": "JAVASCRIPT",
+                "parameters": [
+                  "// Zabbix 7.0 preprocessing body; input is native PROMETHEUS_TO_JSON output.\n// ES5 only. Unknown measurements are omitted, never manufactured as zero.\ntry {\n    function requireValue(condition) {\n        if (!condition) {\n            throw 'Invalid value';\n        }\n    }\n    function own(object, name) {\n        return Object.prototype.hasOwnProperty.call(object, name);\n    }\n    function identifier(name) {\n        return name.length <= 253 &&\n            /^[A-Za-z0-9][A-Za-z0-9.-]*$/.test(name) &&\n            name.indexOf('..') === -1 && name.charAt(name.length - 1) !== '.';\n    }\n    function number(text) {\n        requireValue(typeof text === 'string' &&\n            /^[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$/.test(text));\n        var parsed = Number(text);\n        requireValue(isFinite(parsed));\n        return parsed;\n    }\n    function key(name, labels) {\n        return name + '\\n' + JSON.stringify(Object.keys(labels).sort().map(function (label) {\n            return [label, labels[label]];\n        }));\n    }\n    function binary(value) {\n        requireValue(value === 0 || value === 1);\n        return value;\n    }\n    function nonnegative(value, integer) {\n        requireValue(value >= 0);\n        if (integer) {\n            requireValue(Math.floor(value) === value && value <= 9007199254740991);\n        }\n        return value;\n    }\n    requireValue(typeof value === 'string' && value.length <= 16777216);\n    var input = JSON.parse(value);\n    requireValue(Array.isArray(input) && input.length <= 20000);\n    var prefix = 'cgp_manager_';\n    var sources = ['config', 'inventory', 'state', 'transactions', 'resolutions', 'dns_challenges', 'lock'];\n    var sourceStates = ['ok', 'missing', 'error', 'busy'];\n    var pendingKinds = ['transactions', 'resolutions', 'dns_challenges'];\n    var certificateStates = ['ok', 'missing', 'error'];\n    var definitions = {\n        collection_success: [], collection_timestamp_seconds: [],\n        source_status: ['source', 'status'], pending_artifacts: ['kind'],\n        domain_info: ['cert_name', 'domain'], domain_enabled: ['domain'],\n        domain_in_inventory: ['domain'], local_certificate_status: ['domain', 'status'],\n        local_certificate_not_after_timestamp_seconds: ['domain'],\n        last_success_timestamp_seconds: ['domain'], recorded_failures: ['domain'],\n        retry_timestamp_seconds: ['domain']\n    };\n    var series = Object.create(null);\n    var selected = [];\n    var domainInfo = [];\n    input.forEach(function (row) {\n        requireValue(row !== null && typeof row === 'object' && !Array.isArray(row));\n        requireValue(typeof row.name === 'string' && /^[A-Za-z_:][A-Za-z0-9_:]*$/.test(row.name));\n        var labels = row.labels === undefined ? {} : row.labels;\n        requireValue(labels !== null && typeof labels === 'object' && !Array.isArray(labels));\n        Object.keys(labels).forEach(function (label) {\n            requireValue(typeof labels[label] === 'string');\n        });\n        var seriesKey = key(row.name, labels);\n        requireValue(!own(series, seriesKey));\n        var item = {labels: labels, value: number(row.value)};\n        series[seriesKey] = item;\n        var suffix = row.name.slice(prefix.length);\n        if (row.name.indexOf(prefix) === 0 && own(definitions, suffix)) {\n            requireValue(Object.keys(labels).sort().join('\\n') === definitions[suffix].join('\\n'));\n            requireValue(row.type === undefined || row.type === 'gauge');\n            item.name = suffix;\n            selected.push(item);\n            if (suffix === 'domain_info') {\n                domainInfo.push(item);\n            }\n        }\n    });\n    function metric(name, labels, required) {\n        var seriesKey = key(prefix + name, labels);\n        if (!own(series, seriesKey)) {\n            requireValue(!required);\n            return undefined;\n        }\n        return series[seriesKey].value;\n    }\n    function oneHot(name, dimension, identity, states) {\n        var sum = 0;\n        var active;\n        states.forEach(function (state, index) {\n            var labels = {status: state};\n            labels[dimension] = identity;\n            var bit = binary(metric(name, labels, true));\n            sum += bit;\n            if (bit === 1) {\n                active = index;\n            }\n        });\n        requireValue(sum === 1);\n        return active;\n    }\n    var result = {collection_success: binary(metric('collection_success', {}, true)),\n        generated_at: nonnegative(metric('collection_timestamp_seconds', {}, true), false),\n        sources: {}, pending: {}, domains: Object.create(null)};\n    sources.forEach(function (source) {\n        result.sources[source] = oneHot('source_status', 'source', source, sourceStates);\n        if (result.collection_success === 1) {\n            requireValue(result.sources[source] === 0);\n        }\n    });\n    pendingKinds.forEach(function (kind) {\n        var known = result.sources[kind] === 0;\n        var count = metric('pending_artifacts', {kind: kind}, known);\n        if (count !== undefined) {\n            requireValue(known);\n            result.pending[kind] = nonnegative(count, true);\n        }\n    });\n    requireValue(domainInfo.length <= 1000);\n    domainInfo.forEach(function (item) {\n        var domain = item.labels.domain;\n        requireValue(identifier(domain) && identifier(item.labels.cert_name));\n        requireValue(result.sources.config === 0 && item.value === 1 && !own(result.domains, domain));\n        var labels = {domain: domain};\n        var row = {cert_name: item.labels.cert_name, observed_at: result.generated_at,\n            enabled: binary(metric('domain_enabled', labels, true)),\n            certificate_status: oneHot('local_certificate_status', 'domain', domain, certificateStates)};\n        if (result.collection_success === 1) {\n            requireValue(row.certificate_status !== 2);\n        }\n        var inventoryKnown = result.sources.inventory === 0;\n        var inInventory = metric('domain_in_inventory', labels, inventoryKnown);\n        if (inInventory !== undefined) {\n            requireValue(inventoryKnown);\n            row.in_inventory = binary(inInventory);\n        }\n        var readable = row.certificate_status === 0;\n        var expiry = metric('local_certificate_not_after_timestamp_seconds', labels, readable);\n        if (expiry !== undefined) {\n            requireValue(readable);\n            row.not_after = expiry;\n        }\n        [['last_success_timestamp_seconds', 'last_success'], ['recorded_failures', 'failures'],\n         ['retry_timestamp_seconds', 'retry_at']].forEach(function (field) {\n            var observed = metric(field[0], labels, false);\n            if (observed !== undefined) {\n                requireValue(result.sources.state === 0);\n                row[field[1]] = nonnegative(observed, field[1] === 'failures');\n            }\n        });\n        row.failures_known = own(row, 'failures') ? 1 : 0;\n        result.domains[domain] = row;\n    });\n    selected.forEach(function (item) {\n        if (own(item.labels, 'domain')) {\n            requireValue(own(result.domains, item.labels.domain));\n        }\n        if (item.name === 'source_status') {\n            requireValue(sources.indexOf(item.labels.source) !== -1 && sourceStates.indexOf(item.labels.status) !== -1);\n        }\n        if (item.name === 'pending_artifacts') {\n            requireValue(pendingKinds.indexOf(item.labels.kind) !== -1);\n        }\n        if (item.name === 'local_certificate_status') {\n            requireValue(certificateStates.indexOf(item.labels.status) !== -1);\n        }\n    });\n    return JSON.stringify(result);\n} catch (error) {\n    throw 'Invalid CGP monitoring metrics';\n}\n"
+                ]
+              }
+            ]
+          },
+          {
+            "uuid": "14ce1cea842d5b7b80b6fbc2ef2c1bbb",
+            "name": "CGP: Fresh local snapshot",
+            "type": "DEPENDENT",
+            "key": "cgp.manager.snapshot.fresh",
+            "delay": "0",
+            "history": "0",
+            "value_type": "TEXT",
+            "trends": "0",
+            "description": "Rejects stale or future observations. Operational fields exist only for complete collections; diagnostic source and certificate read status may exist on partial collections.",
+            "master_item": {
+              "key": "cgp.manager.snapshot"
+            },
+            "tags": [
+              {
+                "tag": "component",
+                "value": "cgp-certificates"
+              },
+              {
+                "tag": "scope",
+                "value": "local-observation"
+              }
+            ],
+            "preprocessing": [
+              {
+                "type": "JAVASCRIPT",
+                "parameters": [
+                  "// Numeric seconds only: Zabbix substitutes these administrator-owned macros.\n// This stage never replaces a missing or stale operational value with zero.\ntry {\n    var maxAge = '{$CGP.MAX.AGE.SECONDS}';\n    var futureSkew = '{$CGP.FUTURE.SKEW.SECONDS}';\n    if (!/^[0-9]{1,8}$/.test(maxAge) || Number(maxAge) < 1 || !/^[0-9]{1,8}$/.test(futureSkew)) {\n        throw 'Invalid threshold';\n    }\n    var data = JSON.parse(value);\n    if (data === null || typeof data !== 'object' || typeof data.generated_at !== 'number' || !isFinite(data.generated_at)) {\n        throw 'Invalid observation';\n    }\n    var age = Date.now() / 1000 - data.generated_at;\n    if (age > Number(maxAge) || age < -Number(futureSkew)) {\n        throw 'Observation is not fresh';\n    }\n    if (data.collection_success === 1) {\n        data.operational = {pending: data.pending, domains: data.domains};\n    }\n    return JSON.stringify(data);\n} catch (error) {\n    throw 'CGP monitoring observation is not fresh or valid';\n}\n"
+                ]
+              }
+            ]
+          },
+          {
+            "uuid": "3c9cc9f6a6525448bd806256c88834b3",
+            "name": "CGP: Local collection time",
+            "type": "DEPENDENT",
+            "key": "cgp.manager.collection.timestamp",
+            "delay": "0",
+            "history": "7d",
+            "value_type": "FLOAT",
+            "trends": "0",
+            "description": "Time the local files were observed, not a live TLS verification. Retained even for stale snapshots so stale/future collection timestamps are diagnosed. Numeric timestamps are Unix seconds; original fractional precision is retained.",
+            "master_item": {
+              "key": "cgp.manager.snapshot"
+            },
+            "tags": [
+              {
+                "tag": "component",
+                "value": "cgp-certificates"
+              },
+              {
+                "tag": "scope",
+                "value": "local-observation"
+              }
+            ],
+            "preprocessing": [
+              {
+                "type": "JSONPATH",
+                "parameters": [
+                  "$.generated_at"
+                ]
+              }
+            ],
+            "triggers": [
+              {
+                "uuid": "a344ea1a7de850b39508fa81e8ee854c",
+                "expression": "nodata(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted,{$CGP.NODATA})=1",
+                "name": "CGP: Public monitoring data unavailable",
+                "priority": "AVERAGE",
+                "description": "No fresh validated public snapshot arrived in the no-data interval. Includes HTTP failure, absent metrics, malformed metrics, and failed freshness preprocessing.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "availability"
+                  }
+                ]
+              },
+              {
+                "uuid": "26bee37a03805a43bf8f4ebb45bbdb79",
+                "expression": "now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))>{$CGP.MAX.AGE.SECONDS}",
+                "name": "CGP: Local monitoring snapshot is stale",
+                "priority": "WARNING",
+                "description": "The collection timestamp is older than the permitted age. Existing operational problems require fresh, complete evidence before recovery.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "availability"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))"
+              },
+              {
+                "uuid": "4031043d259b5d61b70e99cdf9d6c741",
+                "expression": "floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))>now()+{$CGP.FUTURE.SKEW.SECONDS}",
+                "name": "CGP: Local monitoring timestamp is in the future",
+                "priority": "WARNING",
+                "description": "Collection time is ahead of the Zabbix clock beyond the configured tolerance. Check both clocks.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "availability"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))"
+              }
+            ]
+          },
+          {
+            "uuid": "38180ce380a95762b07158c57971b430",
+            "name": "CGP: Accepted collection time",
+            "type": "DEPENDENT",
+            "key": "cgp.manager.collection.accepted",
+            "delay": "0",
+            "history": "7d",
+            "value_type": "FLOAT",
+            "trends": "0",
+            "description": "Exact floating-point collection timestamp accepted by the strict JavaScript freshness gate. Must equal the raw generation before cached global values can be used. Numeric timestamps are Unix seconds; original fractional precision is retained.",
+            "master_item": {
+              "key": "cgp.manager.snapshot.fresh"
+            },
+            "tags": [
+              {
+                "tag": "component",
+                "value": "cgp-certificates"
+              },
+              {
+                "tag": "scope",
+                "value": "local-observation"
+              }
+            ],
+            "preprocessing": [
+              {
+                "type": "JSONPATH",
+                "parameters": [
+                  "$.generated_at"
+                ]
+              }
+            ]
+          },
+          {
+            "uuid": "5c2279536be55ef8ae83560e809dec28",
+            "name": "CGP: Collection completeness",
+            "type": "DEPENDENT",
+            "key": "cgp.manager.collection.success",
+            "delay": "0",
+            "history": "7d",
+            "value_type": "UNSIGNED",
+            "trends": "0",
+            "description": "1 means all required local sources were read, not that TLS or the server is healthy.",
+            "master_item": {
+              "key": "cgp.manager.snapshot.fresh"
+            },
+            "tags": [
+              {
+                "tag": "component",
+                "value": "cgp-certificates"
+              },
+              {
+                "tag": "scope",
+                "value": "local-observation"
+              }
+            ],
+            "preprocessing": [
+              {
+                "type": "JSONPATH",
+                "parameters": [
+                  "$.collection_success"
+                ]
+              }
+            ],
+            "valuemap": {
+              "name": "CGP collection completeness"
+            },
+            "triggers": [
+              {
+                "uuid": "501abea65f395b55a386e524d68131ed",
+                "expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.success)=0",
+                "name": "CGP: Local monitoring collection is incomplete",
+                "priority": "WARNING",
+                "description": "One or more local sources or public certificate reads could not be collected. No partial snapshot is accepted as an empty discovery list.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "availability"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.success)=1)"
+              }
+            ]
+          },
+          {
+            "uuid": "4a5d09f496e4527c917a91202921a2d5",
+            "name": "CGP: Local source config",
+            "type": "DEPENDENT",
+            "key": "cgp.manager.source[config]",
+            "delay": "0",
+            "history": "7d",
+            "value_type": "UNSIGNED",
+            "trends": "0",
+            "description": "Status of this local source: ok, missing, error, or busy. This is not remote service availability.",
+            "master_item": {
+              "key": "cgp.manager.snapshot.fresh"
+            },
+            "tags": [
+              {
+                "tag": "component",
+                "value": "cgp-certificates"
+              },
+              {
+                "tag": "scope",
+                "value": "local-observation"
+              }
+            ],
+            "preprocessing": [
+              {
+                "type": "JSONPATH",
+                "parameters": [
+                  "$.sources.config"
+                ]
+              }
+            ],
+            "valuemap": {
+              "name": "CGP local source status"
+            },
+            "triggers": [
+              {
+                "uuid": "932602cbc48951b28defb219d2c79f96",
+                "expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.source[config])<>0",
+                "name": "CGP: Local source config is unavailable",
+                "priority": "WARNING",
+                "description": "Requires a fresh observation. Source failure is explicit and unknown measurements are not replaced with zero.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "availability"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.source[config])=0"
+              }
+            ]
+          },
+          {
+            "uuid": "27a4b483a81c520f9a350b362000a73b",
+            "name": "CGP: Local source inventory",
+            "type": "DEPENDENT",
+            "key": "cgp.manager.source[inventory]",
+            "delay": "0",
+            "history": "7d",
+            "value_type": "UNSIGNED",
+            "trends": "0",
+            "description": "Status of this local source: ok, missing, error, or busy. This is not remote service availability.",
+            "master_item": {
+              "key": "cgp.manager.snapshot.fresh"
+            },
+            "tags": [
+              {
+                "tag": "component",
+                "value": "cgp-certificates"
+              },
+              {
+                "tag": "scope",
+                "value": "local-observation"
+              }
+            ],
+            "preprocessing": [
+              {
+                "type": "JSONPATH",
+                "parameters": [
+                  "$.sources.inventory"
+                ]
+              }
+            ],
+            "valuemap": {
+              "name": "CGP local source status"
+            },
+            "triggers": [
+              {
+                "uuid": "33207f5fb79d52ae90c5fef5e0b7b44b",
+                "expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.source[inventory])<>0",
+                "name": "CGP: Local source inventory is unavailable",
+                "priority": "WARNING",
+                "description": "Requires a fresh observation. Source failure is explicit and unknown measurements are not replaced with zero.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "availability"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.source[inventory])=0"
+              }
+            ]
+          },
+          {
+            "uuid": "3f1406f4a802582c8c7ca55796e65e59",
+            "name": "CGP: Local source state",
+            "type": "DEPENDENT",
+            "key": "cgp.manager.source[state]",
+            "delay": "0",
+            "history": "7d",
+            "value_type": "UNSIGNED",
+            "trends": "0",
+            "description": "Status of this local source: ok, missing, error, or busy. This is not remote service availability.",
+            "master_item": {
+              "key": "cgp.manager.snapshot.fresh"
+            },
+            "tags": [
+              {
+                "tag": "component",
+                "value": "cgp-certificates"
+              },
+              {
+                "tag": "scope",
+                "value": "local-observation"
+              }
+            ],
+            "preprocessing": [
+              {
+                "type": "JSONPATH",
+                "parameters": [
+                  "$.sources.state"
+                ]
+              }
+            ],
+            "valuemap": {
+              "name": "CGP local source status"
+            },
+            "triggers": [
+              {
+                "uuid": "2fda943f973f5820b347301455de2c3d",
+                "expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.source[state])<>0",
+                "name": "CGP: Local source state is unavailable",
+                "priority": "WARNING",
+                "description": "Requires a fresh observation. Source failure is explicit and unknown measurements are not replaced with zero.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "availability"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.source[state])=0"
+              }
+            ]
+          },
+          {
+            "uuid": "756e41b0a10756b586130e80d32d5c42",
+            "name": "CGP: Local source transactions",
+            "type": "DEPENDENT",
+            "key": "cgp.manager.source[transactions]",
+            "delay": "0",
+            "history": "7d",
+            "value_type": "UNSIGNED",
+            "trends": "0",
+            "description": "Status of this local source: ok, missing, error, or busy. This is not remote service availability.",
+            "master_item": {
+              "key": "cgp.manager.snapshot.fresh"
+            },
+            "tags": [
+              {
+                "tag": "component",
+                "value": "cgp-certificates"
+              },
+              {
+                "tag": "scope",
+                "value": "local-observation"
+              }
+            ],
+            "preprocessing": [
+              {
+                "type": "JSONPATH",
+                "parameters": [
+                  "$.sources.transactions"
+                ]
+              }
+            ],
+            "valuemap": {
+              "name": "CGP local source status"
+            },
+            "triggers": [
+              {
+                "uuid": "217cbf43bc9257609359f0a636e8c6d9",
+                "expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.source[transactions])<>0",
+                "name": "CGP: Local source transactions is unavailable",
+                "priority": "WARNING",
+                "description": "Requires a fresh observation. Source failure is explicit and unknown measurements are not replaced with zero.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "availability"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.source[transactions])=0"
+              }
+            ]
+          },
+          {
+            "uuid": "66d448b59ba859e68d00801b66c33751",
+            "name": "CGP: Local source resolutions",
+            "type": "DEPENDENT",
+            "key": "cgp.manager.source[resolutions]",
+            "delay": "0",
+            "history": "7d",
+            "value_type": "UNSIGNED",
+            "trends": "0",
+            "description": "Status of this local source: ok, missing, error, or busy. This is not remote service availability.",
+            "master_item": {
+              "key": "cgp.manager.snapshot.fresh"
+            },
+            "tags": [
+              {
+                "tag": "component",
+                "value": "cgp-certificates"
+              },
+              {
+                "tag": "scope",
+                "value": "local-observation"
+              }
+            ],
+            "preprocessing": [
+              {
+                "type": "JSONPATH",
+                "parameters": [
+                  "$.sources.resolutions"
+                ]
+              }
+            ],
+            "valuemap": {
+              "name": "CGP local source status"
+            },
+            "triggers": [
+              {
+                "uuid": "eec3f39376a15ca78eedb233eb479784",
+                "expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.source[resolutions])<>0",
+                "name": "CGP: Local source resolutions is unavailable",
+                "priority": "WARNING",
+                "description": "Requires a fresh observation. Source failure is explicit and unknown measurements are not replaced with zero.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "availability"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.source[resolutions])=0"
+              }
+            ]
+          },
+          {
+            "uuid": "eb167d13660457abb1d570b15ad02e61",
+            "name": "CGP: Local source dns_challenges",
+            "type": "DEPENDENT",
+            "key": "cgp.manager.source[dns_challenges]",
+            "delay": "0",
+            "history": "7d",
+            "value_type": "UNSIGNED",
+            "trends": "0",
+            "description": "Status of this local source: ok, missing, error, or busy. This is not remote service availability.",
+            "master_item": {
+              "key": "cgp.manager.snapshot.fresh"
+            },
+            "tags": [
+              {
+                "tag": "component",
+                "value": "cgp-certificates"
+              },
+              {
+                "tag": "scope",
+                "value": "local-observation"
+              }
+            ],
+            "preprocessing": [
+              {
+                "type": "JSONPATH",
+                "parameters": [
+                  "$.sources.dns_challenges"
+                ]
+              }
+            ],
+            "valuemap": {
+              "name": "CGP local source status"
+            },
+            "triggers": [
+              {
+                "uuid": "1286d6ec0b0859ab89156a1ab03a55e5",
+                "expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.source[dns_challenges])<>0",
+                "name": "CGP: Local source dns_challenges is unavailable",
+                "priority": "WARNING",
+                "description": "Requires a fresh observation. Source failure is explicit and unknown measurements are not replaced with zero.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "availability"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.source[dns_challenges])=0"
+              }
+            ]
+          },
+          {
+            "uuid": "004ec6b21d99554dbb268f909ccf6239",
+            "name": "CGP: Local source lock",
+            "type": "DEPENDENT",
+            "key": "cgp.manager.source[lock]",
+            "delay": "0",
+            "history": "7d",
+            "value_type": "UNSIGNED",
+            "trends": "0",
+            "description": "Status of this local source: ok, missing, error, or busy. This is not remote service availability.",
+            "master_item": {
+              "key": "cgp.manager.snapshot.fresh"
+            },
+            "tags": [
+              {
+                "tag": "component",
+                "value": "cgp-certificates"
+              },
+              {
+                "tag": "scope",
+                "value": "local-observation"
+              }
+            ],
+            "preprocessing": [
+              {
+                "type": "JSONPATH",
+                "parameters": [
+                  "$.sources.lock"
+                ]
+              }
+            ],
+            "valuemap": {
+              "name": "CGP local source status"
+            },
+            "triggers": [
+              {
+                "uuid": "b0b56462ecc2535090240bdb37fadcab",
+                "expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.source[lock])<>0",
+                "name": "CGP: Local source lock is unavailable",
+                "priority": "WARNING",
+                "description": "Requires a fresh observation. Source failure is explicit and unknown measurements are not replaced with zero.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "availability"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "(floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.source[lock])=0"
+              }
+            ]
+          },
+          {
+            "uuid": "7259b96fea6c593aad052fde28ab3ca4",
+            "name": "CGP: Retained transactions artifacts",
+            "type": "DEPENDENT",
+            "key": "cgp.manager.pending[transactions]",
+            "delay": "0",
+            "history": "7d",
+            "value_type": "UNSIGNED",
+            "trends": "0",
+            "description": "Validated retained artifacts, not a count of unique incidents. Kinds may overlap. Only updated from fresh, complete local observations; unknown is unsupported, never zero.",
+            "master_item": {
+              "key": "cgp.manager.snapshot.fresh"
+            },
+            "tags": [
+              {
+                "tag": "component",
+                "value": "cgp-certificates"
+              },
+              {
+                "tag": "scope",
+                "value": "local-observation"
+              }
+            ],
+            "preprocessing": [
+              {
+                "type": "JSONPATH",
+                "parameters": [
+                  "$.operational.pending.transactions"
+                ]
+              }
+            ],
+            "triggers": [
+              {
+                "uuid": "0214333f511c5242b9fea2a005e9feef",
+                "expression": "((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.success)=1) and last(/CGP Certificate Manager by HTTP/cgp.manager.pending[transactions])>0",
+                "name": "CGP: Retained transactions artifacts need review",
+                "priority": "WARNING",
+                "description": "Local retained artifacts need operator review. No recovery or mutation is performed by this template.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "notice"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.success)=1) and last(/CGP Certificate Manager by HTTP/cgp.manager.pending[transactions])=0"
+              }
+            ]
+          },
+          {
+            "uuid": "e4d8d45c6d02562bbb53c15a3220b116",
+            "name": "CGP: Retained resolutions artifacts",
+            "type": "DEPENDENT",
+            "key": "cgp.manager.pending[resolutions]",
+            "delay": "0",
+            "history": "7d",
+            "value_type": "UNSIGNED",
+            "trends": "0",
+            "description": "Validated retained artifacts, not a count of unique incidents. Kinds may overlap. Only updated from fresh, complete local observations; unknown is unsupported, never zero.",
+            "master_item": {
+              "key": "cgp.manager.snapshot.fresh"
+            },
+            "tags": [
+              {
+                "tag": "component",
+                "value": "cgp-certificates"
+              },
+              {
+                "tag": "scope",
+                "value": "local-observation"
+              }
+            ],
+            "preprocessing": [
+              {
+                "type": "JSONPATH",
+                "parameters": [
+                  "$.operational.pending.resolutions"
+                ]
+              }
+            ],
+            "triggers": [
+              {
+                "uuid": "b617184838f55babb9997edc291bc5a3",
+                "expression": "((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.success)=1) and last(/CGP Certificate Manager by HTTP/cgp.manager.pending[resolutions])>0",
+                "name": "CGP: Retained resolutions artifacts need review",
+                "priority": "WARNING",
+                "description": "Local retained artifacts need operator review. No recovery or mutation is performed by this template.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "notice"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.success)=1) and last(/CGP Certificate Manager by HTTP/cgp.manager.pending[resolutions])=0"
+              }
+            ]
+          },
+          {
+            "uuid": "31aafeea928857c8a5c08f65fe05dde7",
+            "name": "CGP: Retained dns_challenges artifacts",
+            "type": "DEPENDENT",
+            "key": "cgp.manager.pending[dns_challenges]",
+            "delay": "0",
+            "history": "7d",
+            "value_type": "UNSIGNED",
+            "trends": "0",
+            "description": "Validated retained artifacts, not a count of unique incidents. Kinds may overlap. Only updated from fresh, complete local observations; unknown is unsupported, never zero.",
+            "master_item": {
+              "key": "cgp.manager.snapshot.fresh"
+            },
+            "tags": [
+              {
+                "tag": "component",
+                "value": "cgp-certificates"
+              },
+              {
+                "tag": "scope",
+                "value": "local-observation"
+              }
+            ],
+            "preprocessing": [
+              {
+                "type": "JSONPATH",
+                "parameters": [
+                  "$.operational.pending.dns_challenges"
+                ]
+              }
+            ],
+            "triggers": [
+              {
+                "uuid": "27e3784e6f2e595a89da1cd6e5e212d6",
+                "expression": "((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.success)=1) and last(/CGP Certificate Manager by HTTP/cgp.manager.pending[dns_challenges])>0",
+                "name": "CGP: Retained dns_challenges artifacts need review",
+                "priority": "WARNING",
+                "description": "Local retained artifacts need operator review. No recovery or mutation is performed by this template.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "notice"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.success)=1) and last(/CGP Certificate Manager by HTTP/cgp.manager.pending[dns_challenges])=0"
+              }
+            ]
+          }
+        ],
+        "discovery_rules": [
+          {
+            "uuid": "f008a7e3f51f54408b7ba2a04476afd5",
+            "name": "CGP: Local domain discovery",
+            "type": "DEPENDENT",
+            "key": "cgp.manager.domains.discovery",
+            "delay": "0",
+            "lifetime_type": "DELETE_NEVER",
+            "enabled_lifetime_type": "DISABLE_NEVER",
+            "description": "Fresh complete local observations only. Partial, malformed, stale and future observations fail preprocessing; they never become an empty list. Lost resources are never disabled or deleted automatically. Review removed domains manually. Discovery is bounded to 1000 domains.",
+            "master_item": {
+              "key": "cgp.manager.snapshot.fresh"
+            },
+            "preprocessing": [
+              {
+                "type": "JAVASCRIPT",
+                "parameters": [
+                  "// The master is the validated fresh snapshot, not a raw domain-only query.\ntry {\n    var data = JSON.parse(value);\n    if (data.collection_success !== 1 || !data.operational) {\n        throw 'Incomplete observation';\n    }\n    return JSON.stringify(Object.keys(data.operational.domains).sort().map(function (domain) {\n        var row = data.operational.domains[domain];\n        return {'{#CGP_DOMAIN}': domain, '{#CGP_CERT_NAME}': row.cert_name, '{#CGP_ENABLED}': row.enabled};\n    }));\n} catch (error) {\n    throw 'CGP monitoring discovery is incomplete';\n}\n"
+                ]
+              }
+            ],
+            "item_prototypes": [
+              {
+                "uuid": "792903f9542d5fb69a68e0bc39c7a6b0",
+                "name": "CGP {#CGP_DOMAIN}: Observation time",
+                "type": "DEPENDENT",
+                "key": "cgp.manager.domain.observed[\"{#CGP_DOMAIN}\"]",
+                "delay": "0",
+                "history": "7d",
+                "value_type": "FLOAT",
+                "trends": "0",
+                "description": "Current local observation time for this domain, not live discovery or TLS validation. Configured lineage: {#CGP_CERT_NAME}. Numeric timestamps are Unix seconds; original fractional precision is retained.",
+                "master_item": {
+                  "key": "cgp.manager.snapshot.fresh"
+                },
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "local-observation"
+                  },
+                  {
+                    "tag": "domain",
+                    "value": "{#CGP_DOMAIN}"
+                  }
+                ],
+                "preprocessing": [
+                  {
+                    "type": "JSONPATH",
+                    "parameters": [
+                      "$.domains['{#CGP_DOMAIN}'].observed_at"
+                    ]
+                  }
+                ]
+              },
+              {
+                "uuid": "482add808b4359ccb7325a90ba106e22",
+                "name": "CGP {#CGP_DOMAIN}: Enabled policy",
+                "type": "DEPENDENT",
+                "key": "cgp.manager.domain.enabled[\"{#CGP_DOMAIN}\"]",
+                "delay": "0",
+                "history": "7d",
+                "value_type": "UNSIGNED",
+                "trends": "0",
+                "description": "Current local configuration; disabled domains remain discovered. Configured lineage: {#CGP_CERT_NAME}.",
+                "master_item": {
+                  "key": "cgp.manager.snapshot.fresh"
+                },
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "local-observation"
+                  },
+                  {
+                    "tag": "domain",
+                    "value": "{#CGP_DOMAIN}"
+                  }
+                ],
+                "preprocessing": [
+                  {
+                    "type": "JSONPATH",
+                    "parameters": [
+                      "$.domains['{#CGP_DOMAIN}'].enabled"
+                    ]
+                  }
+                ],
+                "valuemap": {
+                  "name": "CGP enabled policy"
+                }
+              },
+              {
+                "uuid": "dd154245ca8c5fbd9564c6819249318f",
+                "name": "CGP {#CGP_DOMAIN}: Local certificate read status",
+                "type": "DEPENDENT",
+                "key": "cgp.manager.domain.certificate_status[\"{#CGP_DOMAIN}\"]",
+                "delay": "0",
+                "history": "7d",
+                "value_type": "UNSIGNED",
+                "trends": "0",
+                "description": "Public local leaf read result. Readable does not mean valid, installed, trusted, or served by CGP. Configured lineage: {#CGP_CERT_NAME}.",
+                "master_item": {
+                  "key": "cgp.manager.snapshot.fresh"
+                },
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "local-observation"
+                  },
+                  {
+                    "tag": "domain",
+                    "value": "{#CGP_DOMAIN}"
+                  }
+                ],
+                "preprocessing": [
+                  {
+                    "type": "JSONPATH",
+                    "parameters": [
+                      "$.domains['{#CGP_DOMAIN}'].certificate_status"
+                    ]
+                  }
+                ],
+                "valuemap": {
+                  "name": "CGP local certificate status"
+                }
+              },
+              {
+                "uuid": "ef05d4113ad555379660457bbc85f04a",
+                "name": "CGP {#CGP_DOMAIN}: In saved inventory",
+                "type": "DEPENDENT",
+                "key": "cgp.manager.domain.in_inventory[\"{#CGP_DOMAIN}\"]",
+                "delay": "0",
+                "history": "7d",
+                "value_type": "UNSIGNED",
+                "trends": "0",
+                "description": "Presence in last saved inventory, not a live CGP query. Unknown is unsupported. Configured lineage: {#CGP_CERT_NAME}.",
+                "master_item": {
+                  "key": "cgp.manager.snapshot.fresh"
+                },
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "local-observation"
+                  },
+                  {
+                    "tag": "domain",
+                    "value": "{#CGP_DOMAIN}"
+                  }
+                ],
+                "preprocessing": [
+                  {
+                    "type": "JSONPATH",
+                    "parameters": [
+                      "$.operational.domains['{#CGP_DOMAIN}'].in_inventory"
+                    ]
+                  }
+                ],
+                "valuemap": {
+                  "name": "CGP saved inventory"
+                }
+              },
+              {
+                "uuid": "923f6581bd9052be8ae53ab6a858f3f2",
+                "name": "CGP {#CGP_DOMAIN}: Local certificate expiry",
+                "type": "DEPENDENT",
+                "key": "cgp.manager.domain.not_after[\"{#CGP_DOMAIN}\"]",
+                "delay": "0",
+                "history": "7d",
+                "value_type": "FLOAT",
+                "trends": "0",
+                "description": "Expiry of the public local leaf certificate. Unknown or unreadable certificate produces no expiry value. Configured lineage: {#CGP_CERT_NAME}. Numeric timestamps are Unix seconds; original fractional precision is retained.",
+                "master_item": {
+                  "key": "cgp.manager.snapshot.fresh"
+                },
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "local-observation"
+                  },
+                  {
+                    "tag": "domain",
+                    "value": "{#CGP_DOMAIN}"
+                  }
+                ],
+                "preprocessing": [
+                  {
+                    "type": "JSONPATH",
+                    "parameters": [
+                      "$.operational.domains['{#CGP_DOMAIN}'].not_after"
+                    ]
+                  }
+                ]
+              },
+              {
+                "uuid": "110661213e105ad19e5cd3482c8cc055",
+                "name": "CGP {#CGP_DOMAIN}: Last saved successful operation",
+                "type": "DEPENDENT",
+                "key": "cgp.manager.domain.last_success[\"{#CGP_DOMAIN}\"]",
+                "delay": "0",
+                "history": "7d",
+                "value_type": "FLOAT",
+                "trends": "0",
+                "description": "Historical successful manager deployment or unchanged check, not current TLS proof. Configured lineage: {#CGP_CERT_NAME}. Numeric timestamps are Unix seconds; original fractional precision is retained.",
+                "master_item": {
+                  "key": "cgp.manager.snapshot.fresh"
+                },
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "local-observation"
+                  },
+                  {
+                    "tag": "domain",
+                    "value": "{#CGP_DOMAIN}"
+                  }
+                ],
+                "preprocessing": [
+                  {
+                    "type": "JSONPATH",
+                    "parameters": [
+                      "$.operational.domains['{#CGP_DOMAIN}'].last_success"
+                    ]
+                  }
+                ]
+              },
+              {
+                "uuid": "e1a89a1ef91a57c5a82bd15deb394b7f",
+                "name": "CGP {#CGP_DOMAIN}: Saved stage failure count",
+                "type": "DEPENDENT",
+                "key": "cgp.manager.domain.failures[\"{#CGP_DOMAIN}\"]",
+                "delay": "0",
+                "history": "7d",
+                "value_type": "UNSIGNED",
+                "trends": "0",
+                "description": "Saved failure count for the last failed stage; not a cumulative counter. Unknown is unsupported. Configured lineage: {#CGP_CERT_NAME}.",
+                "master_item": {
+                  "key": "cgp.manager.snapshot.fresh"
+                },
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "local-observation"
+                  },
+                  {
+                    "tag": "domain",
+                    "value": "{#CGP_DOMAIN}"
+                  }
+                ],
+                "preprocessing": [
+                  {
+                    "type": "JSONPATH",
+                    "parameters": [
+                      "$.operational.domains['{#CGP_DOMAIN}'].failures"
+                    ]
+                  }
+                ]
+              },
+              {
+                "uuid": "327be7911e8c5eee8ad9fe59e32885ca",
+                "name": "CGP {#CGP_DOMAIN}: Saved retry time",
+                "type": "DEPENDENT",
+                "key": "cgp.manager.domain.retry_at[\"{#CGP_DOMAIN}\"]",
+                "delay": "0",
+                "history": "7d",
+                "value_type": "FLOAT",
+                "trends": "0",
+                "description": "Saved retry time; zero explicitly means cleared. Inspection is not deferred by this value. Configured lineage: {#CGP_CERT_NAME}. Numeric timestamps are Unix seconds; original fractional precision is retained.",
+                "master_item": {
+                  "key": "cgp.manager.snapshot.fresh"
+                },
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "local-observation"
+                  },
+                  {
+                    "tag": "domain",
+                    "value": "{#CGP_DOMAIN}"
+                  }
+                ],
+                "preprocessing": [
+                  {
+                    "type": "JSONPATH",
+                    "parameters": [
+                      "$.operational.domains['{#CGP_DOMAIN}'].retry_at"
+                    ]
+                  }
+                ]
+              },
+              {
+                "uuid": "de4c628b101056dfb236fafa6adf23ec",
+                "name": "CGP {#CGP_DOMAIN}: Saved failure count is known",
+                "type": "DEPENDENT",
+                "key": "cgp.manager.domain.failures_known[\"{#CGP_DOMAIN}\"]",
+                "delay": "0",
+                "history": "7d",
+                "value_type": "UNSIGNED",
+                "trends": "0",
+                "description": "Presence flag for this exact observed generation: 1 means a saved failure count exists, 0 means unknown. This is not a failure count and never represents healthy zero.",
+                "master_item": {
+                  "key": "cgp.manager.snapshot.fresh"
+                },
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "local-observation"
+                  },
+                  {
+                    "tag": "domain",
+                    "value": "{#CGP_DOMAIN}"
+                  }
+                ],
+                "preprocessing": [
+                  {
+                    "type": "JSONPATH",
+                    "parameters": [
+                      "$.domains['{#CGP_DOMAIN}'].failures_known"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "trigger_prototypes": [
+              {
+                "uuid": "6eea3fce97025cb1b6a9e2f89c9d7c75",
+                "expression": "{#CGP_ENABLED}=1 and nodata(/CGP Certificate Manager by HTTP/cgp.manager.domain.observed[\"{#CGP_DOMAIN}\"],{$CGP.NODATA})=1",
+                "name": "CGP {#CGP_DOMAIN}: Fresh local observations unavailable",
+                "priority": "WARNING",
+                "description": "A previously enabled domain has no fresh observation. Lost discovery resources are retained and remain enabled until an operator reviews them.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "availability"
+                  },
+                  {
+                    "tag": "domain",
+                    "value": "{#CGP_DOMAIN}"
+                  }
+                ]
+              },
+              {
+                "uuid": "d3467a88030f5dc597acc6c79813c344",
+                "expression": "((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.observed[\"{#CGP_DOMAIN}\"])=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.enabled[\"{#CGP_DOMAIN}\"])=1 and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.certificate_status[\"{#CGP_DOMAIN}\"])=2",
+                "name": "CGP {#CGP_DOMAIN}: Public local certificate cannot be read",
+                "priority": "WARNING",
+                "description": "An explicit local leaf read error may be reported even when the collection is incomplete. This does not perform a network TLS probe.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "availability"
+                  },
+                  {
+                    "tag": "domain",
+                    "value": "{#CGP_DOMAIN}"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.observed[\"{#CGP_DOMAIN}\"])=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and (last(/CGP Certificate Manager by HTTP/cgp.manager.domain.enabled[\"{#CGP_DOMAIN}\"])=0 or last(/CGP Certificate Manager by HTTP/cgp.manager.domain.certificate_status[\"{#CGP_DOMAIN}\"])<>2)"
+              },
+              {
+                "uuid": "8f8c7c1434135e0cb7ffc6f59e0354a4",
+                "expression": "(((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.observed[\"{#CGP_DOMAIN}\"])=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.success)=1) and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.enabled[\"{#CGP_DOMAIN}\"])=1 and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.certificate_status[\"{#CGP_DOMAIN}\"])=1",
+                "name": "CGP {#CGP_DOMAIN}: Public local certificate is missing",
+                "priority": "WARNING",
+                "description": "A complete local observation established absence of the configured public leaf. An unreadable leaf or partial snapshot does not establish recovery.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "availability"
+                  },
+                  {
+                    "tag": "domain",
+                    "value": "{#CGP_DOMAIN}"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "(((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.observed[\"{#CGP_DOMAIN}\"])=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.success)=1) and (last(/CGP Certificate Manager by HTTP/cgp.manager.domain.enabled[\"{#CGP_DOMAIN}\"])=0 or last(/CGP Certificate Manager by HTTP/cgp.manager.domain.certificate_status[\"{#CGP_DOMAIN}\"])=0)"
+              },
+              {
+                "uuid": "934596ff560d57768bd18b865c8a9293",
+                "expression": "(((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.observed[\"{#CGP_DOMAIN}\"])=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.success)=1) and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.enabled[\"{#CGP_DOMAIN}\"])=1 and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.certificate_status[\"{#CGP_DOMAIN}\"])=0 and (last(/CGP Certificate Manager by HTTP/cgp.manager.domain.not_after[\"{#CGP_DOMAIN}\"])-now())<={$CGP.EXPIRY.CRIT.SECONDS}",
+                "name": "CGP {#CGP_DOMAIN}: Local certificate expiry is critical",
+                "priority": "HIGH",
+                "description": "Configured critical threshold defaults to 7 days and includes already expired local certificates. This is not proof of the certificate served by CGP.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "availability"
+                  },
+                  {
+                    "tag": "domain",
+                    "value": "{#CGP_DOMAIN}"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "(((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.observed[\"{#CGP_DOMAIN}\"])=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.success)=1) and (last(/CGP Certificate Manager by HTTP/cgp.manager.domain.enabled[\"{#CGP_DOMAIN}\"])=0 or (last(/CGP Certificate Manager by HTTP/cgp.manager.domain.certificate_status[\"{#CGP_DOMAIN}\"])=0 and (last(/CGP Certificate Manager by HTTP/cgp.manager.domain.not_after[\"{#CGP_DOMAIN}\"])-now())>{$CGP.EXPIRY.CRIT.SECONDS}))"
+              },
+              {
+                "uuid": "3e06d896c3945ad09d9e53559bd6db3f",
+                "expression": "(((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.observed[\"{#CGP_DOMAIN}\"])=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.success)=1) and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.enabled[\"{#CGP_DOMAIN}\"])=1 and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.certificate_status[\"{#CGP_DOMAIN}\"])=0 and (last(/CGP Certificate Manager by HTTP/cgp.manager.domain.not_after[\"{#CGP_DOMAIN}\"])-now())>{$CGP.EXPIRY.CRIT.SECONDS} and (last(/CGP Certificate Manager by HTTP/cgp.manager.domain.not_after[\"{#CGP_DOMAIN}\"])-now())<={$CGP.EXPIRY.WARN.SECONDS}",
+                "name": "CGP {#CGP_DOMAIN}: Local certificate expiry warning",
+                "priority": "WARNING",
+                "description": "Warning and critical bands are disjoint. Defaults: more than 7 days and at most 21 days remaining on the local certificate.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "availability"
+                  },
+                  {
+                    "tag": "domain",
+                    "value": "{#CGP_DOMAIN}"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "(((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.observed[\"{#CGP_DOMAIN}\"])=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.success)=1) and (last(/CGP Certificate Manager by HTTP/cgp.manager.domain.enabled[\"{#CGP_DOMAIN}\"])=0 or (last(/CGP Certificate Manager by HTTP/cgp.manager.domain.certificate_status[\"{#CGP_DOMAIN}\"])=0 and ((last(/CGP Certificate Manager by HTTP/cgp.manager.domain.not_after[\"{#CGP_DOMAIN}\"])-now())<={$CGP.EXPIRY.CRIT.SECONDS} or (last(/CGP Certificate Manager by HTTP/cgp.manager.domain.not_after[\"{#CGP_DOMAIN}\"])-now())>{$CGP.EXPIRY.WARN.SECONDS})))"
+              },
+              {
+                "uuid": "8b5bb145fce2588a921e62ddb5acde42",
+                "expression": "(((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.observed[\"{#CGP_DOMAIN}\"])=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.success)=1) and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.enabled[\"{#CGP_DOMAIN}\"])=1 and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.failures_known[\"{#CGP_DOMAIN}\"])=1 and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.failures[\"{#CGP_DOMAIN}\"])>0",
+                "name": "CGP {#CGP_DOMAIN}: Saved stage failures need review",
+                "priority": "INFO",
+                "description": "Historical saved failure count, not live health. Only an explicit fresh complete value can resolve this problem.",
+                "tags": [
+                  {
+                    "tag": "component",
+                    "value": "cgp-certificates"
+                  },
+                  {
+                    "tag": "scope",
+                    "value": "notice"
+                  },
+                  {
+                    "tag": "domain",
+                    "value": "{#CGP_DOMAIN}"
+                  }
+                ],
+                "recovery_mode": "RECOVERY_EXPRESSION",
+                "recovery_expression": "(((floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<=now()+{$CGP.FUTURE.SKEW.SECONDS} and now()-floor(last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp))<={$CGP.MAX.AGE.SECONDS} and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.accepted)=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.observed[\"{#CGP_DOMAIN}\"])=last(/CGP Certificate Manager by HTTP/cgp.manager.collection.timestamp)) and last(/CGP Certificate Manager by HTTP/cgp.manager.collection.success)=1) and (last(/CGP Certificate Manager by HTTP/cgp.manager.domain.enabled[\"{#CGP_DOMAIN}\"])=0 or (last(/CGP Certificate Manager by HTTP/cgp.manager.domain.failures_known[\"{#CGP_DOMAIN}\"])=1 and last(/CGP Certificate Manager by HTTP/cgp.manager.domain.failures[\"{#CGP_DOMAIN}\"])=0))"
+              }
+            ]
+          }
+        ],
+        "tags": [
+          {
+            "tag": "component",
+            "value": "cgp-certificates"
+          },
+          {
+            "tag": "scope",
+            "value": "local-observation"
+          }
+        ],
+        "macros": [
+          {
+            "macro": "{$CGP.METRICS.URL}",
+            "value": "http://{HOST.CONN}:9100/metrics",
+            "description": "Existing public node_exporter endpoint reachable by Zabbix server/proxy. This is not a CGP administrative URL. Prefer HTTPS where available; peer and hostname verification are enabled. Redirects are refused."
+          },
+          {
+            "macro": "{$CGP.POLL.INTERVAL}",
+            "value": "1m",
+            "description": "HTTP polling interval. Keep below the collection freshness and no-data intervals."
+          },
+          {
+            "macro": "{$CGP.MAX.AGE.SECONDS}",
+            "value": "900",
+            "description": "Maximum collection age, inclusive. Administrator-owned decimal integer seconds only, 1 to 99999999; inserted into JavaScript. No expressions or quotes."
+          },
+          {
+            "macro": "{$CGP.FUTURE.SKEW.SECONDS}",
+            "value": "0",
+            "description": "Permitted future clock skew, inclusive. Administrator-owned decimal integer seconds only, 0 to 99999999; inserted into JavaScript. Default 0 matches Prometheus/Grafana. No expressions or quotes."
+          },
+          {
+            "macro": "{$CGP.NODATA}",
+            "value": "5m",
+            "description": "Alert after this interval without validated metrics or a previously enabled domain observation."
+          },
+          {
+            "macro": "{$CGP.EXPIRY.CRIT.SECONDS}",
+            "value": "604800",
+            "description": "Critical local certificate expiry threshold in seconds. Default 7 days. Keep below the warning threshold."
+          },
+          {
+            "macro": "{$CGP.EXPIRY.WARN.SECONDS}",
+            "value": "1814400",
+            "description": "Warning local certificate expiry threshold in seconds. Default 21 days; warning excludes the critical band."
+          }
+        ],
+        "valuemaps": [
+          {
+            "uuid": "5b71e209043852538150acabb4acaee9",
+            "name": "CGP collection completeness",
+            "mappings": [
+              {
+                "value": "0",
+                "newvalue": "Incomplete"
+              },
+              {
+                "value": "1",
+                "newvalue": "Complete"
+              }
+            ]
+          },
+          {
+            "uuid": "d62b355f1f3751ac9f9659e010ca54e0",
+            "name": "CGP local source status",
+            "mappings": [
+              {
+                "value": "0",
+                "newvalue": "OK"
+              },
+              {
+                "value": "1",
+                "newvalue": "Missing"
+              },
+              {
+                "value": "2",
+                "newvalue": "Error"
+              },
+              {
+                "value": "3",
+                "newvalue": "Busy"
+              }
+            ]
+          },
+          {
+            "uuid": "505726d51e8b566a91c3ac3bf6d65c74",
+            "name": "CGP local certificate status",
+            "mappings": [
+              {
+                "value": "0",
+                "newvalue": "Readable"
+              },
+              {
+                "value": "1",
+                "newvalue": "Missing"
+              },
+              {
+                "value": "2",
+                "newvalue": "Read error"
+              }
+            ]
+          },
+          {
+            "uuid": "7b9c67184157525ab146cf1555146ff7",
+            "name": "CGP enabled policy",
+            "mappings": [
+              {
+                "value": "0",
+                "newvalue": "Disabled"
+              },
+              {
+                "value": "1",
+                "newvalue": "Enabled"
+              }
+            ]
+          },
+          {
+            "uuid": "85e2bfcd014c5a329d57a48ae78b090b",
+            "name": "CGP saved inventory",
+            "mappings": [
+              {
+                "value": "0",
+                "newvalue": "Absent"
+              },
+              {
+                "value": "1",
+                "newvalue": "Present"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

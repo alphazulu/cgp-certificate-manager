@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch, Mock
-from cgp_cert_manager import cli, core, schedule, console, tui
+from cgp_cert_manager import cli, core, schedule, console, tui, storage, bootstrap
 
 NAME='example.com'
 CERT={'fingerprint':'a','names':[NAME],'days':80}
@@ -20,19 +20,22 @@ class CLIFlowTests(unittest.TestCase):
         self.stack=contextlib.ExitStack()
         self.addCleanup(self.stack.close)
         self.root=Path(self.stack.enter_context(tempfile.TemporaryDirectory()))
+        self.live=Path(self.stack.enter_context(tempfile.TemporaryDirectory()))
         self.cfg={'schema_version':2,'email':'admin@example.com'}
         self.config=self.root/'config.json'
         core.atomic(self.config,self.cfg)
         self.stack.enter_context(patch.object(cli,'CONFIG',self.config))
         self.stack.enter_context(patch.object(cli,'STATE',self.root))
         self.stack.enter_context(patch.object(core,'STATE',self.root))
-        self.stack.enter_context(patch.object(cli,'LIVE',self.root/'live'))
-        (self.root/'live'/NAME).mkdir(parents=True)
-        (self.root/'live'/NAME/'chain.pem').write_bytes(b'dummy')
+        self.stack.enter_context(patch.object(cli,'LIVE',self.live))
+        (self.live/NAME).mkdir(parents=True)
+        (self.live/NAME/'chain.pem').write_bytes(b'dummy')
         self.domain={'cgp_domain':NAME,'cert_name':NAME,'enabled':True,'cloudflare_available':True,'names':[NAME],'unavailable':[]}
         self.m={}
         for name,value in {'zones':{},'discover':[self.domain],'current':dict(FIELDS),'installed_info':dict(CERT),'local_info':dict(CERT),'issue':None,'deploy':'installed','verify_tls':None,'chain_payload':'YQ==','discover_listeners':[{'port':443}],'expected_chain':['a'],'probe_tls':None}.items():
             self.m[name]=self.stack.enter_context(patch.object(cli,name,return_value=value))
+        self.stack.enter_context(patch.object(bootstrap,'inspect',side_effect=self.inspect_current))
+        self.recover=self.stack.enter_context(patch.object(cli.deployment,'recover_pending',return_value=[]))
         self.stack.enter_context(patch.object(cli.os,'umask'))
         self.out=io.StringIO()
         self.stack.enter_context(contextlib.redirect_stdout(self.out))
@@ -46,6 +49,11 @@ class CLIFlowTests(unittest.TestCase):
     def output(self): return json.loads(self.out.getvalue())
     def state(self): return core.load(self.root/'state.json',{})
     def set_state(self,s): core.atomic(self.root/'state.json',s)
+
+    def inspect_current(self,cfg,name):
+        settings=cli.current(cfg,name)
+        complete=set(settings)==set(core.FIELDS)
+        return bootstrap.Inspection({'domain':name,'deployment_ready':complete,'blocking_reason':None if complete else 'missing_effective_fields'},settings)
 
     def test_status_plan_doctor_sync(self):
         for arg in ('--status','--plan','--doctor','--sync'):
@@ -208,7 +216,7 @@ class CLIFlowTests(unittest.TestCase):
         self.assertEqual(self.invoke('--migrate'),0)
 
     def test_lock_released_and_busy(self):
-        with (self.root/'run.lock').open('a') as lock:
+        with storage.open_private(self.root/'run.lock','a',create=True) as lock:
             fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             with self.assertRaises(BlockingIOError):
                 self.invoke('--status')
@@ -237,27 +245,28 @@ class CLIFlowTests(unittest.TestCase):
 
     def test_rollback_selected(self):
         path,old=self.make_backup()
-        self.m['current'].side_effect=[dict(FIELDS),old]
-        with patch.object(cli,'validate_backup') as validate,patch.object(cli,'update') as update:
+        endpoints=[{'port':443,'sni':NAME}]
+        with patch.object(cli,'validate_backup') as validate,patch.object(cli.deployment,'apply') as apply,patch.object(cli.deployment,'snapshot_endpoints',return_value=endpoints):
             self.assertEqual(self.invoke('--rollback',NAME,'--backup-file',path.name),0)
         validate.assert_called_once_with(old)
-        update.assert_called_once_with(self.cfg,NAME,old)
+        apply.assert_called_once_with(self.cfg,NAME,FIELDS,old,endpoints,endpoints)
+        self.recover.assert_called_once_with(self.cfg)
         self.assertEqual(self.invoke('--backups',NAME),0)
         self.assertIn(path.name,self.out.getvalue())
 
     def test_rollback_recovery(self):
         path,old=self.make_backup()
-        self.m['current'].side_effect=[dict(FIELDS),dict(FIELDS),dict(FIELDS)]
-        with patch.object(cli,'validate_backup'),patch.object(cli,'update') as update:
+        with patch.object(cli,'validate_backup'),patch.object(cli.deployment,'snapshot_endpoints',return_value=[]),patch.object(cli.deployment,'apply',side_effect=core.Error('Deployment failed; previous settings restored')):
             with self.assertRaisesRegex(core.Error,'previous settings restored'):
                 self.invoke('--rollback',NAME)
-        self.assertEqual(update.call_count,2)
+        self.assertFalse((self.root/'history.jsonl').exists())
 
     def test_rollback_recovery_failure(self):
         self.make_backup()
-        with patch.object(cli,'validate_backup'),patch.object(cli,'update',side_effect=OSError()):
+        with patch.object(cli,'validate_backup'),patch.object(cli.deployment,'snapshot_endpoints',return_value=[]),patch.object(cli.deployment,'apply',side_effect=core.Error('CRITICAL: recovery pending')):
             with self.assertRaisesRegex(core.Error,'CRITICAL'):
                 self.invoke('--rollback',NAME)
+        self.assertFalse((self.root/'history.jsonl').exists())
 
     def test_rollback_invalid_choices(self):
         with self.assertRaisesRegex(core.Error,'No backup'):
@@ -282,25 +291,27 @@ class CLIFlowTests(unittest.TestCase):
         core.atomic(other,old)
         path.unlink()
         path.symlink_to(other)
-        with self.assertRaisesRegex(core.Error,'Invalid backup path'):
+        with self.assertRaises(storage.StorageError):
             self.invoke('--rollback',NAME)
-        with self.assertRaisesRegex(core.Error,'not found'):
+        with self.assertRaises(storage.StorageError):
             self.invoke('--rollback',NAME,'--backup-file',path.name)
 
     def test_incomplete_current_settings(self):
         self.make_backup()
         self.m['current'].return_value={}
         with patch.object(cli,'validate_backup'),patch.object(cli,'update') as update:
-            with self.assertRaisesRegex(core.Error,'Cannot back up'):
+            with self.assertRaisesRegex(core.Error,'Certificate deployment blocked.*missing_effective_fields'):
                 self.invoke('--rollback',NAME)
             update.assert_not_called()
 
-    def test_rollback_recovery_readback_mismatch(self):
-        path,old=self.make_backup()
-        self.m['current'].side_effect=[dict(FIELDS),dict(FIELDS),old]
-        with patch.object(cli,'validate_backup'),patch.object(cli,'update'):
-            with self.assertRaisesRegex(core.Error,'CRITICAL'):
+    def test_pending_recovery_blocks_manual_rollback(self):
+        self.make_backup()
+        self.recover.side_effect=core.Error('Unknown CGP state')
+        with patch.object(cli,'validate_backup'),patch.object(cli.deployment,'apply') as apply:
+            with self.assertRaisesRegex(core.Error,'Unknown CGP state'):
                 self.invoke('--rollback',NAME)
+        self.m['current'].assert_not_called()
+        apply.assert_not_called()
 
     def test_deferred_issue_continues_next_domain(self):
         second=dict(self.domain,cgp_domain='second.com',cert_name='second.com',names=['second.com'])

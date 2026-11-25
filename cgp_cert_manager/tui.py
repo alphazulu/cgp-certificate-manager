@@ -1,7 +1,6 @@
 """Optional whiptail configuration editor. No credentials in process arguments."""
 import argparse
 import copy
-import fcntl
 import getpass
 import warnings
 import uuid
@@ -14,7 +13,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import core
+from . import core, dnsconfig, dnsproviders, storage, update_gate
 from .localization import translate
 
 LANGUAGE='en'
@@ -137,7 +136,7 @@ def validate(cfg):
         raise ValueError('CommuniGate credentials required')
     if not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', cfg['email']):
         raise ValueError('Valid ACME email required')
-    number(cfg['propagation_seconds'], 10, 3600)
+    dnsconfig.validate(cfg)
     for d in cfg.get('domains', []):
         core.identifier(d['cgp_domain'])
         for field in ('extra_names','exclude_names'):
@@ -146,17 +145,7 @@ def validate(cfg):
 def write_token(path, value):
     if not re.fullmatch(r'[A-Za-z0-9_-]+', value):
         raise ValueError('Invalid token syntax')
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent)
-    try:
-        with os.fdopen(fd, 'w') as file:
-            file.write('dns_cloudflare_api_token = ' + value + '\n')
-            file.flush()
-            os.fsync(file.fileno())
-        os.replace(tmp, path)
-    finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
+    storage.atomic_text(path, 'dns_cloudflare_api_token = ' + value + '\n')
 
 def edit_tls(existing, domain=None):
     if yes('Use automatic HTTPS/SNI checks on loopback port 443?'):
@@ -180,17 +169,21 @@ def save_config(cfg, pending, active):
     # Immutable credential paths: the old config never references a new token.
     # The single atomic config replacement is the commit point.
     from datetime import datetime, timezone
+    update_gate.require_idle()
+    storage.validate_tree(core.STATE)
+    previous = storage.read_text(core.CONFIG) if storage.check_private_file(core.CONFIG, missing_ok=True) else None
+    storage.ensure_private_directory(core.STATE)
+    storage.ensure_private_directory(core.STATE/'config-backups')
     backup = core.STATE/'config-backups'/datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
-    backup.mkdir(parents=True,mode=0o700)
-    if core.CONFIG.exists():
-        shutil.copy2(core.CONFIG,backup/'config.json')
-        (backup/'config.json').chmod(0o600)
+    backup.mkdir(mode=0o700)
+    if previous is not None:
+        storage.atomic_text(backup/'config.json',previous)
     created=[]
     try:
         for path, stage in pending.items():
             if path not in active: continue
             target=Path(path)
-            if target.exists(): raise ValueError('Credential path already exists')
+            if storage.check_private_file(target, missing_ok=True): raise ValueError('Credential path already exists')
             write_token(target,core.token(stage))
             created.append(target)
         core.atomic(core.CONFIG,cfg)
@@ -198,7 +191,7 @@ def save_config(cfg, pending, active):
         # Do not delete credentials if the configuration commit already happened.
         try:
             committed=core.load(core.CONFIG,{})==cfg
-        except (OSError,ValueError):
+        except Exception:
             committed=True
         if not committed:
             for target in created: target.unlink(missing_ok=True)
@@ -212,18 +205,21 @@ def setup():
         print('Install whiptail first: apt install whiptail', file=sys.stderr)
         return 1
     os.umask(0o077)
-    core.STATE.mkdir(parents=True, mode=0o700, exist_ok=True)
-    with (core.STATE/'run.lock').open('a') as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            print('Certificate manager is busy', file=sys.stderr)
-            return 1
-        try:
+    try:
+        update_gate.require_idle()
+        with storage.operation_lock(core.STATE):
+            update_gate.require_idle()
+            storage.validate_tree(core.STATE)
             return edit()
-        except KeyboardInterrupt:
-            print('\nConfiguration cancelled.', file=sys.stderr)
-            return CANCELLED
+    except BlockingIOError:
+        print('Certificate manager is busy', file=sys.stderr)
+        return 1
+    except (core.Error, update_gate.PendingUpdateError) as exc:
+        print('Configuration refused: '+str(exc), file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print('\nConfiguration cancelled.', file=sys.stderr)
+        return CANCELLED
 
 def main_menu():
     # Always place exit actions first and fit smaller terminals.
@@ -249,6 +245,10 @@ def confirm_exit(dirty):
 def edit():
     from .cli import migrate
     cfg = migrate(core.load(core.CONFIG, default_config()))
+    # Only the configured backend may validate or stage its own credentials.
+    # Keep propagation editing available even when those settings are invalid.
+    if dnsproviders.provider_name(cfg) != 'cloudflare':
+        raise core.Error('Selected DNS provider requires manual JSON editing')
     global LANGUAGE
     LANGUAGE=cfg.get('tui_language','en')
     cfg.setdefault('auto_enable_new_domains', True)

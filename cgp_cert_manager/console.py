@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import __version__, core
+from . import __version__, core, storage, update_gate
 from .localization import language, translate
 
 # The module path must refer to the same checkout, even when testing from /tmp.
@@ -26,6 +26,9 @@ ACTIONS = (
     ('Select backup to restore (rollback)', ('--rollback',), True),
     ('Reset retry delay', ('--reset-backoff',), True),
     ('Retry now', ('--retry-now',), True),
+    ('Transaction status', ('--transactions',), False),
+    ('Recover pending transaction', ('--recover',), True),
+    ('Acknowledge previous settings (TLS unverified)', ('--acknowledge-restored',), True),
 )
 
 def command_for(domain, index):
@@ -60,6 +63,7 @@ def timer_status():
         return 'unavailable'
 
 def row_status(row):
+    if row.get('action')=='BLOCKED' and row.get('tls')!='failed': return 'BLOCKED'
     if row.get('error') or row.get('tls')=='failed': return 'ERROR'
     if row.get('status')=='blocked': return 'BLOCKED'
     if row.get('status') in ('disabled','unavailable'): return 'SKIPPED'
@@ -99,15 +103,19 @@ def backup_command(domain, filename):
 
 def domain_history(name):
     path=core.STATE/'history.jsonl'
-    if not path.is_file(): return []
     from collections import deque
     lines=deque(maxlen=150)
-    with path.open() as stream:
-        for line in stream:
-            try: item=json.loads(line)
-            except ValueError: continue
-            if isinstance(item,dict) and item.get('domain')==name:
-                lines.append(str(item.get('time',''))+' '+str(item.get('event','')))
+    try:
+        with storage.open_private(path) as stream:
+            for line in stream:
+                try: item=json.loads(line)
+                except ValueError: continue
+                if isinstance(item,dict) and item.get('domain')==name:
+                    lines.append(str(item.get('time',''))+' '+str(item.get('event','')))
+    except FileNotFoundError:
+        return []
+    except (OSError,UnicodeError,core.Error):
+        return ['History unavailable']
     return list(lines)
 
 HELP = [
@@ -118,6 +126,7 @@ HELP = [
     'F6: service journal',
     'F7: systemd timer controls',
     'F8: verify all managed domains',
+    'F9: inspect or recover pending transactions',
     'S: cycle sorting (name, expiry, status)',
     'F: cycle filters (all, managed, attention)',
     'F1: help',
@@ -125,6 +134,7 @@ HELP = [
     'VERIFIED means TLS was checked during this session.',
     'Refresh invalidates earlier TLS results; verify again.',
     'Operations changing certificates require confirmation.',
+    'Acknowledging previous settings does not verify TLS.',
 ]
 
 def details(row):
@@ -250,10 +260,10 @@ class Screen:
             self.put(4+i-self.offset,0,text,self.colors.get(row_status(row),0) | (curses.A_REVERSE if i==self.selected else 0))
         self.put(h-3,0,self.message)
         self.put(h-2,0,'Enter Domain | F2 Settings | F5 Refresh | F6 Logs')
-        self.put(h-1,0,'F1 Help | F7 Timer | F8 Verify | S Sort | F Filter | Q Exit',curses.A_BOLD)
+        self.put(h-1,0,'F1 Help | F7 Timer | F8 TLS | F9 Recovery | Q',curses.A_BOLD)
         self.w.refresh()
 
-    def view(self,title,lines):
+    def view(self,title,lines,allow_continue=False):
         pos=0
         while True:
             self.w.erase()
@@ -263,14 +273,41 @@ class Screen:
             pos=max(0,min(pos,max(0,len(lines)-visible)))
             for i,line in enumerate(lines[pos:pos+visible],1):
                 self.put(i,0,line)
-            self.put(h-1,0,'Up/Down PgUp/PgDn | Esc/Q Back')
+            self.put(h-1,0,'Up/Down | Enter Continue | Esc/Q Cancel' if allow_continue else 'Up/Down PgUp/PgDn | Esc/Q Back')
             self.w.refresh()
             key=self.w.getch()
-            if key in (27,ord('q'),ord('Q'),curses.KEY_F10): return
+            if key in (27,ord('q'),ord('Q'),curses.KEY_F10): return False if allow_continue else None
+            if allow_continue and key in (10,13,curses.KEY_ENTER): return True
             if key==curses.KEY_UP: pos-=1
             if key==curses.KEY_DOWN: pos+=1
             if key==curses.KEY_PPAGE: pos-=visible
             if key==curses.KEY_NPAGE: pos+=visible
+
+    def input_reason(self):
+        text=''; error=''
+        try:
+            while True:
+                self.w.erase()
+                h,w=self.w.getmaxyx()
+                self.put(0,0,'Reason for acknowledgement',curses.A_BOLD)
+                self.put(2,0,'Enter 1 to 500 printable characters; no secrets.')
+                self.put(4,0,text[-max(1,w-2):],curses.A_REVERSE)
+                self.put(h-2,0,error)
+                self.put(h-1,0,'Enter Continue | Esc/F10 Cancel')
+                self.w.refresh()
+                key=self.w.get_wch()
+                if key in ('\x1b','\x03',curses.KEY_F10): return None
+                if key in ('\n','\r',curses.KEY_ENTER):
+                    if text.strip(): return text.strip()
+                    error='A reason is required'
+                elif key in ('\b','\x7f',curses.KEY_BACKSPACE):
+                    text=text[:-1]; error=''
+                elif isinstance(key,str):
+                    if not key.isprintable(): error='Use printable characters only'
+                    elif len(text)+len(key)>500: error='Maximum reason length is 500 characters'
+                    else: text+=key; error=''
+        except KeyboardInterrupt:
+            return None
 
     def menu(self,title,options,initial=0):
         pos=max(0,min(initial,len(options)-1))
@@ -400,6 +437,9 @@ class Screen:
                 self.choose_backup(name)
                 row=next((r for r in self.all_rows if r['domain']==name),row)
                 continue
+            if flags==('--acknowledge-restored',):
+                self.acknowledge_previous(name)
+                continue
             if mutates and not self.confirm(label+' for '+name): continue
             command=command_for(name,index)
             if mutates:
@@ -427,7 +467,85 @@ class Screen:
             return
         if not self.confirm(options[choice]): return
         commands={1:CLI+['--apply-schedule'],2:['systemctl','enable','--now','cgp-letsencrypt.timer'],3:['systemctl','stop','cgp-letsencrypt.timer'],4:['systemctl','disable','--now','cgp-letsencrypt.timer']}
-        self.execute(commands[choice],options[choice])
+        # The CLI acquires its own lock. Direct systemctl actions need this one.
+        if choice==1:
+            self.execute(commands[choice],options[choice])
+            return
+        try:
+            update_gate.require_idle()
+            with storage.operation_lock(core.STATE):
+                update_gate.require_idle()
+                self.execute(commands[choice],options[choice])
+        except (BlockingIOError,core.Error,update_gate.PendingUpdateError):
+            self.view(options[choice],['Timer change refused: manager busy or update pending; inspect update status.'])
+
+    def transaction_menu(self):
+        # Recovery must remain available even when discovery returns no domains.
+        options=['Transaction status','Recover all pending transactions','Acknowledge previous settings (TLS unverified)','Back']
+        choice=self.menu('Pending transactions',options)
+        if choice is None or choice==3: return
+        if choice==0:
+            self.inspect(CLI+['--transactions'],options[choice])
+        elif choice==2:
+            self.select_acknowledgement()
+        elif self.confirm(options[choice]):
+            self.execute(CLI+['--recover'],options[choice])
+
+    def select_acknowledgement(self):
+        title='Acknowledge previous settings (TLS unverified)'
+        try:
+            code,out,err=capture(CLI+['--transactions','--json'])
+            if code:
+                self.view(title,(err or 'Transaction inspection unavailable').splitlines())
+                return
+            rows=json.loads(out)
+            if not isinstance(rows,list) or not all(isinstance(row,dict) and isinstance(row.get('domain'),str) for row in rows):
+                raise ValueError('Invalid transaction response')
+            names=sorted({core.identifier(row['domain']) for row in rows})
+            if not names:
+                self.view(title,['No pending transactions'])
+                return
+            choice=self.menu('Select pending transaction',names+['Back'])
+            if choice is None or choice==len(names): return
+            self.acknowledge_previous(names[choice])
+        except (ValueError,OSError,subprocess.TimeoutExpired,core.Error):
+            self.view(title,['Transaction inspection unavailable'])
+
+    def acknowledge_previous(self,name):
+        title='Acknowledge previous settings (TLS unverified)'
+        try:
+            name=core.identifier(name)
+            cmd=CLI+['--acknowledge-restored','--domain',name]
+            code,out,err=capture(cmd+['--json'])
+            if code:
+                self.view(title,(err or 'Acknowledgement preview unavailable').splitlines())
+                return
+            preview=json.loads(out)
+            if (not isinstance(preview,dict) or preview.get('domain')!=name
+                    or preview.get('phase') not in ('prepared','restoring','acknowledging')
+                    or preview.get('state') not in ('previous','both')
+                    or preview.get('server_matches') is not True or preview.get('tls')!='unverified'
+                    or type(preview.get('pending_journal')) is not bool
+                    or type(preview.get('authorization_recorded')) is not bool
+                    or not isinstance(preview.get('confirmation_token'),str)
+                    or not re.fullmatch(r'[0-9a-f]{64}',preview['confirmation_token'])):
+                raise ValueError('Invalid acknowledgement preview')
+            token=preview['confirmation_token']
+            lines=['Domain:']+[name[i:i+40] for i in range(0,len(name),40)]
+            lines+=['Phase: '+preview['phase'],'CGP state: '+preview['state'],
+                    'TLS: unverified','Pending journal: '+str(preview['pending_journal']),
+                    'Authorization recorded: '+str(preview['authorization_recorded']),
+                    'Confirmation token:',token[:32],token[32:],'',
+                    'CGP settings will remain unchanged.',
+                    'Subsequent certificate work may resume.']
+            if preview['authorization_recorded']: lines+=['Repeat the original acknowledgement reason.']
+            if not self.view(title,lines,allow_continue=True): return
+            reason=self.input_reason()
+            if reason is None: return
+            if not self.confirm('Acknowledge '+name+' / '+token[:12]+' (TLS unverified)'): return
+            self.execute(cmd+['--confirm-transaction',token,'--reason',reason],title+' — '+name)
+        except (ValueError,OSError,subprocess.TimeoutExpired,core.Error,curses.error):
+            self.view(title,['Acknowledgement preview unavailable'])
 
     def loop(self):
         self.refresh_data()
@@ -443,6 +561,7 @@ class Screen:
             elif k==curses.KEY_F6: self.logs()
             elif k==curses.KEY_F7: self.timer_menu()
             elif k==curses.KEY_F8: self.verify()
+            elif k==curses.KEY_F9: self.transaction_menu()
             elif k==curses.KEY_F1: self.view('Help',HELP)
             elif k in (ord('s'),ord('S')):
                 self.sort_mode=(self.sort_mode+1)%3
@@ -464,6 +583,9 @@ def entry():
         return 0
     except curses.error:
         print('Unable to initialize terminal; check TERM and terminal size',file=sys.stderr)
+        return 1
+    except (OSError,core.Error) as error:
+        print('Console unavailable: '+(str(error) if isinstance(error,core.Error) else type(error).__name__),file=sys.stderr)
         return 1
 
 if __name__=='__main__':

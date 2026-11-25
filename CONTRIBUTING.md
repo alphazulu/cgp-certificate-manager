@@ -1,0 +1,238 @@
+# Contributing
+
+Start with [ROADMAP.md](ROADMAP.md) and the current handoff in
+[DEVELOPMENT.md](DEVELOPMENT.md). They record the active scope, observed
+validation and work that remains unfinished. The development branch is not a
+production release. Merge, release publication and production validation each
+require explicit maintainer approval; a successful CI run does not grant it.
+
+For a potential vulnerability, follow [SECURITY.md](SECURITY.md) before opening
+an issue or pull request with technical details.
+
+## Resume an existing task
+
+From the repository root, inspect the checkout before editing:
+
+```sh
+git status --short
+git branch --show-current
+git rev-parse HEAD
+```
+
+Read the current pull request and checks for that exact revision. Preserve any
+existing work and reconcile it with the handoff. A historical green run does
+not validate a later commit.
+
+Keep the roadmap checkboxes and development handoff current in the same commit
+as substantive changes. Record what changed, the exact commands and observed
+results, the tested commit/CI run when available, unresolved limits and the next
+concrete step. Leave unexecuted checks explicitly pending. This makes a paused
+task resumable without relying on chat history.
+
+## Isolated test environments
+
+Use Linux, Python **3.12** with its `venv` module, **Node.js 24.22.3**, Bash, Git,
+`jq`, GNU coreutils (including `sha256sum`) and the OpenSSL command-line tools.
+Workflow fixtures execute the exact YAML shell blocks with fake external
+commands but real JSON/checksum validation. Node runs the exact Zabbix preprocessing scripts;
+its absence is a test failure, not a reason to skip the checks. The suite includes POSIX file/lock checks, subprocess recovery and local
+TLS tests. Run it as an ordinary development user, with synthetic fixtures and
+temporary state, rather than against an installed server.
+
+Create both environments from the repository root. The `.venv/` directory and
+`.coverage.*` files are ignored by Git. Activation is unnecessary because each
+command selects its interpreter explicitly.
+
+### Compatibility profile
+
+```sh
+python3.12 -m venv .venv/compat
+.venv/compat/bin/python -m pip install --upgrade pip==26.3
+.venv/compat/bin/python -m pip install -r requirements-test-compat.txt
+COVERAGE_FILE=.coverage.compat .venv/compat/bin/python -m coverage run --branch --source=cgp_cert_manager,repo_tools -m unittest discover -s tests -v
+COVERAGE_FILE=.coverage.compat .venv/compat/bin/python -m coverage report -m --fail-under=100
+```
+
+### Current dependency profile
+
+```sh
+python3.12 -m venv .venv/current
+.venv/current/bin/python -m pip install --upgrade pip==26.3
+.venv/current/bin/python -m pip install -r requirements-test-current.txt
+COVERAGE_FILE=.coverage.current .venv/current/bin/python -m coverage run --branch --source=cgp_cert_manager,repo_tools -m unittest discover -s tests -v
+COVERAGE_FILE=.coverage.current .venv/current/bin/python -m coverage report -m --fail-under=100
+```
+
+The compatibility requirements reproduce an older distribution generation for
+API testing; they are not production dependency pins. Keep production packages
+on maintained security updates. The current profile tests a separate dependency
+set. Both profiles must independently reach **100% measured statement and branch
+coverage** for both `cgp_cert_manager` and `repo_tools`. Do not combine their data, lower the gate or add artificial coverage
+exclusions to hide an untested path.
+
+Also run the repository checks:
+
+```sh
+.venv/current/bin/python -m compileall -q cgp_cert_manager repo_tools tests
+bash -n install.sh scripts/install-locked.sh tests/integration/installer.sh
+git diff --check
+```
+
+## Tests for a change
+
+Add unit tests with every new behavior or bug fix. Begin with the affected
+contract and its failure cases; assert observable outcomes, retained evidence
+and whether an external action occurred. A focused iteration can use an
+existing test file, for example:
+
+```sh
+.venv/current/bin/python -m unittest discover -s tests -p 'test_dnsauth.py' -v
+```
+
+Run the two complete coverage commands above before submitting the completed
+change. A focused test run is useful evidence for that path, but does not
+replace either complete gate.
+
+Preserve the contracts described in these documents:
+
+- [Private storage](docs/STORAGE.md): unsafe paths, metadata and credentials
+  must be refused before the protected operation; test the actual filesystem
+  checks rather than replacing them with a broad mock.
+- [Certificate transactions](docs/TRANSACTIONS.md): persist evidence before
+  remote writes, distinguish known snapshots from manual changes, retain
+  unresolved work and block subsequent mutations. Include failure injection
+  and fresh-process recovery when changing persistence or phase ordering.
+- [Operator resolution](docs/RESOLUTION.md): preview, exact confirmation and
+  durable audit have separate roles. Stale or interrupted decisions must not
+  become an automatic acknowledgement or a TLS success claim.
+- [Bootstrap readiness](docs/BOOTSTRAP.md): distinguish explicit and effective
+  settings, parse failures and missing fields. Force/retry options must not
+  bypass readiness, and diagnostic commands must retain their documented
+  read-only behavior.
+- [DNS and adaptive propagation](docs/DNS.md): test actual Certbot challenge
+  contracts, bounded DNS observations, uncertain provider replies, record
+  ownership, process lifetime and cleanup after interruption. Borrowed or
+  changed records must not be deleted as owned records.
+- [Local monitoring](docs/MONITORING.md): preserve unknown measurements, reject
+  unsafe local paths and incomplete discovery, and test publication failure
+  before and after atomic replacement. Monitoring must not query providers,
+  perform recovery or expose private source contents.
+- [Monitoring integrations](docs/MONITORING_INTEGRATIONS.md): exercise shipped
+  Prometheus expressions with real promtool and exact Zabbix JavaScript with
+  synthetic input. Assert missing, stale, future, disabled and cross-host cases;
+  an empty/disappearing series must not become a healthy zero or empty discovery.
+- [External monitoring](docs/EXTERNAL_MONITORING.md): test TLS and STARTTLS
+  against loopback servers with explicit trust/name failures, bounded replies
+  and worker deadlines. Test per-channel durable intent, uncertain delivery,
+  retry identity, recovery, configuration changes and secret-free output.
+  Read-only actions must not save state or send. Process-death tests must prove
+  inherited lock retention and the child's own deadline, including blocked
+  signals and low-numbered descriptors. Notification tests use local synthetic
+  receivers only; do not send to real recipients.
+- [Release preparation and security checks](docs/RELEASING.md): test immutable
+  source construction, exact tag/context validation, complete audit evidence,
+  native-analysis status and the actual workflow refusal paths. Missing evidence
+  must fail; tests must never create a real tag, attestation or release.
+- [Authenticated updates](docs/UPDATES.md): keep candidate files as data; test
+  exact approval binding, complete preimages, private journals and independent
+  recovery. Use fresh subprocesses for each rename boundary, lost systemd cache
+  and guarded-service failure. A remaining process/cgroup or unknown filesystem
+  state must prevent restoration. Test both pre-import and under-lock guards;
+  never use an installed application, real service or production signing key.
+
+Automated tests must not contact production CGP, Cloudflare or ACME services,
+use production credentials, or alter real DNS. Use synthetic domains, isolated
+temporary files and mocked remote boundaries; real loopback servers and locally
+generated certificates are appropriate for transport tests. Any external lab
+validation needs its own agreed scope and must remain separate from the
+automated suite. Coverage is execution evidence, not a security or correctness
+proof for every real deployment.
+
+## CI and installer integration
+
+The [workflow](.github/workflows/ci.yml) is configured for eleven jobs, including
+the three jobs in the reusable [security workflow](.github/workflows/security.yml):
+
+| Jobs | Scope |
+|---|---|
+| `tests (compat)` and `tests (current)` | Python 3.12, separate dependencies, strict 100% manager/tooling coverage and executed Zabbix preprocessing under pinned Node.js |
+| Four `installer` combinations | Ubuntu 24.04 and Debian 13, each upgrading source-pinned 2.0.1 and 2.1.0 baselines |
+| `monitoring assets` | Pinned promtool validates/evaluates alert rules and the actual dashboard expressions with synthetic timelines |
+| Two `dependency audit` profiles | Full resolved inventory, known-vulnerability lookup and tested current/compatibility policy; incomplete scans fail both |
+| `CodeQL Python` | Default Python security suite over manager/tooling, native analysis and a tested complete-report/no-findings gate |
+| `package` | Deterministic source archive, provenance and SHA-256; byte-for-byte reproduction after every preceding gate succeeds |
+
+The package job uploads a CI artifact; it does not publish a release. Action
+versions are pinned to full commit SHAs with version comments. Verify a changed
+pin against the upstream release, tag reference and action manifest.
+
+The separate [manual release workflow](.github/workflows/release.yml) is
+dispatched on an existing release tag. It validates the exact tag/commit and
+default-branch ancestry, calls this same CI, and then prepares provenance and
+an unpublished GitHub draft. See [RELEASING.md](docs/RELEASING.md) for the exact
+artifact, audit, permission and later publication contract. Do not dispatch it
+as part of ordinary development or substitute a release draft for real acceptance.
+
+The installer harness writes system paths and requires root. Run it only in
+the disposable container setup defined by the workflow, never directly on a
+development host or production server. It substitutes a mock `systemctl` to
+check command sequencing, failures, rollback, locking and evidence preservation.
+It does not boot systemd or prove real timer execution, service lifecycle or
+live CGP compatibility. Container success is not production qualification of a
+distribution. If Docker is unavailable locally, record that limit and inspect
+the exact revision's CI results before marking integration checks complete.
+The installed monitoring checks use the candidate's native interpreter/launcher,
+forbid external calls and compare private state before and after observation.
+Explicit export writes only the dedicated synthetic public metrics destination.
+The external-monitor checks validate the installed wrapper, optional configuration,
+both operation locks, timer sequencing and restoration of new files. The harness
+includes 36 unsafe-path/metadata refusals per combination. A separate guard
+refuses the monitor worker before process creation, because its intentionally
+minimal environment does not inherit the harness's Python networking hooks.
+The harness performs no external probe or actual notification delivery.
+It also checks the independent update runtime, its rollback/preservation, and
+three pending-marker forms (regular file, symlink and directory) that refuse
+the installer and normal managed launchers before application imports or writes.
+
+## Monitoring asset checks
+
+The JSON/YAML contract tests and exact JavaScript preprocessing tests run with
+the normal Python suite. They do not contact Zabbix, Grafana, node_exporter or a
+Prometheus server. Keep JavaScript coverage enforcement on the actual shipped
+script bodies; never weaken it with ignored ranges or a test-only replacement.
+
+For the additional PromQL checks, use the pinned **promtool 3.16.0** binary:
+
+```sh
+promtool check rules monitoring/prometheus/alerts.yml
+promtool test rules monitoring/prometheus/alerts.test.yml
+python3 tests/integration/check_monitoring_assets.py > /tmp/cgp-dashboard-tests.json
+promtool test rules /tmp/cgp-dashboard-tests.json
+```
+
+The helper reads the shipped Grafana expressions and supplies synthetic
+time-series inputs to native promtool tests. It does not interpret PromQL in
+Python. A failure in expression syntax, vector matching or expected samples
+must fail the job. The CI workflow downloads only the pinned official release,
+checks archive SHA-256
+`68727009472a2c02e1ff7f062fd5b3e637285bffc8fc2d340c76fb449d6e0f34`
+and extracts promtool. Do not commit the binary/archive or replace a failed
+engine test with a string-only assertion.
+
+If promtool cannot be obtained in a local workspace, record that limitation and
+inspect the exact revision's monitoring-assets CI job before marking those
+checks passed. Actual template/dashboard import, frontend rendering and server
+integration remain in the deferred acceptance session; asset validation is not
+evidence of a completed live deployment.
+
+## Pull request and handoff
+
+Explain the concrete problem, the resulting behavior, relevant tests and any
+remaining limitations. Link the plan item and update affected operational docs.
+Include observed test/coverage results and the relevant CI run; do not describe
+a configured but unexecuted job as passed.
+
+Use synthetic examples only. Do not commit production domains, configuration,
+credentials, logs, certificate private keys, backups, transaction journals or
+DNS receipts, and do not paste them into issues or PRs. Keep merge, release and
+production actions pending until the maintainer explicitly authorizes them.

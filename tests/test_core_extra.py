@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch, Mock
-from cgp_cert_manager import core as c, cli, localization, schedule
+from cgp_cert_manager import core as c, cli, localization, schedule, recovery
 from test_deployment import pem, block
 
 class CoreExtraTests(unittest.TestCase):
@@ -36,10 +36,23 @@ class CoreExtraTests(unittest.TestCase):
             response=opener.return_value.open.return_value.__enter__.return_value
             response.read.return_value=b'(example.com)'
             self.assertEqual(c.cli(cfg,'LISTDOMAINS'),'(example.com)')
+            response.read.assert_called_once_with(1024*1024+1)
             req=opener.return_value.open.call_args.args[0]
             self.assertEqual(req.data,b'command=LISTDOMAINS')
             self.assertEqual(req.get_header('Authorization'),'Basic '+base64.b64encode(b'user:dummy').decode())
         self.assertIsNotNone(c.opener())
+
+    def test_cgp_response_size_and_encoding_are_bounded(self):
+        cfg={'communigate':{'url':'http://127.0.0.1:8100/CLI/','username':'user','password':'dummy'}}
+        with patch.object(c,'opener') as opener:
+            response=opener.return_value.open.return_value.__enter__.return_value
+            response.read.return_value=b'a'*(1024*1024)
+            self.assertEqual(len(c.cli(cfg,'LISTDOMAINS')),1024*1024)
+            response.read.return_value=b'a'*(1024*1024+1)
+            with self.assertRaisesRegex(c.Error,'size limit'): c.cli(cfg,'LISTDOMAINS')
+            response.read.return_value=b'PRIVATE_SENTINEL\xff'
+            with self.assertRaisesRegex(c.Error,'response encoding') as caught: c.cli(cfg,'LISTDOMAINS')
+            self.assertNotIn('PRIVATE_SENTINEL',str(caught.exception))
 
     def test_invalid_array(self):
         with self.assertRaises(c.Error): c.array('bad')
@@ -49,11 +62,12 @@ class CoreExtraTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'token.ini'
             path.write_text('# comment\ndns_cloudflare_api_token = dummy\n')
+            path.chmod(0o600)
             self.assertEqual(c.token(path),'dummy')
             for success in (True,False):
                 with patch.object(c,'opener') as opener:
                     response=opener.return_value.open.return_value.__enter__.return_value
-                    response.read.return_value=json.dumps({'success':success,'result':[]})
+                    response.read.return_value=json.dumps({'success':success,'result':[]}).encode('utf-8')
                     if success:
                         self.assertEqual(c.cf(path,'zones',method='POST',params={'page':1},data={'x':1})['result'],[])
                         req=opener.return_value.open.call_args.args[0]
@@ -98,7 +112,7 @@ class CoreExtraTests(unittest.TestCase):
         self.assertEqual(info['expiry'],'2099-11-24T10:00:00+00:00')
 
     def test_current_installed_local(self):
-        with patch.object(c,'cli',return_value='SecureCertificate=[YQ==];'):
+        with patch.object(c,'cli',return_value='{SecureCertificate=[YQ==];}'):
             self.assertEqual(c.current({},'example.com'),{'SecureCertificate':'[YQ==]'})
         self.assertIsNone(c.installed_info({}))
         with patch.object(c,'run',return_value=b'pem'),patch.object(c,'cert_info',return_value={'days':10}) as info:
@@ -115,20 +129,23 @@ class CoreExtraTests(unittest.TestCase):
             self.assertEqual(c.expected_chain(d),[hashlib.sha256(x).hexdigest() for x in (b'leaf',b'ca')])
 
     def test_dns_preflight(self):
+        from cgp_cert_manager import dnschecks
         d={'names':['example.com','*.example.com']}
         z={'example.com':{'ns':['ns.example.net']}}
-        with patch.object(c,'run',side_effect=[b'NS.EXAMPLE.NET.\n',b'',b'']) as run:
+        with patch.object(dnschecks,'require_ready') as check:
             c.dns_preflight(d,z)
-            self.assertEqual(run.call_count,3)
-        with patch.object(c,'run',return_value=b'wrong.example.net.\n'):
+            check.assert_called_once_with(d,z,None)
+        with patch.object(dnschecks,'require_ready',side_effect=c.Error('DNS delegation mismatch')):
             with self.assertRaisesRegex(c.Error,'delegation mismatch'): c.dns_preflight(d,z)
 
     def test_single_account_issue(self):
         d={'cert_name':'example.com','names':['example.com']}
-        z={'example.com':{'credentials':'one.ini'}}
-        with patch.object(c,'local_info',return_value=None),patch.object(c,'dns_preflight') as pre,patch.object(c.subprocess,'run') as run:
+        with tempfile.TemporaryDirectory() as tmp, patch.object(c,'local_info',return_value=None),patch.object(c,'dns_preflight') as pre,patch.object(c.subprocess,'run') as run:
+            credentials=Path(tmp)/'one.ini'
+            credentials.write_text('dns_cloudflare_api_token = dummy\n'); credentials.chmod(0o600)
+            z={'example.com':{'credentials':str(credentials)}}
             c.issue({'email':'a@example.com'},d,z,argparse.Namespace(force_renew=False,dry_run=False))
-        pre.assert_called_once_with(d,z)
+        pre.assert_called_once_with(d,z,{'email':'a@example.com'})
         cmd=run.call_args.args[0]
         self.assertIn('--dns-cloudflare',cmd)
         self.assertIn('--keep-until-expiring',cmd)
@@ -185,22 +202,27 @@ class DeploymentExtraTests(unittest.TestCase):
         self.d={'cgp_domain':'example.com','cert_name':'example.com','names':['example.com']}
         stack.enter_context(patch.object(c,'LIVE',self.root))
         stack.enter_context(patch.object(c,'STATE',self.root))
-        self.info=stack.enter_context(patch.object(c,'local_info',return_value={'names':['example.com'],'days':80,'fingerprint':'fp'}))
+        self.info=stack.enter_context(patch.object(c,'cert_info',return_value={'names':['example.com'],'days':80,'fingerprint':'fp'}))
         self.run=stack.enter_context(patch.object(c,'run',side_effect=lambda *a,**kw:pem(b'key') if a[1]=='rsa' else b'pub'))
-        self.current=stack.enter_context(patch.object(c,'current',side_effect=[self.old,self.new]))
-        self.update=stack.enter_context(patch.object(c,'update'))
-        self.verify=stack.enter_context(patch.object(c,'verify_tls'))
+        self.actual=dict(self.old)
+        self.current=stack.enter_context(patch.object(c,'current',side_effect=lambda *_:dict(self.actual)))
+        stack.enter_context(patch.object(c,'cli',side_effect=lambda *_:'{'+''.join(k+'='+v+';' for k,v in self.actual.items())+'}'))
+        self.update=stack.enter_context(patch.object(c,'update',side_effect=lambda cfg,name,value:setattr(self,'actual',dict(value))))
+        self.verify=stack.enter_context(patch.object(recovery,'verify_snapshot'))
+        self.validate=stack.enter_context(patch.object(c,'validate_backup'))
+        stack.enter_context(patch.object(recovery,'server_identity',return_value='server'))
 
     def test_success_and_retention(self):
-        path=self.root/'backups'/'example.com'; path.mkdir(parents=True)
-        for i in range(6): (path/('2000%d.json'%i)).write_text('{}')
+        path=self.root/'backups'/'example.com'
+        path.parent.mkdir(mode=0o700); path.mkdir(mode=0o700)
+        for i in range(6): c.atomic(path/('2000%d.json'%i),{})
         self.assertEqual(c.deploy({},self.d),'installed')
         self.assertEqual(len(list(path.glob('*.json'))),5)
         self.update.assert_called_once_with({},'example.com',self.new)
-        self.verify.assert_called_once_with(self.d,'fp')
+        self.verify.assert_called_once_with(self.new,[{'host':'127.0.0.1','port':443,'sni':'example.com'}])
 
     def test_unchanged(self):
-        self.current.side_effect=[self.new]
+        self.actual=dict(self.new)
         self.assertEqual(c.deploy({},self.d),'unchanged')
         self.update.assert_not_called()
 
@@ -211,33 +233,44 @@ class DeploymentExtraTests(unittest.TestCase):
         self.update.assert_not_called()
 
     def test_bad_key(self):
-        self.run.side_effect=[b'ok',b'pub1',b'pub2']
-        with self.assertRaisesRegex(c.Error,'Key mismatch'): c.deploy({},self.d)
+        self.validate.side_effect=c.Error('Backup key mismatch')
+        with self.assertRaisesRegex(c.Error,'key mismatch'): c.deploy({},self.d)
         self.update.assert_not_called()
 
     def test_incomplete_previous_settings(self):
-        self.current.side_effect=[{}]
-        with self.assertRaisesRegex(c.Error,'Cannot back up'): c.deploy({},self.d)
+        self.actual={}
+        with self.assertRaisesRegex(c.Error,'bootstrap-check'): c.deploy({},self.d)
         self.update.assert_not_called()
+        self.run.assert_not_called()
 
     def test_update_error_but_readback_success(self):
-        self.update.side_effect=OSError()
+        def lost_reply(cfg,name,settings):
+            self.actual=dict(settings)
+            raise OSError()
+        self.update.side_effect=lost_reply
         self.assertEqual(c.deploy({},self.d),'installed')
 
     def test_readback_mismatch_recovery(self):
-        self.current.side_effect=[self.old,self.old,self.old]
+        self.update.side_effect=None
         with self.assertRaisesRegex(c.Error,'previous settings restored'): c.deploy({},self.d)
-        self.assertEqual(self.update.call_count,2)
+        self.assertEqual(self.update.call_count,1)
 
     def test_interrupt_recovery(self):
-        self.current.side_effect=[self.old,self.new,self.old]
-        self.verify.side_effect=KeyboardInterrupt()
+        self.verify.side_effect=[KeyboardInterrupt(),None]
         with self.assertRaisesRegex(c.Error,'previous settings restored'): c.deploy({},self.d)
         self.assertEqual(self.update.call_count,2)
 
     def test_recovery_failure(self):
-        self.current.side_effect=[self.old,self.old,self.new]
+        self.verify.side_effect=c.Error('TLS unavailable')
         with self.assertRaisesRegex(c.Error,'CRITICAL'): c.deploy({},self.d)
+
+    def test_leaf_snapshot_survives_lineage_change(self):
+        def read_and_change(pem_data):
+            (self.root/'example.com'/'cert.pem').write_bytes(pem(b'other leaf'))
+            return {'names':['example.com'],'days':80,'fingerprint':'fp'}
+        self.info.side_effect=read_and_change
+        self.assertEqual(c.deploy({},self.d),'installed')
+        self.assertEqual(self.actual['SecureCertificate'],self.new['SecureCertificate'])
 
 class SmallModuleTests(unittest.TestCase):
     def test_language(self):

@@ -1,0 +1,10 @@
+Metadata-Version: 2.1
+Name: cgp-certbot-dns
+Version: 2.2.0.dev16
+Summary: Supervised adaptive Cloudflare DNS authenticator for CGP Certificate Manager
+Requires-Python: >=3.9
+Requires-Dist: certbot>=2.9
+Requires-Dist: dnspython>=2.6.1,<3
+
+This distribution is shipped with CGP Certificate Manager and discovered by
+Certbot when the cgp-certbot wrapper places the application on sys.path.

@@ -1,0 +1,107 @@
+name: Security
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    # Monday 13:31 Asia/Vladivostok. Scheduled runs use the default branch.
+    - cron: '31 3 * * 1'
+permissions:
+  contents: read
+jobs:
+  dependencies:
+    name: dependency audit (${{ matrix.profile }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [compat, current]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Install separate scanner and audited environments
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          python -m venv "$RUNNER_TEMP/cgp-auditor"
+          "$RUNNER_TEMP/cgp-auditor/bin/python" -m pip install -r requirements-security.txt
+          python -m venv "$RUNNER_TEMP/cgp-audit-target"
+          "$RUNNER_TEMP/cgp-audit-target/bin/python" -m pip install --upgrade pip==26.3
+          "$RUNNER_TEMP/cgp-audit-target/bin/python" -m pip install -r "requirements-test-$PROFILE.txt"
+      - name: Audit the complete resolved inventory
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          report_dir="$RUNNER_TEMP/dependency-report"
+          mkdir -p "$report_dir"
+          site=$("$RUNNER_TEMP/cgp-audit-target/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+          inventory_status=0
+          "$RUNNER_TEMP/cgp-audit-target/bin/python" -m pip list --path "$site" --format=json \
+            > "$report_dir/inventory.json" 2> "$report_dir/inventory.log" || inventory_status=$?
+          printf '%s\n' "$inventory_status" > "$report_dir/inventory.exit"
+          scanner_status=0
+          "$RUNNER_TEMP/cgp-auditor/bin/python" -m pip_audit \
+            --path "$site" --strict --format json --aliases on --desc on \
+            --vulnerability-service pypi --progress-spinner off --timeout 30 \
+            --output "$report_dir/report.json" > "$report_dir/scanner.log" 2>&1 || scanner_status=$?
+          printf '%s\n' "$scanner_status" > "$report_dir/scanner.exit"
+          policy_status=0
+          python -m repo_tools.audit --profile "$PROFILE" \
+            --report "$report_dir/report.json" --inventory "$report_dir/inventory.json" \
+            --scanner-exit "$scanner_status" --inventory-exit "$inventory_status" \
+            --scanner-log "$report_dir/scanner.log" --inventory-log "$report_dir/inventory.log" \
+            > "$report_dir/summary.json" || policy_status=$?
+          cat "$report_dir/summary.json"
+          printf '### Dependency audit (%s)\n\n```json\n' "$PROFILE" >> "$GITHUB_STEP_SUMMARY"
+          cat "$report_dir/summary.json" >> "$GITHUB_STEP_SUMMARY"
+          printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
+          exit "$policy_status"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: dependency-audit-${{ matrix.profile }}
+          path: ${{ runner.temp }}/dependency-report/
+          if-no-files-found: error
+  codeql:
+    name: CodeQL Python
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          languages: python
+          build-mode: none
+          config-file: .github/codeql/config.yml
+      - uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        id: analyze
+        with:
+          output: ${{ runner.temp }}/codeql-reports
+          upload: always
+          wait-for-processing: true
+          category: /language:python
+      - name: Require a complete report without findings
+        if: always()
+        env:
+          ANALYSIS_STATUS: ${{ steps.analyze.outcome }}
+        run: |
+          policy_status=0
+          python3 -m repo_tools.codeql --reports "$RUNNER_TEMP/codeql-reports" \
+            --analysis-status "$ANALYSIS_STATUS" > "$RUNNER_TEMP/codeql-summary.json" || policy_status=$?
+          cat "$RUNNER_TEMP/codeql-summary.json"
+          exit "$policy_status"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: codeql-report
+          path: |
+            ${{ runner.temp }}/codeql-reports/
+            ${{ runner.temp }}/codeql-summary.json
+          if-no-files-found: error

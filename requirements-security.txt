@@ -1,0 +1,4 @@
+# Scanner tooling only; install in its own environment, outside audited profiles.
+# JSON schema and exit-code policy are validated by repo_tools.audit.
+pip==26.3
+pip-audit==2.10.1

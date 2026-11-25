@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "enabled": false,
+  "timeout_seconds": 15,
+  "warning_days": 21,
+  "critical_days": 7,
+  "max_age_seconds": 900,
+  "endpoints": [
+    {
+      "id": "https",
+      "enabled": true,
+      "host": "mail.example.com",
+      "port": 443,
+      "server_name": "mail.example.com",
+      "protocol": "tls"
+    },
+    {
+      "id": "smtp",
+      "enabled": true,
+      "host": "mail.example.com",
+      "port": 25,
+      "server_name": "mail.example.com",
+      "protocol": "smtp_starttls"
+    }
+  ],
+  "notifications": {
+    "enabled": false,
+    "timeout_seconds": 15,
+    "repeat_seconds": 86400,
+    "retry_seconds": 300,
+    "channels": [
+      {
+        "id": "email",
+        "kind": "smtp",
+        "enabled": false,
+        "host": "relay.example.com",
+        "port": 587,
+        "security": "starttls",
+        "from": "monitor@example.com",
+        "to": ["operator@example.com"],
+        "username": "monitor@example.com",
+        "password_file": "/etc/cgp-monitor/smtp-password"
+      },
+      {
+        "id": "webhook",
+        "kind": "webhook",
+        "enabled": false,
+        "url": "https://alerts.example.com/events",
+        "token_file": "/etc/cgp-monitor/webhook-token"
+      },
+      {
+        "id": "telegram",
+        "kind": "telegram",
+        "enabled": false,
+        "chat_id": "-1001234567890",
+        "token_file": "/etc/cgp-monitor/telegram-token"
+      },
+      {
+        "id": "mqtt",
+        "kind": "mqtt",
+        "enabled": false,
+        "host": "broker.example.com",
+        "port": 8883,
+        "security": "tls",
+        "topic": "cgp/monitor/events",
+        "username": "monitor",
+        "password_file": "/etc/cgp-monitor/mqtt-password"
+      }
+    ]
+  }
+}

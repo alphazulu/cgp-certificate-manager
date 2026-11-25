@@ -1,64 +1,147 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_call:
+    inputs:
+      release_tag:
+        description: Existing release tag to validate against the checked commit
+        required: false
+        type: string
+        default: ''
 permissions:
   contents: read
 jobs:
   tests:
+    name: tests (${{ matrix.dependencies }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        dependencies: [compat, current]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
-      - run: python -m compileall -q cgp_cert_manager tests
-      - run: python -m pip install coverage==7.10.7
-      - run: python -m coverage run --branch --source=cgp_cert_manager -m unittest discover -s tests -v
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.3'
+      - run: python -m pip install --upgrade pip==26.3
+      - run: python -m compileall -q cgp_cert_manager repo_tools tests
+      - run: python -m pip install -r requirements-test-${{ matrix.dependencies }}.txt
+      - run: python -m coverage run --branch --source=cgp_cert_manager,repo_tools -m unittest discover -s tests -v
       - run: python -m coverage report -m --fail-under=100
         if: always()
       - run: python -m coverage xml -o coverage.xml
         if: always()
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: coverage
+          name: coverage-${{ matrix.dependencies }}
           path: coverage.xml
-      - run: bash -n install.sh
+      - run: bash -n install.sh scripts/install-locked.sh tests/integration/installer.sh
   installer:
+    name: installer (${{ matrix.image }}, ${{ matrix.baseline.version }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['ubuntu:24.04', 'debian:13']
+        baseline:
+          - version: '2.0.1'
+            sha: e335c7cd3a836ae1fa8fdeeaac018f1b79bbaf53
+          - version: '2.1.0'
+            sha: fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - name: Export baseline 2.0.1 and candidate
+          persist-credentials: false
+      - name: Export baseline ${{ matrix.baseline.version }} and candidate
+        env:
+          BASELINE_SHA: ${{ matrix.baseline.sha }}
         run: |
           mkdir -p "$RUNNER_TEMP/cgp-baseline" "$RUNNER_TEMP/cgp-candidate"
-          git archive e335c7cd3a836ae1fa8fdeeaac018f1b79bbaf53 | tar -x -C "$RUNNER_TEMP/cgp-baseline"
+          git archive "$BASELINE_SHA" | tar -x -C "$RUNNER_TEMP/cgp-baseline"
           git archive HEAD | tar -x -C "$RUNNER_TEMP/cgp-candidate"
-      - name: Test installer in disposable Ubuntu container
+      - name: Test installer in disposable ${{ matrix.image }} container
+        env:
+          INSTALLER_IMAGE: ${{ matrix.image }}
         run: |
           docker run --rm \
             -v "$RUNNER_TEMP/cgp-baseline:/baseline:ro" \
             -v "$RUNNER_TEMP/cgp-candidate:/candidate:ro" \
-            ubuntu:24.04 bash -ec '
+            "$INSTALLER_IMAGE" bash -ec '
               apt-get update -qq
-              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 util-linux
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-dnspython python3-certbot util-linux
               cp -a /candidate /tmp/candidate-writable
               cp -a /baseline /tmp/baseline-writable
               bash /candidate/tests/integration/installer.sh
             '
-  package:
-    needs: [tests, installer]
+  monitoring-assets:
+    name: monitoring assets
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - name: Build release archive and SHA-256
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PyYAML==6.0.3
+      - name: Install pinned promtool
+        env:
+          PROMTOOL_VERSION: '3.16.0'
+          PROMTOOL_SHA256: 68727009472a2c02e1ff7f062fd5b3e637285bffc8fc2d340c76fb449d6e0f34
         run: |
-          version=$(python3 -c 'from cgp_cert_manager import __version__; print(__version__)')
-          name="cgp-certificate-manager-v$version"
-          mkdir -p dist
-          git archive --format=tar --prefix="$name/" HEAD | gzip -n > "dist/$name.tar.gz"
-          (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256" && sha256sum -c "$name.tar.gz.sha256")
-      - uses: actions/upload-artifact@v4
+          archive="$RUNNER_TEMP/prometheus-$PROMTOOL_VERSION.linux-amd64.tar.gz"
+          curl --fail --location --retry 3 --max-time 120 \
+            "https://github.com/prometheus/prometheus/releases/download/v$PROMTOOL_VERSION/prometheus-$PROMTOOL_VERSION.linux-amd64.tar.gz" \
+            --output "$archive"
+          printf '%s  %s\n' "$PROMTOOL_SHA256" "$archive" | sha256sum --check --strict -
+          tar -xzf "$archive" -C "$RUNNER_TEMP" "prometheus-$PROMTOOL_VERSION.linux-amd64/promtool"
+          printf '%s\n' "$RUNNER_TEMP/prometheus-$PROMTOOL_VERSION.linux-amd64" >> "$GITHUB_PATH"
+      - run: promtool --version
+      - name: Validate and exercise alert rules
+        run: |
+          promtool check rules monitoring/prometheus/alerts.yml
+          promtool test rules monitoring/prometheus/alerts.test.yml
+      - name: Validate and exercise dashboard queries
+        run: |
+          python tests/integration/check_monitoring_assets.py > "$RUNNER_TEMP/cgp-dashboard-tests.json"
+          promtool test rules "$RUNNER_TEMP/cgp-dashboard-tests.json"
+  security:
+    name: security
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/security.yml
+  package:
+    needs: [tests, installer, monitoring-assets, security]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build and reproduce the exact committed source archive
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          args=(--ref HEAD)
+          if [ -n "$RELEASE_TAG" ]; then
+            args+=(--release-tag "$RELEASE_TAG" --expected-commit "$GITHUB_SHA" --main-ref "refs/remotes/origin/$DEFAULT_BRANCH")
+          fi
+          python3 -m repo_tools.release "${args[@]}" --output "$RUNNER_TEMP/release-package"
+          python3 -m repo_tools.release "${args[@]}" --output "$RUNNER_TEMP/reproduced-package"
+          diff -qr "$RUNNER_TEMP/release-package" "$RUNNER_TEMP/reproduced-package"
+          (cd "$RUNNER_TEMP/release-package" && sha256sum --check --strict ./*.sha256)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-package
-          path: dist/
+          path: ${{ runner.temp }}/release-package/
+          if-no-files-found: error

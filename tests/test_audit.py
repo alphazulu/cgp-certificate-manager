@@ -59,7 +59,7 @@ class AuditTests(unittest.TestCase):
 
     def test_diagnostic_failure_does_not_notify_or_write(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(cli,'STATE',Path(tmp)), patch.object(cli,'zones',side_effect=OSError()), patch.object(cli,'notify') as notify, patch.object(cli,'atomic') as atomic:
-            args=argparse.Namespace(dry_run=False,status=True,plan=False,doctor=False,verify=False,verify_listeners=False,migrate=False,apply_schedule=False,discover_listeners=False,reset_backoff=False,repair_chain=False,list=False,history=False,backups=None,rollback=None,show_domains=False)
+            args=argparse.Namespace(dry_run=False,status=True,plan=False,doctor=False,verify=False,verify_listeners=False,migrate=False,apply_schedule=False,discover_listeners=False,reset_backoff=False,repair_chain=False,list=False,history=False,backups=None,rollback=None,show_domains=False,transactions=False,recover=False,acknowledge_restored=False,dns_cleanup=False)
             self.assertEqual(cli.locked_main(args,{}),1)
             notify.assert_not_called()
             atomic.assert_not_called()
@@ -67,6 +67,7 @@ class AuditTests(unittest.TestCase):
     def test_history_skips_nonobjects(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(core,'STATE',Path(tmp)):
             (Path(tmp)/'history.jsonl').write_text('null\n[]\n{"domain":"example.com","event":"ok"}\n')
+            (Path(tmp)/'history.jsonl').chmod(0o600)
             self.assertEqual(console.domain_history('example.com'),[' ok'])
 
     def test_verification_error_survives_missing_identity(self):
@@ -84,9 +85,12 @@ class AuditTests(unittest.TestCase):
 
     def test_issue_changed_san(self):
         d={'cert_name':'example.com','names':['example.com','alias.com']}
-        zones={'example.com':{'credentials':'one.ini'},'alias.com':{'credentials':'two.ini'}}
         args=argparse.Namespace(force_renew=False,dry_run=True)
-        with patch.object(core,'local_info',return_value={'names':['example.com']}),patch.object(core.subprocess,'run') as run:
+        with tempfile.TemporaryDirectory() as tmp, patch.object(core,'local_info',return_value={'names':['example.com']}),patch.object(core.subprocess,'run') as run:
+            paths=[Path(tmp)/name for name in ('one.ini','two.ini')]
+            for path in paths:
+                path.write_text('dns_cloudflare_api_token = dummy\n'); path.chmod(0o600)
+            zones={name:{'credentials':str(path)} for name,path in zip(('example.com','alias.com'),paths)}
             core.issue({'email':'admin@example.com','dns_preflight':False},d,zones,args)
         cmd=run.call_args.args[0]
         self.assertIn('--manual',cmd)
@@ -94,7 +98,8 @@ class AuditTests(unittest.TestCase):
         self.assertIn('--dry-run',cmd)
 
     def test_dns_preflight_conflict(self):
+        from cgp_cert_manager import dnschecks
         d={'names':['example.com']}
         z={'example.com':{'ns':['ns.example.net']}}
-        with patch.object(core,'run',side_effect=[b'ns.example.net.\n',b'challenge.example.net.\n']):
+        with patch.object(dnschecks,'require_ready',side_effect=core.Error('ACME CNAME requires manual configuration')):
             with self.assertRaisesRegex(core.Error,'CNAME'): core.dns_preflight(d,z)

@@ -1,0 +1,9 @@
+[Unit]
+Description=CGP external TLS monitoring schedule
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+RandomizedDelaySec=30
+Unit=cgp-monitor.service
+[Install]
+WantedBy=timers.target

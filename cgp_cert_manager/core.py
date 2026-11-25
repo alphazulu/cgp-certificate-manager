@@ -1,31 +1,33 @@
 import base64, csv, hashlib, ipaddress, json, logging, os, re, subprocess, tempfile, urllib.request, urllib.parse, time
 from pathlib import Path
 from datetime import datetime, timezone
+from urllib.error import HTTPError
 
 CONFIG = Path('/etc/cgp-letsencrypt/config.json')
 STATE = Path('/var/lib/cgp-letsencrypt')
 LIVE = Path('/etc/letsencrypt/live')
 LOG = logging.getLogger('cgp')
 FIELDS = ('PrivateSecureKey', 'SecureCertificate', 'CAChain', 'CertificateType')
+MAX_CF_RESPONSE = 1024 * 1024
 
 class Error(Exception): pass
+class CloudflareRejected(Error):
+    """The provider explicitly rejected a request without a result."""
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs): return None
 
 def opener(): return urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
 def atomic(path, data):
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    fd, tmp = tempfile.mkstemp(dir=path.parent)
-    try:
-        with os.fdopen(fd, 'w') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False); f.write('\n'); f.flush(); os.fsync(f.fileno())
-        os.replace(tmp, path)
-    finally:
-        if os.path.exists(tmp): os.unlink(tmp)
+    from . import storage
+    storage.atomic_json(path,data)
 
 def load(path, default=None):
-    if not path.exists() and default is not None: return default
-    return json.loads(path.read_text())
+    from . import storage
+    try: return json.loads(storage.read_text(path))
+    except FileNotFoundError:
+        if default is not None: return default
+        raise
 
 def dns_name(value):
     s = value.strip().rstrip('.').lower(); wild = s.startswith('*.'); s = s[2:] if wild else s
@@ -42,11 +44,15 @@ def identifier(s):
     return s
 
 def cli(cfg, command):
+    from .cgpdata import MAX_INPUT
     c=cfg['communigate']; url=c['url']
     if not re.fullmatch(r'http://127\.0\.0\.1:\d+/CLI/',url,re.I): raise Error('CGP URL must be loopback')
     auth=base64.b64encode((c['username']+':'+c['password']).encode()).decode()
     req=urllib.request.Request(url, data=urllib.parse.urlencode({'command':command}).encode(), headers={'Authorization':'Basic '+auth,'Content-Type':'application/x-www-form-urlencoded'})
-    with opener().open(req, timeout=60) as r: return r.read().decode('utf-8')
+    with opener().open(req, timeout=60) as r: data=r.read(MAX_INPUT+1)
+    if len(data)>MAX_INPUT: raise Error('CGP response exceeds size limit')
+    try: return data.decode('utf-8')
+    except UnicodeError: raise Error('Invalid CGP response encoding') from None
 
 def array(s):
     s=s.strip()
@@ -54,32 +60,67 @@ def array(s):
     return [v.strip() for v in next(csv.reader([s[1:-1].replace('\n',' ')],skipinitialspace=True)) if v.strip()]
 
 def token(path):
-    for line in Path(path).read_text().splitlines():
+    from . import storage
+    for line in storage.read_text(path).splitlines():
         k,_,v=line.partition('=')
         if k.strip()=='dns_cloudflare_api_token' and v.strip(): return v.strip()
     raise Error('Cloudflare token missing')
+
+def _cf_pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('Duplicate JSON property')
+        result[key] = value
+    return result
+
+def _cf_constant(value):
+    raise ValueError('Non-finite JSON value')
+
+def _cf_payload(response):
+    try:
+        data = response.read(MAX_CF_RESPONSE + 1)
+        if len(data) > MAX_CF_RESPONSE:
+            raise Error('Cloudflare response exceeds size limit')
+        result = json.loads(data.decode('utf-8'), object_pairs_hook=_cf_pairs,
+                            parse_constant=_cf_constant)
+    except (OSError, ValueError, RecursionError):
+        raise Error('Invalid Cloudflare response') from None
+    if not isinstance(result, dict):
+        raise Error('Invalid Cloudflare response')
+    return result
+
+def _cf_rejected(response):
+    errors = response.get('errors')
+    return (response.get('success') is False and response.get('result') is None
+            and isinstance(errors, list) and bool(errors)
+            and all(isinstance(item, dict) and type(item.get('code')) is int
+                    and isinstance(item.get('message'), str) for item in errors))
 
 def cf(path, endpoint, method='GET', params=None, data=None):
     url='https://api.cloudflare.com/client/v4/'+endpoint
     if params: url+='?'+urllib.parse.urlencode(params)
     req=urllib.request.Request(url, data=json.dumps(data).encode() if data is not None else None, method=method, headers={'Authorization':'Bearer '+token(path),'Content-Type':'application/json'})
-    with opener().open(req,timeout=40) as r: p=json.load(r)
-    if not p.get('success'): raise Error('Cloudflare API rejected request')
+    try:
+        with opener().open(req,timeout=40) as r: p=_cf_payload(r)
+    except HTTPError as error:
+        if error.code not in (400, 401, 403, 422):
+            raise
+        try:
+            p = _cf_payload(error)
+        finally:
+            error.close()
+        if _cf_rejected(p):
+            raise CloudflareRejected('Cloudflare API explicitly rejected request') from None
+        raise Error('Cloudflare API rejected request') from None
+    if _cf_rejected(p):
+        raise CloudflareRejected('Cloudflare API explicitly rejected request')
+    if p.get('success') is not True: raise Error('Cloudflare API rejected request')
     return p
 
 def zones(cfg):
-    out={}
-    accounts=cfg.get('cloudflare_accounts') or [{'credentials':cfg['cloudflare_credentials']}]
-    for a in accounts:
-        path=a['credentials']; page=1
-        while True:
-            p=cf(path,'zones',params={'status':'active','page':page,'per_page':50})
-            for z in p['result']:
-                n,e=dns_name(z['name'])
-                if n: out.setdefault(n,{'id':z['id'],'credentials':path,'ns':z.get('name_servers',[])})
-            if page>=p.get('result_info',{}).get('total_pages',1): break
-            page+=1
-    return out
+    from . import dnsproviders
+    return dnsproviders.get_provider(cfg,transport=cf).zones(cfg)
 
 def zone_for(name,z):
     n=name.removeprefix('*.'); return max((x for x in z if n==x or n.endswith('.'+x)),key=len,default=None)
@@ -87,6 +128,8 @@ def zone_for(name,z):
 def covered(n,w): return w.startswith('*.') and not n.startswith('*.') and n.endswith(w[1:]) and n.count('.')==w.count('.')
 
 def discover(cfg,z):
+    from . import dnsproviders
+    dnsproviders.get_provider(cfg)
     overrides={d['cgp_domain']:d for d in cfg.get('domains',[])}
     out=[]
     for name in sorted(set(array(cli(cfg,'LISTDOMAINS')))):
@@ -180,11 +223,9 @@ def certificate_settings_match(old, new):
 def payload(pem): return b''.join(x.strip() for x in pem.splitlines() if not x.startswith(b'-----')).decode('ascii')
 def fp(value): return hashlib.sha256(base64.b64decode(value,validate=True)).hexdigest()
 def fields(text):
-    out={}
-    for k in FIELDS:
-        m=re.search(r'(?m)(?<![\w])'+k+r'\s*=\s*(\[[A-Za-z0-9+/=\s]*\]|[A-Za-z][A-Za-z0-9_-]*|"[A-Za-z][A-Za-z0-9_-]*")\s*;',text)
-        if m: out[k]=re.sub(r'\s+','',m[1])
-    return out
+    from .bootstrap import certificate_fields
+    from .cgpdata import parse_dictionary
+    return certificate_fields(parse_dictionary(text))
 
 def current(cfg,name): return fields(cli(cfg,'GETDOMAINEFFECTIVESETTINGS '+identifier(name)))
 def current_fp(f): return fp(f['SecureCertificate'][1:-1]) if f.get('SecureCertificate','').startswith('[') and len(f['SecureCertificate'])>2 else None
@@ -209,35 +250,55 @@ def shrink_block(d,old,allow=False):
     missing=set(old['names'])-set(d['names']); unavailable=set(d['unavailable'])
     return sorted(n for n in missing if n in unavailable or any(covered(x,n) for x in unavailable) or any(covered(n,x) for x in unavailable))
 
-def dns_preflight(d,z):
-    # Compare public delegation against the Cloudflare zone metadata.
-    checked=set()
-    for n in d['names']:
-        zone=zone_for(n,z)
-        if zone not in checked:
-            expected={x.rstrip('.').lower() for x in z[zone]['ns']}
-            actual={x.rstrip('.').lower() for x in run('dig','+short','+time=4','+tries=2','NS',zone).decode().splitlines()}
-            if expected and actual!=expected: raise Error('DNS delegation mismatch: '+zone)
-            checked.add(zone)
-        challenge='_acme-challenge.'+n.removeprefix('*.')
-        if run('dig','+short','+time=4','+tries=2','CNAME',challenge).strip(): raise Error('ACME CNAME requires manual configuration: '+challenge)
+def dns_preflight(d,z,cfg=None):
+    from . import dnschecks
+    dnschecks.require_ready(d,z,cfg)
 
 def issue(cfg,d,z,args):
+    from . import dnsauth, dnsconfig, dnsproviders, storage
+    options=dnsconfig.validate(cfg)
+    provider=dnsproviders.get_provider(cfg)
+    sources=[z[zone_for(n,z)] for n in d['names']]
+    if any(source.get('provider','cloudflare')!=provider.name for source in sources):
+        raise Error('DNS zone provider mismatch')
+    paths={source['credentials'] for source in sources}
+    provider.require('owned_txt' if options['mode']=='adaptive' else
+                     'fixed_native' if len(paths)==1 else 'fixed_hooks')
+    for path in paths: storage.check_private_file(path)
+    if options['mode']=='fixed': dnsauth.assert_clear(cfg)
     local=local_info(d); changed=local is not None and set(local['names'])!=set(d['names'])
-    if cfg.get('dns_preflight',True): dns_preflight(d,z)
-    paths={z[zone_for(n,z)]['credentials'] for n in d['names']}
+    if options['preflight']: dns_preflight(d,z,cfg)
     cmd=['certbot','certonly','--non-interactive','--agree-tos','--email',cfg['email'],'--cert-name',d['cert_name'],'--key-type','rsa','--rsa-key-size','2048']
-    if len(paths)==1:
-        cmd+=['--dns-cloudflare','--dns-cloudflare-credentials',next(iter(paths)),'--dns-cloudflare-propagation-seconds',str(cfg.get('propagation_seconds',60))]
+    if options['mode']=='adaptive':
+        cmd+=['--authenticator','cgp-dns']
+    elif len(paths)==1:
+        cmd+=provider.native_arguments(next(iter(paths)),options['propagation_seconds'])
     else:
         cmd+=['--manual','--preferred-challenges','dns','--manual-auth-hook','/usr/local/sbin/cgp-letsencrypt --hook-auth','--manual-cleanup-hook','/usr/local/sbin/cgp-letsencrypt --hook-cleanup']
     cmd+=['--force-renewal' if changed or args.force_renew else '--keep-until-expiring']
     for n in d['names']: cmd+=['-d',n]
-    if args.dry_run: cmd+=['--dry-run']
-    subprocess.run(cmd,check=True,timeout=3600)
+    if args.dry_run: cmd+=['--dry-run','--server','https://acme-staging-v02.api.letsencrypt.org/directory']
+    if options['mode']=='adaptive':
+        from . import certbot_runner
+        certbot_runner.run(cmd,cfg,lock_fd=getattr(args,'operation_lock_fd',None))
+    else:
+        lock_fd=getattr(args,'operation_lock_fd',None)
+        subprocess.run(cmd,check=True,timeout=3600,pass_fds=() if lock_fd is None else (lock_fd,))
+
+def backup_files(name):
+    from . import storage
+    name=identifier(name)
+    if not storage.check_private_directory(STATE,missing_ok=True): return []
+    root=STATE/'backups'
+    if not storage.check_private_directory(root,missing_ok=True): return []
+    return sorted(storage.private_files(root/name),reverse=True)
 
 def backup(name,f):
-    p=STATE/'backups'/identifier(name)/(datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')+'.json'); atomic(p,f); return p
+    from . import storage
+    root=STATE/'backups'; directory=root/identifier(name)
+    for path in (STATE,root,directory): storage.ensure_private_directory(path)
+    backup_files(name)  # Validate retained copies before creating or deploying.
+    p=directory/(datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')+'.json'); atomic(p,f); return p
 
 def update(cfg,name,f):
     if set(f)!=set(FIELDS): raise Error('Incomplete CGP settings; refusing write')
@@ -294,31 +355,18 @@ def discover_listeners():
     return [{'port':p,'starttls':LISTENER_MODES[p]} for p in sorted(ports) if p in LISTENER_MODES]
 
 def deploy(cfg,d):
-    name=d['cgp_domain']; p=LIVE/d['cert_name']; cert=p/'cert.pem'; key=p/'privkey.pem'; chain=p/'chain.pem'
-    info=local_info(d)
+    from . import bootstrap, deployment
+    name=d['cgp_domain']
+    # Snapshot eligibility is checked again here, independently of CLI planning.
+    old=bootstrap.require_ready(cfg,name)
+    p=LIVE/d['cert_name']; cert=p/'cert.pem'; key=p/'privkey.pem'; chain=p/'chain.pem'
+    # Validate and install the same captured leaf, even if Certbot changes LIVE.
+    cert_pem=cert.read_bytes(); info=cert_info(cert_pem)
     if not info or set(info['names'])!=set(d['names']) or info['days']<1: raise Error('Local certificate SAN/expiry mismatch')
-    run('openssl','verify','-purpose','sslserver','-CAfile','/etc/ssl/certs/ca-certificates.crt','-untrusted',str(chain),str(cert))
-    if run('openssl','x509','-in',str(cert),'-pubkey','-noout')!=run('openssl','pkey','-in',str(key),'-pubout'): raise Error('Key mismatch')
     # CGP accepts concatenated DER in a single Base64 DataBlock.
-    new={'PrivateSecureKey':'['+payload(run('openssl','rsa','-in',str(key),'-traditional'))+']','SecureCertificate':'['+payload(cert.read_bytes())+']','CAChain':'['+chain_payload(chain.read_bytes())+']','CertificateType':'YES'}
-    old=current(cfg,name)
-    if certificate_settings_match(old,new): verify_tls(d,info['fingerprint']); return 'unchanged'
-    # A first installation with no readable old settings is not safely reversible.
-    if set(old)!=set(FIELDS): raise Error('Cannot back up all CGP certificate fields; refusing automatic update')
-    b=backup(name,old)
-    try:
-        try: update(cfg,name,new)
-        except Exception: LOG.warning('%s: update returned error; checking readback',name)
-        if not certificate_settings_match(current(cfg,name),new): raise Error('CGP readback mismatch')
-        verify_tls(d,info['fingerprint'])
-    except (Exception, KeyboardInterrupt):
-        try:
-            update(cfg,name,old)
-            if not same(current(cfg,name),old): raise Error('Rollback readback mismatch')
-        except Exception: raise Error('CRITICAL: rollback unverified; backup '+str(b)) from None
-        raise Error('Deployment failed; previous settings restored') from None
-    for stale in sorted(b.parent.glob('*.json'),reverse=True)[5:]: stale.unlink()
-    return 'installed'
+    # deployment.apply validates the captured key, leaf and chain together.
+    new={'PrivateSecureKey':'['+payload(run('openssl','rsa','-in',str(key),'-traditional'))+']','SecureCertificate':'['+payload(cert_pem)+']','CAChain':'['+chain_payload(chain.read_bytes())+']','CertificateType':'YES'}
+    return deployment.apply(cfg,name,old,new,tls_endpoints(d),deployment.snapshot_endpoints(d,old))
 
 def validate_backup(settings):
     """Reject incomplete or cryptographically invalid backup before any write."""
