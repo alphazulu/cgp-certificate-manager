@@ -7,7 +7,7 @@ PowerDNS Authoritative HTTP API. It does not establish DNS propagation, ACME
 readiness or permission to change TXT records.
 
 PowerDNS is **not an issuance provider** in this checkpoint. The supported
-`dns_provider` selectors remain `cloudflare` and `rfc2136`; selecting
+`dns_provider` selectors are `cloudflare`, `rfc2136` and `route53`; selecting
 `"powerdns"` for issuance is rejected. Existing Cloudflare and RFC2136
 configuration and receipts keep their meaning. No new dependency is required.
 

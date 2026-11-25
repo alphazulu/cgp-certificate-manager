@@ -6,7 +6,7 @@ Automatic Let's Encrypt certificate management for CommuniGate Pro on Linux usin
 
 [Русская документация](README.ru.md)
 
-This branch develops **2.2.0.dev15**. The stable production release is **2.1.0**.
+This branch develops **2.2.0.dev16**. The stable production release is **2.1.0**.
 See [ROADMAP.md](ROADMAP.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for completed work,
 test evidence and the next checkpoint. The development branch is not a release.
 Contributor commands and test boundaries are in [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -44,6 +44,13 @@ The new [RFC2136 provider](docs/RFC2136.md) is explicitly selected and adaptive-
 with configured zones, TSIG-authenticated TCP, exact TXT prerequisites and a
 persistent generation marker for replay protection. Existing Cloudflare settings
 and receipts keep their meaning. Real RFC2136/ACME acceptance remains deferred.
+
+The explicit [Route53 provider](docs/ROUTE53.md) supports adaptive DNS-01 in
+configured commercial-AWS public zones. Signed requests verify the expected
+account and zone; conditional DELETE/CREATE batches preserve foreign TXT and
+TTL, with persistent generation metadata and durable recovery. Credentials
+come only from the configured protected file. Public propagation is checked
+separately from API state; real AWS/ACME acceptance remains deferred.
 
 The separate [PowerDNS API check](docs/POWERDNS.md), `--powerdns-check`, validates
 configured server/zone identities through GET-only requests and reports API

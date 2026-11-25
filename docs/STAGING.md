@@ -23,6 +23,7 @@ DNS propagation, ACME acceptance, a running systemd timer or CGP field removal.
 | DNS and renewal | Disposable Linux VM, native Certbot, dedicated Cloudflare zone(s)/tokens, ACME staging account | Actual provider API, DNS evidence, challenge lifecycle, recovery and renewal migration |
 | RFC2136 DNS and renewal | Disposable authoritative primary and public test zone, dedicated TSIG key, native Certbot and ACME staging account | Signed query/update policy, exact RRset prerequisites, persistent metadata, replay/uncertainty recovery and public propagation |
 | PowerDNS API observation | Disposable Authoritative API or explicitly configured gateway, lab zone and key | Exact server/zone identity, verified transport and GET-only observation; no HTTP TXT issuance capability |
+| Route53 DNS and renewal | Dedicated commercial-AWS account/role and public lab hosted zone, explicit private credentials, native Certbot and ACME staging account | Signed account/zone binding, exact DELETE/CREATE transaction semantics, ownership/replay recovery, IAM and public propagation |
 | CGP deployment/bootstrap | Disposable CGP instance with its exact build recorded, synthetic domains/keys and test TLS clients | Field provenance, write/removal cascades, restoration, SNI/chain and real service behavior |
 | External TLS monitoring and delivery | Separate observer VM, allocated TLS/STARTTLS test endpoints and approved test-only SMTP/webhook receivers | Observer trust/network view, live systemd scheduling, receiver acknowledgements, retry/recovery and upgrade behavior |
 
@@ -182,6 +183,36 @@ PowerDNS HTTP writes remain unavailable. A later write track requires a proven
 ownership acquisition/cleanup mechanism and independent-writer tests before
 any real mutation acceptance can be defined. An existing RFC2136 setup on a
 PowerDNS server belongs to the separate signed-DNS track above.
+
+## Route53 provider acceptance — pending
+
+The [Route53 contract](ROUTE53.md), official signing vectors and synthetic
+transaction/TLS/process fixtures do not establish actual AWS service behavior.
+Use a dedicated commercial-AWS public lab hosted zone and explicitly approved
+credentials. Record the exact candidate, account/role scope, hosted-zone
+identity, configured delegation and IAM conditions privately. Keep actual
+credentials, account identifiers and raw receipt/API bodies out of publication.
+
+| Case | Required observation | Status |
+|---|---|---|
+| Signed STS and exact public hosted zone | Expected account, zone ID/name and nameservers match; wrong account/private zone refuses | Pending |
+| Exact DELETE plus CREATE at one name/type | Service accepts the complete batch; changed value or TTL causes all-or-none refusal | Pending |
+| Foreign, chunked and octal TXT | Raw foreign strings and TTL survive; borrowed challenge is never deleted | Pending |
+| Concurrent identical challenge or foreign update | No acquisition from a no-op or stale preimage; uncertain receipt stays pending | Pending |
+| Accepted PENDING state | API readback is distinguished from authoritative DNS visibility; ACME waits for public propagation | Pending |
+| Lost create or delete response | Restart reconciles the owned pair/generation without repeating an unknown mutation | Pending |
+| Replay after cleanup, including initially absent TXT | Retained next generation prevents the old accepted create from restoring its pair | Pending |
+| Temporary credentials and rotation | Same account/path snapshot is used per operation; changed account or expired token refuses safely | Pending |
+| IAM conditions and existing protections | Only allowed challenge names/TXT/CREATE/DELETE succeed; no UPSERT or protection changes | Pending |
+| Listing shapes and quotas | Supported simple target and later-name neighbors work; policies/ambiguous evidence and full batches refuse | Pending |
+| Public delegation changes and interrupted renewal | Target-bound API evidence never substitutes for public authority/propagation; receipts remain recoverable | Pending |
+
+Keep the generation TXT after cleanup. Removing or rolling back reserved
+metadata invalidates replay assumptions. Cleanup completion proves current
+API state, not immediate disappearance from DNS caches. Record external cases
+that cannot be induced as not exercised; synthetic coverage is separate
+evidence. Finish receipts under their original provider/account/zone/path
+configuration before switching targets or migrating renewal settings.
 
 ## Renewal migration and scheduling
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.0.dev16 — unreleased
+
+- Add an explicit adaptive Route53 provider for configured public hosted zones in commercial AWS. Bind schema-2 receipts to the fixed protocol, expected account, hosted zone and credential path, with a nonce record reference and unchanged public status fields.
+- Validate bounded private AWS credentials without environment/profile/metadata discovery. Snapshot one credential set for signed STS identity validation and associated Route53 requests. Add a narrow standard-library SigV4 transport with fixed endpoints, verified TLS, bounded HTTP/XML, and no proxy, redirect or retry.
+- Acquire and clean up TXT through exact-preimage DELETE plus CREATE batches, preserving foreign raw values and TTL. Retain and rotate one generation marker to prevent cleanup restoring an earlier accepted preimage. Decode AWS octal TXT escapes for borrowed values; require canonical owned evidence and safe quota headroom.
+- Preserve intent through lost responses and all remote errors, require mutation readback, and retire created absence only with generation evidence in the verified original account/zone. Treat API state as control-plane evidence; keep public preflight and adaptive propagation before ACME.
+- Add configuration, independent signing-vector, HTTP/TLS, ownership/race, installer, receipt and fresh-process recovery tests alongside the implementation. Keep both complete 100% coverage gates and all native CI checks; exact observations are recorded in DEVELOPMENT.md and ROADMAP.md.
+- Document configuration, constrained IAM examples, persistent metadata, conservative supported shapes and deferred external acceptance. PowerDNS HTTP writes remain pending their separate ownership contract. Real AWS/provider/ACME/VM/server acceptance, release and production deployment remain deferred.
+
 ## 2.2.0.dev15 — unreleased
 
 - Add an explicit read-only `--powerdns-check` command with protected configuration and API-key parsing, exact server/zone identity checks, bounded GET-only HTTP responses and secret-safe reports. Keep it independent of manager state, CGP discovery, Certbot and the issuing provider selector.

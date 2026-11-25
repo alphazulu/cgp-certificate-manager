@@ -124,10 +124,10 @@ and the stateless probe is not serialized against application replacement.
 - **DNS and ACME:** issuance relies on the selected DNS provider, the CA and public DNS.
   Preflight uses authenticated HTTPS resolver views; DNSSEC evidence is a
   resolver assertion, not local DNSSEC validation. A successful observation does
-  not prove global propagation. Provider read-then-delete is not an atomic
-  compare-and-swap. See [DNS trust, ownership and cleanup](docs/DNS.md).
-- **DNS provider binding:** Cloudflare remains the default; RFC2136 is an
-  explicit adaptive-only selection. Missing selection and legacy schema 1
+  not prove global propagation. Cloudflare read-then-delete does not provide
+  an atomic compare-and-swap. See [DNS trust, ownership and cleanup](docs/DNS.md).
+- **DNS provider binding:** Cloudflare remains the default; RFC2136 and Route53
+  are explicit adaptive-only selections. Missing selection and legacy schema 1
   always mean Cloudflare. Schema 2 names the provider; each complete ledger
   is checked before cleanup. RFC zone IDs additionally bind primary IP/port,
   zone, key identity and credential path, preventing redirected cleanup after
@@ -143,6 +143,18 @@ and the stateless probe is not serialized against application replacement.
   encrypt DNS traffic. Raw foreign TXT is preserved, but TTL-only concurrency
   is outside prerequisite equality. Real server/ACME acceptance is deferred.
   See [RFC2136 ownership and limits](docs/RFC2136.md).
+- **Route53 updates:** require a protected explicit credential snapshot, signed
+  STS verification of the configured account, and exact public hosted-zone/NS
+  identity through fixed commercial-AWS HTTPS endpoints. Exact old-set DELETE
+  plus replacement CREATE preserves foreign raw TXT and TTL; ownership pairs
+  and a retained rotating generation prevent restoration of old preimages.
+  All remote errors retain uncertainty. Strict HTTP/XML limits, verified TLS,
+  fixed errors and no proxy/redirect/retry bound the client. No environment,
+  profile, metadata or automatic role credentials are used. AWS's transactional
+  exact-delete and current control-plane listing semantics remain trusted;
+  API readback does not prove public propagation. Reserved generation metadata
+  must not be removed or rolled back. Real AWS/ACME acceptance remains deferred.
+  See [Route53 ownership and limits](docs/ROUTE53.md).
 - **PowerDNS observation:** `--powerdns-check` uses only GET requests to explicit
   configured origins and server/zone identities. It checks private keys, verifies
   HTTPS or restricts HTTP to literal loopback, and refuses redirects, implicit

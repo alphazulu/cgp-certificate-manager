@@ -2,9 +2,11 @@
 
 The interface introduced in checkpoint 16 preserves Cloudflare compatibility.
 Checkpoint 17 adds the explicitly selected [RFC2136 adaptive provider](RFC2136.md).
-Checkpoint 18 (`2.2.0.dev15`, unreleased) adds a separate [PowerDNS API
+Checkpoint 18 adds a separate [PowerDNS API
 observation](POWERDNS.md), without advertising an issuing capability.
-Cloudflare remains the default; PowerDNS HTTP writes, Route53, acme-dns and
+Checkpoint 19 (`2.2.0.dev16`, unreleased) adds the explicit
+[Route53 adaptive provider](ROUTE53.md).
+Cloudflare remains the default; PowerDNS HTTP writes, acme-dns and
 another manual workflow remain separate work.
 Stable production is `2.1.0`; real provider acceptance remains deferred.
 
@@ -36,6 +38,10 @@ discovery, new authentication or adaptive receipt cleanup.
 
 RFC2136 uses strict `rfc2136.zones` entries for primary, key, private secret path
 and public nameservers. See its [configuration and ownership guide](RFC2136.md).
+Route53 uses strict `route53.zones` entries for zone, hosted-zone ID, expected
+AWS account, protected credential path and public nameservers. Its fixed
+commercial endpoints and signed STS identity check have no implicit credential
+sources. See [Route53 configuration and ownership](ROUTE53.md).
 The wizard remains a Cloudflare configuration editor. It refuses other provider
 editing before opening the menu or staging token files. It still permits
 editing invalid propagation settings. No installer, read-only status operation
@@ -62,14 +68,15 @@ Historical public discovery names such as `cloudflare_available` and
 `cloudflare_zone_unavailable` are retained for schema compatibility; they
 represent availability in the selected provider inventory.
 
-Cloudflare advertises all four capabilities; RFC2136 advertises only
-`zone_discovery` (explicit configured inventory) and `owned_txt`. RFC2136 fixed
-mode is rejected by shared configuration validation; it uses the existing
-supervised adaptive authenticator and propagation checks.
+Cloudflare advertises all four capabilities; RFC2136 and Route53 advertise only
+`zone_discovery` (explicit configured inventory) and `owned_txt`. Their fixed
+modes are rejected by shared configuration validation; both use the existing
+supervised adaptive authenticator and public propagation checks.
 
 `core.zones()` remains a compatibility entry point. Cloudflare's transport is
 `core.cf`, resolved at call time or injected by its caller. The RFC adapter uses
-signed DNS TCP and never receives that HTTP transport. Each adapter owns wire
+signed DNS TCP; Route53 uses its fixed signed HTTPS client. Neither receives
+the Cloudflare HTTP transport. Each adapter owns wire
 payloads, identities, matching and response interpretation. `dnsauth` retains
 the durable state machine and filesystem operations. Its pure
 `validate_binding(record)` hook checks provider-specific configuration identity
@@ -97,11 +104,11 @@ A mismatch cannot redirect an old receipt to a newly selected backend. Public
 status keeps exactly `id`, `name`, `phase`, `owned` and `zone`; it does not read
 credential contents or rewrite receipts.
 
-The credential binding does not hash token bytes or record an inferred remote
-account identity. A token can rotate at the same configured path. The current
-token must still access the saved zone, and every required remote record and
-ownership check must pass. Removing a receipt's path from the active accounts
-does not silently transfer its ownership to another credential.
+The credential binding does not hash secret bytes. Keys can rotate at the same
+configured path, but every target and ownership check still applies. Cloudflare
+does not infer a remote account identity; Route53 includes the explicitly
+configured account and verifies it through STS. Removing a receipt's path from
+the active configuration does not transfer ownership to another credential.
 
 ## Cloudflare owned TXT evidence
 
@@ -132,7 +139,7 @@ provider-side compare-and-swap or prevent a concurrent administrator from
 changing a record between observations. See [DNS ownership and process
 lifetime](DNS.md) for supervision, propagation and recovery limits.
 
-## RFC2136 ownership and further backends
+## RFC2136 and Route53 ownership
 
 RFC2136 schema-2 zone IDs bind the configured zone, primary endpoint, key
 identity and credential path. Its record reference is an ownership nonce,
@@ -143,11 +150,25 @@ protocol is respected. Remote errors retain uncertainty; absence retirement
 also requires an authenticated prerequisite-only update in the original zone.
 See [RFC2136.md](RFC2136.md) for complete operational limits and examples.
 
+Route53 schema-2 zone IDs bind the fixed commercial-AWS protocol, expected
+account, hosted-zone ID/name and credential path. The record reference is an
+ownership nonce. Its exact old-set DELETE and replacement CREATE form one
+transactional batch; the raw foreign TXT strings and TTL are preserved. A
+retained rotating generation prevents restoration of an earlier preimage.
+Lost responses and all remote rejections remain uncertain; created absence
+requires generation evidence in the verified original account and zone.
+Targeted API listing observes control-plane state, including pending changes;
+public preflight and propagation remain separate. It does not use RFC2136
+delegation prerequisites. See [ROUTE53.md](ROUTE53.md) for supported simple
+RRsets, octal TXT parsing, quotas, persistent metadata and transport limits.
+
+## Further backends
+
 Further backends must define their own credential/zone identity, supported
 routes and durable ownership/recovery evidence. An adapter must not claim
 `owned_txt` merely because it can send an update or delete a TXT value.
-Cloudflare record IDs/comments and RFC2136 conditional updates are specific
-contracts and cannot be assumed for another API.
+Cloudflare record IDs/comments, RFC2136 prerequisites and Route53 exact-delete
+batches are specific contracts and cannot be assumed for another API.
 
 PowerDNS `EXTEND` and `PRUNE` operate on individual values, but cannot by
 themselves distinguish a newly acquired challenge from an identical value

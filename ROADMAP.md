@@ -26,7 +26,25 @@
 - [x] Implement operator-assisted resolution: exact-preview confirmation, private authorization/completion evidence, incomplete-decision guard and explicit retry without claiming TLS success. See docs/RESOLUTION.md and checkpoint 5 evidence below.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 18 (`2.2.0.dev15`) implements a separate read-only PowerDNS API
+Checkpoint 19 (`2.2.0.dev16`) implements the explicit adaptive Route53 provider
+for configured commercial-AWS public hosted zones. Protected bounded credentials
+and fixed SigV4 HTTPS verify the expected account and exact zone. Conditional
+old-set DELETE plus replacement CREATE preserves foreign raw TXT and TTL;
+nonce ownership and a retained rotating generation support durable recovery
+without restoring an accepted old preimage. Unknown mutations remain pending;
+API readback is distinguished from public preflight/propagation. Independent
+signing vectors, TLS, race, receipt and fresh-process tests accompany the code.
+Both complete local profiles pass **1711 tests / 9009 statements / 2988 branches
+/ 100%**, with **107 additional tests** and zero missing/partial/excluded paths.
+Compilation, shell/workflow, documentation, examples and version checks pass.
+Native CI for this implementation is pending publication and observation;
+earlier checkpoint runs do not validate this revision.
+See [ROUTE53.md](docs/ROUTE53.md), DEVELOPMENT.md and the deferred staging plan.
+Next independent provider scope is acme-dns, followed by the manual workflow;
+PowerDNS HTTP writes retain their separate enforced-ownership prerequisite.
+Real AWS/provider/ACME/VM/server/signing acceptance remains deferred.
+
+Previous checkpoint 18 (`2.2.0.dev15`) implements a separate read-only PowerDNS API
 observation, `--powerdns-check [--json]`. Pure explicit target identities,
 protected bounded API keys, verified HTTPS/literal-loopback HTTP, GET-only exact
 server/zone checks and fixed public reports run before manager state/CGP/Certbot
@@ -332,7 +350,7 @@ passed tests, both installer baselines and package. Each installer job passed
 18 new unsafe-path refusal cases and preserved pending journals. This follow-up
 documentation commit records the observed result; inspect current-head checks
 when resuming. See DEVELOPMENT.md for exact next steps and remaining limits.
-Operator-assisted resolution was completed in checkpoint 5; checkpoint 18 is active above.
+Operator-assisted resolution was completed in checkpoint 5; checkpoint 19 is active above.
 This remains a development checkpoint, not a production release.
 
 ## 2.3 — Monitoring
@@ -356,7 +374,8 @@ This remains a development checkpoint, not a production release.
 - [x] RFC2136 adaptive provider with target-bound receipts, signed TCP, conditional TXT ownership/recovery and isolated tests (checkpoint 17; both full local 100% gates and all eleven implementation CI jobs passed, evidence above).
 - [x] PowerDNS explicit target/key contract and separate GET-only API observation, with isolated HTTP/TLS and refusal tests (checkpoint 18; both full local 100% gates and all eleven implementation CI jobs passed, evidence above).
 - [ ] PowerDNS HTTP TXT ownership and cleanup: require an enforced acquisition/conditional-cleanup mechanism; EXTEND/PRUNE plus an RRset marker does not meet the contract (see docs/POWERDNS.md).
-- [ ] Route53, acme-dns and manual workflow, each with explicit capability and credential boundaries. Route53 is the next independent scope.
+- [x] Route53 adaptive provider with explicit account/zone credentials, signed API, conditional TXT ownership and recovery (checkpoint 19; both full local 100% gates passed, native CI pending above).
+- [ ] acme-dns and manual workflow, each with explicit capability, credential and recovery boundaries. acme-dns is the next independent scope.
 - [ ] Real provider acceptance in the later separately scoped test session.
 
 ## 3.0 — Multi-server administration

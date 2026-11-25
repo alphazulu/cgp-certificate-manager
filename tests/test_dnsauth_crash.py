@@ -1,8 +1,9 @@
 """Real process death leaves durable DNS ownership evidence for a fresh process.
 
 The provider boundaries use private, fsynced JSON backends. RFC2136 messages
-also pass through real TSIG wire parsing. No external DNS, network, Certbot,
-system configuration or real challenge credentials are accessed.
+also pass through real TSIG wire parsing, and Route53 uses an independent
+atomic control-plane fixture. No external DNS, network, Certbot, system
+configuration or real challenge credentials are accessed.
 """
 
 import base64
@@ -353,3 +354,212 @@ class RFC2136CrashTests(unittest.TestCase):
         self.assertEqual(self.remote()["mutations"], 0)
         self.assertEqual(self.remote()["attempts"], 1)
         self.assertEqual(self.only_receipt()["phase"], "intent")
+
+
+ROUTE53_CHILD = r'''
+import json
+import os
+from pathlib import Path
+import sys
+
+from cgp_cert_manager import core, dnsauth, route53, storage
+from route53_fixture import FakeRoute53
+
+root = Path(sys.argv[1])
+action, checkpoint = sys.argv[2:4]
+core.STATE = root / "state"
+cfg = json.loads(storage.read_text(root / "config.json"))
+backend = root / "route53-remote.json"
+saved = json.loads(storage.read_text(backend))
+initial_requests = saved["requests"]
+service = FakeRoute53()
+service.values, service.ttl = tuple(saved["values"]), saved["ttl"]
+
+def persist():
+    saved["requests"] = initial_requests + len(service.requests)
+    saved["values"], saved["ttl"] = list(service.values), service.ttl
+    storage.atomic_json(backend, saved)
+
+def before(name, ttl, old, new):
+    saved["attempts"] += 1
+    persist()
+    if checkpoint == "create_not_delivered":
+        os._exit(73)
+
+def after(name, ttl, old, new):
+    saved["mutations"] += 1
+    saved["accepted"].append({"name": name, "ttl": ttl, "before": list(old), "after": list(new)})
+    persist()
+    if checkpoint in ("create_persisted", "delete_persisted"):
+        os._exit(73)
+
+def response(operation, result):
+    persist()
+    return result
+
+service.before_change = before
+service.after_change = after
+service.transform = response
+route53.route53_api.Client = service
+try:
+    if action == "status":
+        print(json.dumps(dnsauth.status(cfg), sort_keys=True))
+    elif action == "guard":
+        dnsauth.assert_clear(cfg)
+    elif action == "replay_first":
+        try:
+            service.apply(**saved["accepted"][0])
+        except RuntimeError:
+            print("Old Route53 change refused")
+            sys.exit(17)
+    else:
+        with storage.operation_lock(core.STATE):
+            dnsauth.cleanup_pending(cfg)
+            if action == "create":
+                dnsauth.Session(cfg).create("example.com", "A" * 43, core.zones(cfg))
+except core.Error as error:
+    print(str(error))
+    sys.exit(17)
+'''
+
+
+class Route53CrashTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.backend = self.root / "route53-remote.json"
+        self.key = self.root / "aws.json"
+        storage.atomic_json(self.key, {"access_key_id": "AKIA123456789EXAMPLE1", "secret_access_key": "S" * 40})
+        self.cfg = {"dns_provider": "route53", "dns_propagation": {"mode": "adaptive"},
+                    "communigate": {"url": "http://127.0.0.1:106/CLI/"},
+                    "route53": {"zones": [{"zone": "example.com", "hosted_zone_id": "ZEXAMPLECOM",
+                        "account_id": "123456789012", "credentials": str(self.key),
+                        "nameservers": ["ns1.example.com"]}]}}
+        storage.atomic_json(self.root / "config.json", self.cfg)
+        self.foreign = '"operator" "-owned\\344"'
+        storage.atomic_json(self.backend, {"requests": 0, "attempts": 0, "mutations": 0,
+                                         "accepted": [], "ttl": 321, "values": [self.foreign]})
+
+    def child(self, action, checkpoint="none", expected=0):
+        tests = Path(__file__).resolve().parent
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join((str(tests.parent), str(tests))))
+        result = subprocess.run([sys.executable, "-c", ROUTE53_CHILD, str(self.root), action, checkpoint],
+                                env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+        for secret in ("A" * 43, "S" * 40, "AKIA123456789EXAMPLE1", str(self.key)):
+            self.assertNotIn(secret, result.stdout + result.stderr)
+        return result
+
+    def remote(self):
+        return json.loads(storage.read_text(self.backend))
+
+    def receipts(self):
+        return [json.loads(storage.read_text(path))
+                for path in (self.root / "state" / "dns-challenges").glob("*.json")]
+
+    def only_receipt(self):
+        receipts = self.receipts()
+        self.assertEqual(len(receipts), 1)
+        return receipts[0]
+
+    def assert_cleaned(self, foreign=True):
+        remote = self.remote()
+        self.assertEqual(len(remote["values"]), 2 if foreign else 1)
+        if foreign:
+            self.assertIn(self.foreign, remote["values"])
+        self.assertEqual(sum(value.startswith('"cgp-certificate-manager:generation:')
+                             for value in remote["values"]), 1)
+        self.assertEqual(remote["ttl"], 321 if foreign else 120)
+
+    def test_death_after_create_recovers_pair_without_change_id_and_rejects_later_replay(self):
+        self.child("create", "create_persisted", expected=73)
+        receipt = self.only_receipt()
+        self.assertEqual((receipt["schema"], receipt["provider"], receipt["phase"]), (2, "route53", "intent"))
+        self.assertIsNone(receipt["record"])
+        self.assertEqual(self.remote()["mutations"], 1)
+        self.child("cleanup")
+        self.assert_cleaned()
+        self.assertEqual(self.remote()["mutations"], 2)
+        self.assertEqual(self.receipts(), [])
+        self.assertEqual(json.loads(self.child("status").stdout), [])
+        before = self.remote()
+        self.child("replay_first", expected=17)
+        self.assertEqual(self.remote()["values"], before["values"])
+        self.assertEqual(self.remote()["mutations"], before["mutations"])
+
+    def test_death_after_delete_confirms_current_absence_without_another_change(self):
+        self.child("create")
+        self.child("cleanup", "delete_persisted", expected=73)
+        self.assertEqual(self.only_receipt()["phase"], "created")
+        self.assert_cleaned()
+        before = self.remote()
+        self.child("cleanup")
+        self.assertEqual(self.remote()["values"], before["values"])
+        self.assertEqual(self.remote()["mutations"], before["mutations"])
+        self.assertEqual(self.remote()["attempts"], before["attempts"])
+        self.assertEqual(self.receipts(), [])
+
+    def test_uncertain_create_without_effect_stays_pending_and_is_never_retried(self):
+        self.child("create", "create_not_delivered", expected=73)
+        receipt = self.only_receipt()
+        self.assertEqual(receipt["phase"], "intent")
+        self.child("cleanup", expected=17)
+        self.child("create", expected=17)
+        before = self.remote()
+        self.child("guard", expected=17)
+        self.assertEqual(self.remote(), before)
+        self.assertEqual(self.remote()["mutations"], 0)
+        self.assertEqual(self.remote()["attempts"], 1)
+        self.assertEqual(self.only_receipt(), receipt)
+        self.assertEqual(self.remote()["values"], [self.foreign])
+
+    def test_changed_owner_marker_is_retained_after_restart_and_blocks_issuance(self):
+        self.child("create")
+        receipt = self.only_receipt()
+        changed = self.remote()
+        changed["values"] = [value for value in changed["values"]
+                             if not value.startswith('"cgp-certificate-manager:owner:')]
+        storage.atomic_json(self.backend, changed)
+        self.child("cleanup", expected=17)
+        self.child("create", expected=17)
+        self.assertEqual(self.remote()["values"], changed["values"])
+        self.assertEqual(self.remote()["mutations"], 1)
+        self.assertEqual(self.remote()["attempts"], 1)
+        self.assertEqual(self.only_receipt(), receipt)
+
+    def test_changed_target_identity_refuses_before_any_remote_request(self):
+        self.child("create")
+        receipt, before = self.only_receipt(), self.remote()
+        self.cfg["route53"]["zones"][0]["account_id"] = "000000000001"
+        storage.atomic_json(self.root / "config.json", self.cfg)
+        self.child("status", expected=17)
+        self.child("cleanup", expected=17)
+        self.child("create", expected=17)
+        self.assertEqual(self.remote(), before)
+        self.assertEqual(self.only_receipt(), receipt)
+
+    def test_borrowed_foreign_value_survives_cleanup_after_restart_without_remote_calls(self):
+        original = self.remote()
+        original["values"].append('"\\101' + "A" * 19 + '" "' + "A" * 23 + '"')
+        storage.atomic_json(self.backend, original)
+        self.child("create")
+        self.assertEqual(self.only_receipt()["phase"], "borrowed")
+        before = self.remote()
+        self.child("cleanup")
+        self.assertEqual(self.remote(), before)
+        self.assertEqual(self.remote()["values"], original["values"])
+        self.assertEqual(self.remote()["mutations"], 0)
+        self.assertEqual(self.receipts(), [])
+
+    def test_retained_generation_prevents_empty_preimage_create_replay_after_restart(self):
+        original = self.remote()
+        original["values"] = []
+        storage.atomic_json(self.backend, original)
+        self.child("create")
+        self.child("cleanup")
+        self.assert_cleaned(foreign=False)
+        before = self.remote()
+        self.assertEqual(before["accepted"][0]["before"], [])
+        self.child("replay_first", expected=17)
+        self.assertEqual(self.remote()["values"], before["values"])
+        self.assertEqual(self.remote()["mutations"], 2)
+        self.assertEqual(self.receipts(), [])

@@ -1,8 +1,13 @@
 # DNS preflight and adaptive DNS-01
 
-This describes the DNS foundation and unreleased `2.2.0.dev15` provider interface. Stable
+This describes the DNS foundation and unreleased `2.2.0.dev16` provider interface. Stable
 production remains `2.1.0`. The DNS checks do not enable CGP bootstrap writes
 or remove any certificate transaction/readiness gate.
+
+Cloudflare remains the default. Explicit [RFC2136](RFC2136.md) and
+[Route53](ROUTE53.md) selections require adaptive mode and preflight, with
+their own configured targets, private credentials and ownership contracts.
+The [provider interface](DNS_PROVIDERS.md) defines shared receipt boundaries.
 
 ## Operator commands
 

@@ -2,7 +2,136 @@
 
 Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 18 (implementation and native CI passed)
+## Current handoff — checkpoint 19 (local validation passed; native CI pending)
+
+- Development version **`2.2.0.dev16`**, feature branch and draft PR #2. Starting
+  clean HEAD `98d61f93242a6e35675fc075757384c6b89598bf`, tree
+  `dc84fc8729f49e2f3e536271598fe01a13a42a4e`. Starting-head PR CI 45552835761
+  and push CI 45552827259 passed all eleven jobs. Those checkpoint-18 runs
+  do not validate this revision. Stable main remains
+  `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` (`2.1.0`).
+- Added the explicit **Route53 adaptive provider** with `zone_discovery` and
+  `owned_txt`, using the existing supervised `cgp-dns` authenticator. Cloudflare
+  defaults, RFC2136, legacy receipts and public status fields remain compatible.
+  Fixed routes and the Cloudflare editor refuse before their side effects.
+- Strict `route53.zones` identifies canonical DNS zone, commercial hosted-zone
+  ID, expected twelve-digit account, normalized absolute credential path and
+  nameservers. Pure validation accepts 1–128 unique zones/targets and reads no
+  private data. Schema-2 zone bindings include fixed endpoint/service/region/API
+  identity plus account/zone/path; the record reference is an ownership nonce.
+  Key bytes and nameserver metadata are not frozen in the binding.
+- Bounded private UTF-8 JSON credentials accept exactly `access_key_id`,
+  `secret_access_key` and optional `session_token`. Duplicate/extra/malformed
+  fields and unsafe filesystem state fail with fixed errors. The 32 KiB file,
+  16–128-character ID, 40-character secret and 16384-character token ceilings
+  are application limits, not a claim about an AWS token-size guarantee.
+  Environment, profile, SSO, process, metadata and automatic role credentials
+  are unsupported; no new SDK/runtime dependency was added.
+- A fresh API client snapshots credentials once, verifies the expected account
+  with signed regional STS, and uses that snapshot for associated zone/read/
+  mutation/readback requests. Commercial hosts and `us-east-1` signing are fixed.
+  Exact zone ID/name, public-zone status and configured NS are checked. The
+  standard-library SigV4 implementation has independent literal AWS-maintained
+  signing vectors, including query ordering and session-token signing.
+- Direct verified HTTPS requires TLS 1.2 or newer and ignores SSLKEYLOGFILE.
+  Responses have a cumulative 64 KiB header and separate 512 KiB body budget;
+  XML depth is capped at 16 and node count at 4096. Compression, Transfer-Encoding,
+  DTD/entity declarations and wrong operation namespaces/roots are refused.
+  No proxy, redirect, retry, arbitrary endpoint or automatic token refresh is
+  used. The ten-second socket timeout is not a DNS/whole-operation deadline.
+- Only simple nonalias target TXT is supported. A dedicated AWS octal parser
+  recognizes borrowed challenge values across chunks/escapes, while preserving
+  all foreign raw presentation strings and TTL. Exact old-set DELETE plus
+  replacement CREATE forms one transactional batch; absent sets use CREATE.
+  There is no UPSERT. Each mutation rotates a retained generation, so cleanup
+  never restores a previously accepted preimage. Reserved markers must not be
+  removed, copied, reused or rolled back outside the protocol.
+- Complete snapshots are limited to 128 values and 4000 characters per Value;
+  combined old/replacement batches account for 1000 ResourceRecords and 32000
+  Value characters including metadata. No foreign value is trimmed to fit.
+  Routing policies and unsupported target evidence fail safely. Targeted listing
+  uses direct identity/order evidence for later-name neighbors; same-name
+  non-TXT or ambiguous same-TXT continuation cannot prove target absence.
+- Intent precedes mutation. Create and cleanup require readback. All remote
+  errors, including rejection of a signed request, retain uncertainty; only proven
+  local pre-send collisions/capacity are definite rejections. Unknown intent
+  is never blindly recreated or retired from an empty read. Previously created
+  absence requires generation evidence in the verified original account/zone.
+  The existing all-ledger validation and durable-completion protocol applies.
+- API listing is current control-plane evidence, including PENDING changes.
+  It is not public DNS propagation proof. No GetChange or change-ID receipt is
+  used; public preflight and adaptive propagation remain the ACME gate. Unlike
+  DNS query responses, hosted-zone-bound API reads cannot be redirected by a
+  child delegation; no RFC2136 ancestor-NS prerequisite guarantee is claimed.
+- Independent review corrected the mutation path's required trailing slash
+  and removed an availability refusal caused by alias/weighted records at an
+  unrelated later owner. Regression tests accompany both corrections. Contract,
+  private-file, wire/TLS, public integration, receipt and fresh-process tests
+  were added with implementation; they use only synthetic/local fixtures.
+- Updated English/Russian READMEs, changelog, DNS/provider/security/staging
+  guides and [Route53 contract](docs/ROUTE53.md). Configuration and constrained
+  IAM examples use synthetic targets; the credential example is intentionally
+  invalid. PowerDNS HTTP writes remain pending their separate enforced
+  acquisition/cleanup contract.
+
+### Observed local validation — checkpoint 19
+
+Both complete profiles independently pass **1711 tests / 9009 statements /
+2988 branches / 100%**, with zero missing statements, missing/partial branches
+or excluded lines. Compatibility took **61.252 s**, current **60.045 s**, on
+Python **3.12.14**. Each independent `--fail-under=100` gate covers all 57 files
+in `cgp_cert_manager,repo_tools`, without exclusions or relaxed thresholds.
+
+```bash
+COVERAGE_FILE=.coverage.cp19.compat /workspace/scratch/cf31ba780290/cgp-compat-env/bin/python -m coverage run --branch --source=cgp_cert_manager,repo_tools -m unittest discover -s tests -v
+COVERAGE_FILE=.coverage.cp19.compat /workspace/scratch/cf31ba780290/cgp-compat-env/bin/python -m coverage report -m --fail-under=100
+COVERAGE_FILE=.coverage.cp19.current /workspace/scratch/cf31ba780290/cgp-current-env/bin/python -m coverage run --branch --source=cgp_cert_manager,repo_tools -m unittest discover -s tests -v
+COVERAGE_FILE=.coverage.cp19.current /workspace/scratch/cf31ba780290/cgp-current-env/bin/python -m coverage report -m --fail-under=100
+```
+
+The **107 additional tests** comprise 14 configuration/private-key, 16 signed
+transport, 39 adapter/conditional-race, 12 public integration, 19 receipt and
+7 fresh-process cases. Focused config (90 statements / 34 branches), transport
+(131 / 38) and adapter (306 / 132) each independently reached 100% in both
+profiles before the full runs. Tests include independent official SigV4 vectors,
+real loopback TLS trust/hostname/keylog checks, alias/weighted later neighbors,
+foreign/same-value/TTL races, retained-generation replay and lost responses.
+
+Compilation of **154 Python files**, three separately parsed shell entrypoints,
+all **21 workflow shell blocks** in three YAML files, relative links and shell
+examples in 24 Markdown files, nine JSON examples, pure provider configuration
+validation, application/plugin version consistency and `git diff --check`
+passed. Full suites ran after both review corrections; subsequent edits only
+record documentation/evidence.
+
+### Native CI — checkpoint 19
+
+Native CI for the implementation commit is pending publication and observation.
+Require all eleven jobs for this exact revision: both complete profiles, all
+four installer combinations, both complete dependency audits, CodeQL, native
+monitoring and reproducible packaging. Prior checkpoint runs are not evidence
+for this implementation. Record observed run IDs, totals, audit/analysis output
+and package provenance in the follow-up handoff and draft PR.
+
+### Continuation after checkpoint 19
+
+1. Inspect actual HEAD/worktree, draft PR #2 and all eleven current-head CI
+   jobs. Distinguish implementation from later documentation evidence. Keep
+   both complete independent 100% gates and meaningful tests with new behavior.
+2. Next independent scope is **acme-dns**: establish configured endpoint/account
+   identity, explicit credentials, delegation and real API mutation/recovery
+   semantics before advertising any issuing capability. A writable challenge
+   slot alone does not establish durable ownership or safe cleanup. Scope the
+   separate manual workflow after that contract assessment.
+3. PowerDNS HTTP writes still require enforced acquisition and conditional
+   cleanup; per-value EXTEND/PRUNE plus an RRset marker is insufficient.
+4. Update this handoff, ROADMAP.md and draft PR #2 at each substantive checkpoint,
+   recording observed validation and exact revision/run identities.
+5. All real AWS/provider/ACME/VM/server/recipient/broker/signing acceptance remains
+   deferred. Do not merge, tag, release, deploy or select production keys.
+   Keep CGP bootstrap blocked on its separate restoration/deletion evidence.
+
+## Previous handoff — checkpoint 18 (implementation and native CI passed)
 
 - Development version **`2.2.0.dev15`**, feature branch and draft PR #2. Starting
   clean HEAD `eda20c940e4d4a0c9749e68deb447a44f245fba6`, tree
