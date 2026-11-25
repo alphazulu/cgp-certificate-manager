@@ -35,9 +35,14 @@ closed a chunked framing/trailer budget gap by refusing all Transfer-Encoding
 before body reads. Actual HTTP/TLS loopback and refusal tests accompany the code.
 Both complete local profiles pass **1604 tests / 8471 statements / 2778 branches
 / 100%**, with **55 new tests** and zero missing/partial/excluded paths. Static
-and documentation checks pass; this implementation's native CI is pending until
-its exact published revision is observed. A successful API observation does not
-enable PowerDNS issuance. Current EXTEND/PRUNE operations cannot prove ownership
+and documentation checks pass. Implementation
+[`636a9b2`](https://github.com/alphazulu/cgp-certificate-manager/commit/636a9b25056b8ca7bac26037513d5288747844c9)
+passed [PR CI 45552290160](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45552290160),
+all eleven jobs, and push CI 45552282509. Native profiles retain the same
+counts; installers, complete dependency audits, zero CodeQL findings, monitoring
+and reproducible packaging passed. This documentation-only follow-up records
+implementation evidence; inspect its own current-head CI on resume. A successful
+API observation does not enable PowerDNS issuance. EXTEND/PRUNE cannot prove ownership
 of an identical value concurrently added by another writer; HTTP writes remain
 pending an enforced acquisition/cleanup contract. See [POWERDNS.md](docs/POWERDNS.md)
 and DEVELOPMENT.md. Next independent provider scope is Route53. Real provider,
@@ -349,7 +354,7 @@ This remains a development checkpoint, not a production release.
 ## 2.5 — DNS providers
 - [x] Provider abstraction and integrated Cloudflare compatibility, with explicit capabilities, provider-bound receipts and isolated contract tests (checkpoint 16; both complete local 100% gates and all eleven implementation CI jobs passed, evidence above).
 - [x] RFC2136 adaptive provider with target-bound receipts, signed TCP, conditional TXT ownership/recovery and isolated tests (checkpoint 17; both full local 100% gates and all eleven implementation CI jobs passed, evidence above).
-- [x] PowerDNS explicit target/key contract and separate GET-only API observation, with isolated HTTP/TLS and refusal tests (checkpoint 18; both full local 100% gates passed, native CI pending above).
+- [x] PowerDNS explicit target/key contract and separate GET-only API observation, with isolated HTTP/TLS and refusal tests (checkpoint 18; both full local 100% gates and all eleven implementation CI jobs passed, evidence above).
 - [ ] PowerDNS HTTP TXT ownership and cleanup: require an enforced acquisition/conditional-cleanup mechanism; EXTEND/PRUNE plus an RRset marker does not meet the contract (see docs/POWERDNS.md).
 - [ ] Route53, acme-dns and manual workflow, each with explicit capability and credential boundaries. Route53 is the next independent scope.
 - [ ] Real provider acceptance in the later separately scoped test session.

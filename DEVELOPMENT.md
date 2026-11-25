@@ -2,7 +2,7 @@
 
 Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 18 (local validation passed; native CI pending)
+## Current handoff — checkpoint 18 (implementation and native CI passed)
 
 - Development version **`2.2.0.dev15`**, feature branch and draft PR #2. Starting
   clean HEAD `eda20c940e4d4a0c9749e68deb447a44f245fba6`, tree
@@ -83,12 +83,47 @@ files, three shell entrypoints, all 21 workflow shell blocks, Markdown links and
 shell examples, version/plugin metadata, both provider examples and the PowerDNS
 diagnostic example passed. Documentation checks are repeated for the final handoff.
 
-### Native CI and packaging — checkpoint 18
+### Observed native CI and packaging — checkpoint 18
 
-Pending for this implementation until its exact revision is published and
-observed. Local HTTP/TLS fixtures are not real PowerDNS, gateway, DNS/ACME,
-VM/server or production acceptance. Record actual eleven-job PR/push results,
-complete audits, CodeQL and reproducible archive identity only after completion.
+Implementation
+[`636a9b2`](https://github.com/alphazulu/cgp-certificate-manager/commit/636a9b25056b8ca7bac26037513d5288747844c9)
+passed [PR CI 45552290160](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45552290160),
+**all eleven jobs**. [Push CI 45552282509](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45552282509)
+also passed all eleven. All eleven PR job logs and push packaging were inspected.
+Both native Python **3.12.16** profiles retain **1604 tests / 8471 statements /
+2778 branches / 100%**, with zero missing/partial coverage: compatibility
+**55.927 s**, current **85.282 s**.
+
+| Required check | Observed implementation result |
+|---|---|
+| Both full test profiles | Complete suites and independent strict coverage gates passed |
+| Four installer combinations | Ubuntu 24.04 / Debian 13 x upgrade baselines 2.0.1 / 2.1.0; every scenario suite passed |
+| Current dependency audit | Complete 22 expected / 22 reported / 22 audited; zero findings; inventory/scanner/policy exits 0/0/0 |
+| Historical compatibility audit | Complete 23/23/23; 23 raw records / 15 package-advisory pairs / 4 historical packages; exits 0/1/0 under the unchanged informational-findings policy |
+| Native CodeQL | Complete analysis/upload/processing; 1 SARIF report / 1 run / 0 findings / 0 errors |
+| Native monitoring | promtool 3.16.0 validated 19 rules and passed alert/dashboard-expression fixtures |
+| Package | Two identical archive/checksum/provenance sets per run, checksum validation and artifact upload passed |
+
+Both audit inventories have no missing/skipped/unexpected packages, version
+mismatches or diagnostic problems. Compatibility findings remain visible; that
+historical fixture is not a production dependency recommendation or an audit of
+distribution backports. Native installer checks use mocked systemd in disposable
+containers. HTTP/TLS loopback fixtures are not real PowerDNS, API gateway,
+DNS/ACME, VM/server or production acceptance.
+
+The implementation tree is `23c6d16bdab562411e901c64931e517b72cff7d0`.
+PR package provenance records preview
+`05b39896f1dcca6c8d76db01b66c53242b5bdc34` with the same tree; push provenance
+records the implementation commit above. Both runs produced the same
+**654712-byte** `cgp-certificate-manager-v2.2.0.dev15.tar.gz`, SHA-256
+`3196b0b80d4a05533732f08aaac1d5bfcff1ffae8e31ccfa44b86a14ac1c5ea2`.
+This is an unsigned development CI artifact with no release tag, not a release
+or an activated update. No real provider/server/key was used.
+
+This documentation-only follow-up records observed implementation evidence.
+Inspect its own current-head CI on resume; earlier runs do not validate later
+revisions. The draft PR records the final handoff's own CI separately. Stable
+main remains 2.1.0 at `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f`.
 
 ### Continuation after checkpoint 18
 
