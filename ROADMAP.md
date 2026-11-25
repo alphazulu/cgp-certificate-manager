@@ -37,10 +37,16 @@ in the original zone. Review fixed byte headroom, lost-generation handling and
 strict signed UPDATE acknowledgement shapes. Cloudflare behavior and public
 schemas remain compatible. Both complete local profiles pass **1549 tests /
 8234 statements / 2690 branches / 100%**, **71 additional tests**, zero missing/
-partial/excluded. Static/documentation checks pass; native CI is pending for
-this implementation. See [RFC2136 contract](docs/RFC2136.md), DEVELOPMENT.md and
-the updated deferred staging plan. Next is PowerDNS with its own ownership and
-recovery contract. Real provider/ACME/VM/server/signing acceptance stays deferred.
+partial/excluded. Static/documentation checks pass. Implementation
+[`d74768a`](https://github.com/alphazulu/cgp-certificate-manager/commit/d74768abd9220fc6bf36e8ba6bbe569c274a82c4)
+passed [PR CI 45545571088](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45545571088),
+all eleven jobs, and push CI 45545566636. Native full profiles retain the same
+counts; all installer combinations, complete audits, zero CodeQL findings,
+native monitoring and reproducible packaging passed. This documentation-only
+follow-up records implementation evidence; inspect its own current-head CI on
+resume. See [RFC2136 contract](docs/RFC2136.md), DEVELOPMENT.md and the deferred
+staging plan. Next is PowerDNS with its own ownership and recovery contract.
+Real provider/ACME/VM/server/signing acceptance stays deferred.
 
 Previous Checkpoint 16 (`2.2.0.dev13`) implements the DNS provider interface with an
 integrated Cloudflare adapter and explicit capabilities. Discovery, fixed
@@ -325,7 +331,7 @@ This remains a development checkpoint, not a production release.
 
 ## 2.5 — DNS providers
 - [x] Provider abstraction and integrated Cloudflare compatibility, with explicit capabilities, provider-bound receipts and isolated contract tests (checkpoint 16; both complete local 100% gates and all eleven implementation CI jobs passed, evidence above).
-- [x] RFC2136 adaptive provider with target-bound receipts, signed TCP, conditional TXT ownership/recovery and isolated tests (checkpoint 17; both local 100% gates passed, native CI pending).
+- [x] RFC2136 adaptive provider with target-bound receipts, signed TCP, conditional TXT ownership/recovery and isolated tests (checkpoint 17; both full local 100% gates and all eleven implementation CI jobs passed, evidence above).
 - [ ] PowerDNS, Route53, acme-dns and manual workflow, each with explicit capability and credential boundaries.
 - [ ] Real provider acceptance in the later separately scoped test session.
 

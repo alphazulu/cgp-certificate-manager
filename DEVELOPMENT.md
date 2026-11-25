@@ -2,7 +2,7 @@
 
 Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 17 (implementation and local gates passed)
+## Current handoff — checkpoint 17 (implementation and native CI passed)
 
 - Development version **`2.2.0.dev14`**, feature branch and draft PR #2. Starting
   clean HEAD `ffbc57736b5da8f1e07319b23a5b7071213a4e3e`, tree
@@ -88,27 +88,67 @@ covers 100 / 38 / 100%; shared receipts cover 146 / 40 / 100%. Logs and independ
 JSON reports are `/workspace/scratch/9e49bdf23b66/cp17-full-{compat,current}.log`
 and `/workspace/scratch/9e49bdf23b66/cp17-coverage-{compat,current}.json` (transient
 local evidence, not repository inputs). Compilation of **138 Python files**,
-three shell entrypoints, **21 workflow shell blocks**, relative Markdown links,
-shell examples, application/plugin version metadata, both provider configuration
-examples and `git diff --check` passed. Native CI is still pending for this exact
-implementation; record it only after observing the published revision.
+three shell entrypoints, **21 workflow shell blocks**, **189 relative links /
+43 shell examples in 22 Markdown files**, application/plugin version metadata,
+both provider configuration examples and `git diff --check` passed for the
+implementation. The documentation follow-up is checked separately before publication.
 
-### Resume checkpoint 17
+### Observed native CI and packaging — checkpoint 17
 
-1. Inspect actual HEAD/tree, worktree and draft PR #2; preserve unfinished work.
-   Publish this implementation and inspect all eleven exact-revision CI jobs.
-2. Record implementation/run/artifact identities and observed native results in
-   this handoff, ROADMAP.md and the draft PR; publish the documentation follow-up
-   and verify its own current-head CI before declaring the checkpoint complete.
-3. Next independent scope is the PowerDNS provider, beginning with explicit
-   endpoint/credential/zone identity and its own ownership, concurrency and
+Implementation
+[`d74768a`](https://github.com/alphazulu/cgp-certificate-manager/commit/d74768abd9220fc6bf36e8ba6bbe569c274a82c4)
+passed [PR CI 45545571088](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45545571088),
+**all eleven jobs**. [Push CI 45545566636](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45545566636)
+also passed all eleven. Both native Python **3.12.16** profiles retain **1549
+tests / 8234 statements / 2690 branches / 100%**, with zero missing or partial
+coverage: compat **56.425 s**, current **69.542 s**.
+
+| Required check | Observed implementation result |
+|---|---|
+| Both full test profiles | Complete suites and independent strict coverage gates passed |
+| Four installer combinations | Ubuntu 24.04 / Debian 13 x upgrade baselines 2.0.1 / 2.1.0; every container scenario suite passed |
+| Current dependency audit | Complete 22 expected / 22 reported / 22 audited; zero findings; inventory/scanner/policy exits 0/0/0 |
+| Historical compatibility audit | Complete 23/23/23; 23 raw records / 15 package-advisory pairs / 4 historical packages; exits 0/1/0 under the unchanged informational-findings policy |
+| Native CodeQL | Complete analysis/upload/processing; 1 SARIF report / 1 run / 0 findings / 0 errors |
+| Native monitoring | promtool 3.16.0 validated 19 rules and passed alert/dashboard-expression fixtures |
+| Package | Two identical archive/checksum/provenance sets per run, checksum validation and artifact upload passed |
+
+Both audit reports have no missing/skipped/unexpected packages, version
+mismatches or diagnostic problems. Historical compatibility findings remain
+visible; the fixture is not a production dependency recommendation or an audit
+of distribution backports. Native installer checks use mocked systemd in
+containers, not real server/boot/provider acceptance.
+
+The implementation tree is `74bf579978623be6925ad724dce83474f33e8229`.
+PR package provenance records preview
+`46e5b45c9f0309be91938906659bfbdb8171ac41` with the same tree; push provenance
+records the implementation commit above. Both runs produced the same
+**630777-byte** `cgp-certificate-manager-v2.2.0.dev14.tar.gz`, SHA-256
+`0efe3f57337899c2a22d5aa06cf9732ae2083bedc41391ddf1d9068a42c7feca`.
+This is an unsigned development CI artifact, not a release or an activated
+update. No real key, DNS provider, server or VM was used.
+
+This documentation-only follow-up records observed implementation evidence.
+Inspect its own current-head CI on resume; earlier runs do not validate later
+revisions. The draft PR records the final handoff's own CI results separately.
+Stable main remains 2.1.0 at `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f`.
+
+### Continuation after checkpoint 17
+
+1. Inspect actual HEAD/worktree, draft PR #2 and all eleven current-head CI
+   jobs. Preserve unfinished work and distinguish implementation evidence above
+   from any later revision. Keep both full independent 100% gates, with tests
+   for new behavior and no exclusions or relaxed checks.
+2. Next independent scope is **PowerDNS**, beginning with explicit endpoint,
+   credential and zone identity plus its own ownership, concurrency and
    uncertain-mutation recovery contract. Do not transfer RFC2136 or Cloudflare
    guarantees to a different API without implementing and testing them.
+3. Update this handoff, ROADMAP.md and draft PR #2 at every substantive
+   checkpoint, recording observed validation and exact revision/run identities.
 4. All real VM/server/provider/recipient/broker/signing acceptance remains
    deferred. Do not merge, tag, release, deploy, select production keys or run
    real DNS mutations. Keep automatic CGP bootstrap blocked on its separate
-   restoration/deletion evidence. Every new code path requires tests and both
-   complete independent 100% coverage gates.
+   restoration/deletion evidence.
 
 ## Previous handoff — checkpoint 16 (implementation and native CI passed)
 
