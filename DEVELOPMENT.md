@@ -2,7 +2,117 @@
 
 Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 13
+## Current handoff — checkpoint 14
+
+- Development version: **`2.2.0.dev11`**, in the same draft
+  [PR #2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).
+- Starting HEAD: `c342861f6abbe8ef4b0525b125f3089be114f9ac`, clean on resume.
+  Its [PR CI 45511485116](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45511485116)
+  and push CI 45511473774 passed all eleven jobs. Both complete profiles reported
+  **1199 tests / 5979 statements / 2236 branches / 100%**. Those results belong
+  to checkpoint 13, not the new updater implementation.
+- Authorized scope: authenticated offline checking and preparation, a saved
+  plan/status contract, an unsigned publisher manifest assembler, installed
+  command integration, unit tests and documentation. Full application apply is
+  deliberately a separate next checkpoint: the existing installer uses shell
+  traps and cannot recover after arbitrary process death. No real VM/server,
+  signer/trust provisioning, provider/recipient, release or update is activated.
+- `update_metadata.py` validates a bounded exact schema and canonical ASCII JSON
+  with an explicit signing domain. Lazy Ed25519 verification uses only separate
+  local trust, verifies project/repository/channel, requires a newer stable/RC
+  target and enforces validity, monotonic sequence/version and same-sequence
+  identity. Trust keys are identified by the digest of the raw public key.
+  Saved floors are retained per channel across key changes. This is a narrow
+  offline protocol, not a complete TUF implementation or proof of latestness.
+- `update_archive.py` checks signed archive size/hash before bounded
+  decompression and accepts the deterministic release builder's precise format.
+  It rejects traversal, links/special entries, duplicate/colliding names, hidden
+  header/PAX overrides, malformed framing and resource-limit violations.
+  Application/plugin metadata is parsed without importing candidate code.
+  Private staging writes, permissions, synchronization and inventory validation
+  are independently tested; every staged byte is rehashed for saved status.
+- `update_plan.py` keeps trust and public input snapshots separate, reads the
+  installed version declaration without importing it, and isolates updater
+  state from installation, source, manager, monitor and input trees. Check and
+  status use a noncreating shared lock. Prepare authenticates before state
+  creation, then rechecks under its own exclusive lock and atomically saves
+  signed metadata, inventory, baseline identity and per-channel floors.
+  An unchanged valid plan reuses its stage; four retained stage directories are
+  the limit. No automatic pruning or deletion follows uncertain persistence.
+- The public result includes a bounded allowlist, fixed diagnostic codes and
+  `apply_supported: false`. Its plan ID is informational; the installed
+  baseline binds only the version file. The updater lock does not serialize
+  the existing installer. Same-UID/root namespace mutation is not sandboxed,
+  and prepared source is not made immutable or treated as install authorization.
+- `repo_tools.update_manifest` validates release-tagged unsigned provenance
+  against the exact archive and prints canonical signable metadata. It creates
+  no key or signature and does not authenticate the provenance itself. It is
+  not wired into the privileged release workflow. Existing GitHub attestations
+  remain a separate format and are not accepted in place of the new signature.
+- `update_cli.py` provides `--check`, `--prepare` and `--status`; help/version
+  avoid backend imports and I/O. The installer preserves/restores the new
+  `cgp-update` wrapper without creating updater trust/state or a schedule. The
+  native harness tests the exact fresh import path and preservation alongside
+  existing monitor/manager recovery fixtures.
+- Review reproduced a namespace race in path-based stage creation/cleanup:
+  replacing the parent pathname could redirect cleanup to an unrelated child.
+  Descriptor-relative creation/removal and identity rechecks replace that
+  pathname use, with regressions retaining foreign sentinels. Review also
+  found a file-descriptor leak after failed publisher stream construction;
+  explicit descriptor closure and a regression accompany the fix. Freshness
+  is rechecked after lengthy validation/staging instead of reusing a start time.
+  A double-slash absolute-path alias could bypass lexical overlap checks; it
+  is rejected, with a regression. State/lock inode rechecks detect observed
+  namespace replacement without claiming protection from malicious same-UID
+  changes between a check and a subsequent path lookup.
+- Both complete local dependency profiles independently passed **1303 tests /
+  6833 statements / 2350 branches / 100%**, with zero missing statements,
+  missing/partial branches or exclusions. Each separate `--fail-under=100`
+  gate covers `cgp_cert_manager,repo_tools`. Compat took **31.592 seconds**;
+  current took **31.002 seconds**.
+- All **104 additional tests** accompany the implementation: 19 metadata,
+  25 archive, 35 coordinator, 11 CLI, 12 publisher and 2 installed-entrypoint
+  cases. They include real Ed25519 vectors/signatures, exact archives built from
+  temporary Git objects, actual private files/locks, corruption and namespace
+  faults, expiry/clock rollback, key/channel changes, idempotent preparation,
+  uncertain persistence and fresh native entrypoint imports. A full local
+  publisher/signature/CLI round trip checks the plan, prepares it, removes the
+  original inputs, inspects saved state and refuses its subsequent expiry.
+- Python compilation, all three installer shell scripts, **21 workflow run
+  blocks**, **164 relative links and 38 shell examples across 20 Markdown
+  files**, the disabled four-channel example and `git diff --check` passed.
+  App/plugin metadata both report `2.2.0.dev11`. Updater preparation requires
+  Python 3.11+ for descriptor-relative cleanup and the native interpreter's
+  optional `cryptography` backend; help/version do not import that backend.
+- Exact-revision native CI is pending publication of this implementation.
+  Both complete coverage profiles, all four installer combinations, monitoring,
+  both complete dependency audits, CodeQL and reproducible packaging remain
+  required. Local Docker, promtool and CodeQL are unavailable; no synthetic
+  result is presented as a completed native check.
+- Stable main remains `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` / **2.1.0**.
+  Application/plugin metadata and English/Russian documentation move together;
+  the implementation contract is in [UPDATES.md](docs/UPDATES.md).
+
+### Resume from checkpoint 14
+
+1. Inspect actual HEAD, worktree, draft PR and all eleven current-head checks.
+   Preserve unfinished files. Read this handoff, ROADMAP.md and UPDATES.md;
+   distinguish observed results for each revision from pending validation.
+2. The implementation, reviews and both complete local coverage profiles pass.
+   Observe all eleven exact-revision native CI gates before extending this
+   checkpoint. Resolve any finding with a regression, retain 100% coverage
+   without exclusions/gate relaxation, and record the actual successful revision.
+3. Next design a full installed preimage and explicit approval contract,
+   shared installer/manager/monitor/updater lock ownership and a durable journal
+   before application replacement. Revalidate signed freshness, trust, staged
+   bytes and installed preimages immediately before writes. Recovery must
+   classify old, intended and unknown/manual state and retain unresolved evidence.
+   Exercise process-death and restart faults; shell EXIT traps are insufficient.
+4. Keep real VM/server and signing acceptance deferred, preserve pending CGP/DNS
+   recovery evidence, and leave bootstrap write enablement, signing-key choice,
+   license decision, merge and release to their separately authorized sessions.
+
+## Checkpoint 13 — Telegram and MQTT (historical)
 
 - Development version: **`2.2.0.dev10`**, in draft PR
   [#2](https://github.com/alphazulu/cgp-certificate-manager/pull/2).

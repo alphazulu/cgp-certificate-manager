@@ -128,7 +128,16 @@ are refused, and the output directory must be owned by the executing user and
 not writable by other users. Existing artifacts are never overwritten. A
 handled failure attempts to remove only the files created by that build; a
 retry must not blindly delete an existing output set. The builder does not
-extract anything or implement the future server update mechanism.
+extract anything or apply a server update. The separate
+[offline update preparation contract](UPDATES.md) consumes this deterministic
+format after verifying a signed manifest against locally provisioned trust.
+`python3 -m repo_tools.update_manifest` can assemble the canonical unsigned
+manifest from a release-tagged provenance file and the exact archive; it
+verifies their consistency but does not authenticate provenance or create a
+signature. The manifest format, signing input and trust provisioning are
+documented in that guide. This helper is not connected to the privileged
+release workflow, and GitHub attestations are not accepted as its Ed25519
+signature format.
 
 ## Manual release-tag preparation
 

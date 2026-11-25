@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.0.dev11 — unreleased
+
+- Add offline `cgp-update --check`, `--prepare` and `--status` for an authenticated preparation plan. Ed25519 verification uses separately provisioned private local trust, a canonical domain-separated manifest, strict project/channel/version/expiry checks and persistent per-channel anti-rollback floors.
+- Bind the exact archive size and SHA-256 before bounded decompression. Accept only the deterministic source format, reject unsafe paths/types/headers and conflicting entries, and validate application/plugin version metadata without importing candidate code. Stage files through private descriptor-based writes and recheck their exact inventory on status.
+- Save the signed manifest, trust/baseline identities, inventory and floor atomically under a separate updater lock. Keep check/status read-only, preserve floors across key rotation, refuse changed configuration or expired metadata, reuse an unchanged valid preparation and retain uncertain/orphan stages for explicit inspection.
+- Add an unsigned manifest assembler for reviewed release provenance and archive bytes. It creates no signing keys, signatures, trust roots, tags or releases; production signing is not wired into the release workflow.
+- Install the `cgp-update` wrapper with handled rollback and native container regressions, without creating updater trust/state or a schedule. Add unit tests alongside all new code and document exact limits. `plan_id` is informational; installation apply, approval binding and crash-safe recovery remain a separate next checkpoint.
+- Keep both strict coverage profiles and all CI gates. Real VM/server, signing and update acceptance remain deferred; exact observed evidence is recorded in DEVELOPMENT.md.
+
 ## 2.2.0.dev10 — unreleased
 
 - Add optional Telegram Bot API and MQTT 3.1.1 channels to the independent monitor, with private credential snapshots and no new runtime dependencies. Explicit enabled policy, enabled channel and `--run --send` remain required.

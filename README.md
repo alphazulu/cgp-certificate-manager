@@ -6,7 +6,7 @@ Automatic Let's Encrypt certificate management for CommuniGate Pro on Linux usin
 
 [Русская документация](README.ru.md)
 
-This branch develops **2.2.0.dev10**. The stable production release is **2.1.0**.
+This branch develops **2.2.0.dev11**. The stable production release is **2.1.0**.
 See [ROADMAP.md](ROADMAP.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for completed work,
 test evidence and the next checkpoint. The development branch is not a release.
 Contributor commands and test boundaries are in [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -29,6 +29,11 @@ Repository [release and security checks](docs/RELEASING.md) prepare reproducible
 source artifacts, audit resolved dependencies and analyze Python with CodeQL.
 The manual release workflow prepares an unpublished draft only after the full
 checks; real acceptance and publication remain separate maintainer decisions.
+The offline [update verifier](docs/UPDATES.md), `cgp-update`, checks signed
+manifests against separately provisioned local trust, validates and stages the
+exact archive, and reports a saved preparation plan. It does not apply an
+installation. Durable application replacement and recovery are the next step;
+real signing keys and update activation remain separate administrator decisions.
 
 ## Why this project exists
 

@@ -12,6 +12,7 @@ conf=/etc/cgp-letsencrypt/config.json
 bin=/usr/local/sbin/cgp-letsencrypt
 certbot_bin=/usr/local/sbin/cgp-certbot
 monitor_bin=/usr/local/sbin/cgp-monitor
+update_bin=/usr/local/sbin/cgp-update
 units=/etc/systemd/system
 dropin=$units/cgp-letsencrypt.timer.d/90-cgp-manager.conf
 if systemctl is-active --quiet cgp-letsencrypt.service; then echo 'Service running; retry after completion'; exit 1; fi
@@ -20,7 +21,7 @@ if systemctl is-active --quiet cgp-monitor.service; then echo 'Monitor service r
 python3 -c 'from cgp_cert_manager.core import CONFIG,load; from cgp_cert_manager.cli import migrate; from cgp_cert_manager.schedule import render; cfg=migrate(load(CONFIG)); render(cfg.get("schedule",{}))'
 # The inherited-lock checker has validated DNS options and native dependencies.
 b=$(mktemp -d /root/cgp-manager-backup-XXXXXXXX)
-installed_files=("$bin" "$certbot_bin" "$monitor_bin" "$conf" "$units/cgp-letsencrypt.service" "$units/cgp-letsencrypt.timer" "$dropin" "$units/cgp-monitor.service" "$units/cgp-monitor.timer")
+installed_files=("$bin" "$certbot_bin" "$monitor_bin" "$update_bin" "$conf" "$units/cgp-letsencrypt.service" "$units/cgp-letsencrypt.timer" "$dropin" "$units/cgp-monitor.service" "$units/cgp-monitor.timer")
 for f in "${installed_files[@]}"; do
     if [[ -e $f ]]; then cp -a "$f" "$b/"; fi
 done
@@ -88,6 +89,7 @@ cp -a cgp_certbot_dns-*.dist-info "$app/"
 install -m 750 launcher "$bin"
 install -m 750 certbot-launcher "$certbot_bin"
 install -m 750 monitor-launcher "$monitor_bin"
+install -m 750 update-launcher "$update_bin"
 install -m 644 systemd/* "$units/"
 # Run under the existing lock, avoiding nested CLI flock acquisition.
 (cd "$app" && /usr/bin/python3 -c 'from cgp_cert_manager.core import CONFIG,load,atomic; from cgp_cert_manager.cli import migrate; atomic(CONFIG,migrate(load(CONFIG)))')
@@ -95,6 +97,7 @@ systemctl daemon-reload
 (cd "$app" && /usr/bin/python3 -c 'from cgp_cert_manager.schedule import apply; apply()')
 "$bin" --version
 "$monitor_bin" --version
+"$update_bin" --version
 success=1
 echo "Backup: $b"
 echo 'Timer left stopped. Run --doctor, --plan and --verify, then systemctl enable --now cgp-letsencrypt.timer'

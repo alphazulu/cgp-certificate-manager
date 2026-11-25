@@ -76,6 +76,10 @@ monitor_launcher=/usr/local/sbin/cgp-monitor
 monitor_config=/etc/cgp-monitor/config.json
 monitor_state=/var/lib/cgp-monitor
 monitor_evidence=$monitor_state/state.json
+update_launcher=/usr/local/sbin/cgp-update
+update_trust=/etc/cgp-update/trust.json
+update_state=/var/lib/cgp-update
+update_evidence=$update_state/checkpoint.json
 drop=/etc/systemd/system/cgp-letsencrypt.timer.d/90-cgp-manager.conf
 source_version() {
     python3 -c 'import runpy,sys; print(runpy.run_path(sys.argv[1])["__version__"])' "$1/cgp_cert_manager/__init__.py"
@@ -95,6 +99,101 @@ assert_pending_journal() {
     test "$(stat -c %a "$dns_receipt")" = 600
     test "$(stat -c %a "$(dirname "$dns_receipt")")" = 700
     assert_monitor_data
+    assert_update_data
+    test ! -e /tmp/cgp-installer-network-attempted
+}
+assert_update_data() {
+    if [[ ! -f /tmp/update-trust.expected ]]; then
+        test ! -e "$(dirname "$update_trust")"
+        test ! -e "$update_state"
+        return
+    fi
+    cmp "$update_trust" /tmp/update-trust.expected
+    cmp "$update_evidence" /tmp/update-checkpoint.expected
+    for file in "$update_trust" "$update_evidence"; do
+        test ! -L "$file"
+        test "$(stat -c %a "$file")" = 600
+        test "$(stat -c %u "$file")" = 0
+        test "$(stat -c %h "$file")" = 1
+    done
+    for directory in "$(dirname "$update_trust")" "$update_state"; do
+        test ! -L "$directory"
+        test "$(stat -c %a "$directory")" = 700
+        test "$(stat -c %u "$directory")" = 0
+    done
+}
+assert_update_cli() {
+    for action in --help --version; do
+        python3 - "$app" "$update_launcher" "$action" "$(dirname "$update_trust")" "$update_state" /var/lib/cgp-letsencrypt "$monitor_state" <<'UPDATE_ENTRYPOINT'
+from contextlib import ExitStack, redirect_stdout, redirect_stderr
+import importlib.abc
+import io
+from pathlib import Path
+import runpy
+import socket
+import stat
+import subprocess
+import sys
+from unittest.mock import patch
+
+application, launcher = (Path(value) for value in sys.argv[1:3])
+action = sys.argv[3]
+roots = [Path(value) for value in sys.argv[4:]]
+sys.path.insert(0, str(application))
+from cgp_cert_manager import __version__
+
+blocked = ('cgp_cert_manager.update_plan', 'cgp_cert_manager.update_metadata',
+           'cgp_cert_manager.update_archive', 'cryptography')
+assert 'cgp_cert_manager.update_cli' not in sys.modules, 'The entrypoint must import the updater afresh'
+assert not any(name == item or name.startswith(item + '.') for name in sys.modules for item in blocked)
+attempts = []
+
+class UnavailableBackend(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if any(fullname == item or fullname.startswith(item + '.') for item in blocked):
+            attempts.append(fullname)
+            raise ModuleNotFoundError('Updater help/version must not require a verification backend')
+
+def snapshot():
+    result = {}
+    for root in roots:
+        result[str(root)] = None
+        if root.exists() or root.is_symlink():
+            for path in [root, *root.rglob('*')]:
+                info = path.lstat()
+                data = path.read_bytes() if stat.S_ISREG(info.st_mode) else None
+                result[str(path)] = (data, info.st_mode, info.st_uid, info.st_gid,
+                                     info.st_nlink, info.st_ino, info.st_mtime_ns)
+    return result
+
+before = snapshot()
+with ExitStack() as stack:
+    stack.enter_context(patch.object(sys, 'meta_path', [UnavailableBackend(), *sys.meta_path]))
+    forbidden = [stack.enter_context(patch.object(module, name, side_effect=AssertionError('Read-only updater entrypoint')))
+                 for module, name in ((Path, 'open'), (Path, 'mkdir'), (subprocess, 'Popen'),
+                                      (socket, 'create_connection'), (socket, 'getaddrinfo'))]
+    output, errors = io.StringIO(), io.StringIO()
+    with patch.object(sys, 'argv', [str(launcher), action]), redirect_stdout(output), redirect_stderr(errors):
+        try:
+            runpy.run_path(str(launcher), run_name='__main__')
+        except SystemExit as exited:
+            assert exited.code == 0, action
+        else:
+            raise AssertionError('Launcher did not return its exit status')
+    assert errors.getvalue() == ''
+    if action == '--version':
+        assert output.getvalue().strip() == __version__
+    else:
+        assert all(value in output.getvalue() for value in ('--check', '--prepare', '--status'))
+        assert '--apply' not in output.getvalue()
+    for call in forbidden:
+        call.assert_not_called()
+assert not attempts, 'Updater help/version attempted a verification backend import'
+assert snapshot() == before, 'Updater help/version changed private data or created state'
+UPDATE_ENTRYPOINT
+    done
+    test "$(stat -c %a "$update_launcher")" = 750
+    assert_update_data
     test ! -e /tmp/cgp-installer-network-attempted
 }
 assert_monitor_data() {
@@ -398,6 +497,7 @@ bash /tmp/candidate-writable/install.sh --non-interactive
 test -x "$launcher"
 test -x "$certbot_launcher"
 test -x "$monitor_launcher"
+test -x "$update_launcher"
 test "$(stat -c %a "$certbot_launcher")" = 750
 "$certbot_launcher" --version
 python3 - "$app" <<'PLUGIN_DISCOVERY'
@@ -425,15 +525,17 @@ test ! -f /tmp/monitor-timer-active
 assert_pending_journal
 assert_monitoring_cli
 assert_monitor_cli
+assert_update_cli
 
 echo '=== clean installation failure restores absent application ==='
-rm -rf "$app" "$launcher" "$certbot_launcher" "$monitor_launcher" "$drop" /etc/systemd/system/cgp-letsencrypt.{service,timer} /etc/systemd/system/cgp-monitor.{service,timer}
+rm -rf "$app" "$launcher" "$certbot_launcher" "$monitor_launcher" "$update_launcher" "$drop" /etc/systemd/system/cgp-letsencrypt.{service,timer} /etc/systemd/system/cgp-monitor.{service,timer}
 touch /tmp/fail-reload-once
 must_fail bash /tmp/candidate-writable/install.sh --non-interactive
 test ! -e "$app"
 test ! -e "$launcher"
 test ! -e "$certbot_launcher"
 test ! -e "$monitor_launcher"
+test ! -e "$update_launcher"
 test ! -e /etc/systemd/system/cgp-monitor.service
 test ! -e /etc/systemd/system/cgp-monitor.timer
 test ! -e "$drop"
@@ -445,6 +547,7 @@ bash /tmp/baseline-writable/install.sh
 test "$("$launcher" --version)" = "$baseline_version"
 test ! -e "$certbot_launcher"
 test ! -e "$monitor_launcher"
+test ! -e "$update_launcher"
 assert_pending_journal
 touch "$app/cgp_cert_manager/stale.py"
 echo 'persistent-state' >/var/lib/cgp-letsencrypt/sentinel
@@ -459,6 +562,7 @@ test "$("$launcher" --version)" = "$baseline_version"
 test -f "$app/cgp_cert_manager/stale.py"
 test ! -e "$certbot_launcher"
 test ! -e "$monitor_launcher"
+test ! -e "$update_launcher"
 test ! -e /etc/systemd/system/cgp-monitor.service
 test ! -e /etc/systemd/system/cgp-monitor.timer
 test -f /tmp/timer-active
@@ -511,6 +615,7 @@ grep -q 'dummy' /etc/cgp-letsencrypt/cloudflare.ini
 assert_pending_journal
 assert_monitoring_cli
 assert_monitor_cli
+assert_update_cli
 
 echo '=== existing monitor configuration and state survive upgrade rollback ==='
 install -d -m 700 /etc/cgp-monitor
@@ -521,13 +626,21 @@ printf '%s\n' '{"private":"retained monitor observation and delivery evidence"}'
 chmod 600 "$monitor_config" "$monitor_evidence"
 cp "$monitor_config" /tmp/monitor-config.expected
 cp "$monitor_evidence" /tmp/monitor-state.expected
-for file in "$monitor_launcher" /etc/systemd/system/cgp-monitor.service /etc/systemd/system/cgp-monitor.timer; do
+# These opaque synthetic updater records are provisioned independently. The
+# ordinary installer must preserve them, without importing or running updates.
+install -d -m 700 "$(dirname "$update_trust")" "$update_state"
+printf '%s\n' '{"synthetic":"retained administrator update trust"}' >"$update_trust"
+printf '%s\n' '{"synthetic":"retained updater checkpoint and rollback floors"}' >"$update_evidence"
+chmod 600 "$update_trust" "$update_evidence"
+cp "$update_trust" /tmp/update-trust.expected
+cp "$update_evidence" /tmp/update-checkpoint.expected
+for file in "$monitor_launcher" "$update_launcher" /etc/systemd/system/cgp-monitor.service /etc/systemd/system/cgp-monitor.timer; do
     printf '\n# prior monitor installation fixture\n' >>"$file"
     cp -a "$file" "/tmp/$(basename "$file").prior"
 done
 touch /tmp/timer-active /tmp/monitor-timer-active /tmp/fail-reload-once
 must_fail bash /tmp/candidate-writable/install.sh --upgrade
-for file in "$monitor_launcher" /etc/systemd/system/cgp-monitor.service /etc/systemd/system/cgp-monitor.timer; do
+for file in "$monitor_launcher" "$update_launcher" /etc/systemd/system/cgp-monitor.service /etc/systemd/system/cgp-monitor.timer; do
     cmp "$file" "/tmp/$(basename "$file").prior"
 done
 test -f /tmp/timer-active
@@ -535,16 +648,19 @@ test -f /tmp/monitor-timer-active
 test "$("$launcher" --version)" = "$candidate_version"
 assert_pending_journal
 assert_monitor_cli
+assert_update_cli
 
 echo '=== successful monitor upgrade leaves both timers stopped ==='
 bash /tmp/candidate-writable/install.sh --upgrade
 test ! -f /tmp/timer-active
 test ! -f /tmp/monitor-timer-active
 cmp "$monitor_launcher" /tmp/candidate-writable/monitor-launcher
+cmp "$update_launcher" /tmp/candidate-writable/update-launcher
 cmp /etc/systemd/system/cgp-monitor.service /tmp/candidate-writable/systemd/cgp-monitor.service
 cmp /etc/systemd/system/cgp-monitor.timer /tmp/candidate-writable/systemd/cgp-monitor.timer
 assert_pending_journal
 assert_monitor_cli
+assert_update_cli
 
 echo '=== invalid monitor configuration refuses before changing either timer ==='
 printf '%s\n' '{"schema":1,"enabled":true,"endpoints":[],"notifications":{"enabled":false,"channels":[]}}' >"$monitor_config"
@@ -652,6 +768,7 @@ exercise_unsafe_path "$monitor_state/run.lock" 600 644
 exercise_unsafe_path "$monitor_evidence" 600 644
 assert_audit_archives
 assert_monitor_data
+assert_update_data
 test ! -e /tmp/cgp-installer-network-attempted
 
 echo 'Installer integration scenarios passed.'

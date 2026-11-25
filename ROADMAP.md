@@ -26,7 +26,27 @@
 - [x] Implement operator-assisted resolution: exact-preview confirmation, private authorization/completion evidence, incomplete-decision guard and explicit retry without claiming TLS success. See docs/RESOLUTION.md and checkpoint 5 evidence below.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 13 (`2.2.0.dev10`) implements optional Telegram and MQTT
+Checkpoint 14 (`2.2.0.dev11`) implements authenticated offline update checking
+and preparation. `cgp-update` verifies domain-separated Ed25519 metadata against
+separately provisioned trust, preserves per-channel rollback floors, checks the
+exact deterministic archive and stages its validated files privately. Read-only
+status rechecks trust, installed version, freshness and every staged file.
+An unsigned publisher helper assembles signable metadata from reviewed release
+provenance and archive bytes. The installer adds the command without creating
+trust, updater state or a schedule. Code and unit tests are developed together;
+both full coverage profiles and all eleven CI gates remain required.
+Both complete local profiles pass **1303 tests / 6833 statements / 2350
+branches / 100%**, with **104 new tests** and no missing/partial/excluded paths.
+Review fixes have regressions for stage namespace replacement, descriptor
+closure, expired-during-operation metadata and double-slash path overlap.
+Exact-revision native CI is pending publication; observed validation and
+continuation are recorded in DEVELOPMENT.md. `plan_id` is informational
+and `apply_supported` is false. The next independent checkpoint is explicit
+installation apply with full preimages, approval binding, shared locking and a
+durable journal/recovery protocol; current shell rollback does not survive
+arbitrary process death. Real VM/server/signing/update acceptance stays deferred.
+
+Previous checkpoint 13 (`2.2.0.dev10`) implements optional Telegram and MQTT
 notification channels in the existing explicit, durable lifecycle. The scope
 includes private credential snapshots, bounded protocol acknowledgements,
 per-channel outcomes, Telegram rate-limit persistence and MQTT QoS-1
@@ -214,7 +234,7 @@ passed tests, both installer baselines and package. Each installer job passed
 18 new unsafe-path refusal cases and preserved pending journals. This follow-up
 documentation commit records the observed result; inspect current-head checks
 when resuming. See DEVELOPMENT.md for exact next steps and remaining limits.
-Operator-assisted resolution was completed in checkpoint 5; checkpoint 13 is active above.
+Operator-assisted resolution was completed in checkpoint 5; checkpoint 14 is active above.
 This remains a development checkpoint, not a production release.
 
 ## 2.3 — Monitoring
@@ -225,7 +245,13 @@ This remains a development checkpoint, not a production release.
 - [ ] Real monitoring deployment acceptance on the later VM/server test session; local certificate observations must not be presented as live TLS verification.
 
 ## 2.4 — Updates
-Explicit administrator-approved update, authenticity verification (signed manifests/trusted keys), safe extraction, rollback and version checks.
+
+- [x] Define and implement canonical signed manifests, separate local trusted keys, project/channel/version/expiry checks and per-channel anti-rollback floors, with unit tests (checkpoint 14).
+- [x] Inspect exact archive bytes, safely prepare a private source tree, persist an informational plan and revalidate saved status without executing candidate code (checkpoint 14; see docs/UPDATES.md).
+- [x] Add the offline command to installer preservation/handled rollback and an unsigned publisher manifest assembler, with unit and container checks (checkpoint 14; observed evidence in DEVELOPMENT.md).
+- [ ] Implement explicit administrator-approved application replacement with a complete baseline/preimage, approval bound to that baseline and target, installer/manager/monitor locking, durable phases, restart recovery and refusal of unknown/manual changes.
+- [ ] Select and provision real signing/trust keys, decide rotation/revocation operations and separately authorize release-workflow signing integration. No keys are shipped or generated automatically.
+- [ ] Perform deferred real VM/server update, interruption/recovery and trust-rotation acceptance before RC/production use.
 
 ## 2.5 — DNS providers
 Provider abstraction, Cloudflare compatibility, RFC2136, PowerDNS, Route53, acme-dns and manual workflow.

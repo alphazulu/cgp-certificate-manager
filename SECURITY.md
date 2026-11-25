@@ -143,6 +143,35 @@ third-party plugins, services and surrounding tools maintain their own logs.
 The manager does not promise that every third-party log is secret-free. Review
 and minimize any excerpt before sharing it; do not publish production logs.
 
+## Update trust and preparation
+
+The offline `cgp-update` verifier must come from an already trusted installation
+or checkout, never from the unverified candidate it is checking. Ed25519 public
+keys are provisioned separately in private local trust; no key supplied inside
+an update package is trusted. The canonical signed manifest binds the project,
+repository, channel, version, sequence, validity window, source identity and
+archive size/hash. A checksum or unsigned provenance file alone does not
+authenticate an update. The existing GitHub attestation format is separate
+from this offline manifest contract.
+
+The verifier checks exact archive bytes before bounded decompression, validates
+metadata without executing candidate code and stages only the narrow supported
+file format. Status rehashes every prepared file and rechecks current trust,
+the installed version file and signed freshness. Persistent per-channel floors
+survive key changes; deleting updater state discards this rollback protection.
+Local root/effective-UID processes, the verification runtime, selected trust
+keys and clock remain trusted. Expiry and saved floors do not establish that
+an offline package is the newest published release. This is not a complete
+TUF role/threshold/root-rotation implementation.
+
+Preparation does not replace installed code or authorize a later installation.
+Its baseline binds only the version file, and its own lock does not serialize
+the existing installer. The public plan ID is informational. Full installed
+preimages, fresh explicit approval, shared installation locking and durable
+recovery after process death are future apply requirements. Current shell
+installer traps cannot provide that crash-recovery guarantee. Read the
+[update contract](docs/UPDATES.md) before interpreting a `prepared` result.
+
 ## Dependency and source scanning
 
 The development CI audits complete resolved test environments with pip-audit
