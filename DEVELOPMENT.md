@@ -2,7 +2,7 @@
 
 Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 15 (local gates passed; native CI pending)
+## Current handoff — checkpoint 15 (implementation and native CI passed)
 
 - Development version **`2.2.0.dev12`** in draft PR #2, branch
   `feature/transactional-deployment`. This resumes and finishes the prior
@@ -91,16 +91,55 @@ blocks**, relative Markdown links, fenced shell examples and `git diff --check`
 passed. App/plugin metadata both report `2.2.0.dev12`. The installer harness now
 has **14 scenario sections**, retains **36 unsafe-path/metadata refusals**, and
 adds three pending-marker forms plus independent-runtime preservation/rollback.
-Docker, native promtool and CodeQL are unavailable locally. All eleven native
-CI jobs for this implementation remain pending until the actual pushed revision
-is observed; no previous green run is substituted and no gate was relaxed.
+Docker, native promtool and CodeQL are unavailable locally; their observed
+evidence comes from the exact implementation CI below. No gate was relaxed.
+
+### Observed native CI and packaging
+
+Implementation
+[`8dba416`](https://github.com/alphazulu/cgp-certificate-manager/commit/8dba416938bbe17ed72cdab0d8830fe688e0e791)
+passed [PR CI 45536468319](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45536468319),
+**all eleven jobs**. [Push CI 45536461992](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45536461992)
+also succeeded. Both native Python **3.12.16** profiles independently retain
+**1427 tests / 7793 statements / 2546 branches / 100%**, with zero missing or
+partial coverage: compat **83.732 s**, current **52.870 s**.
+
+| Required check | Observed implementation result |
+|---|---|
+| Both full test profiles | Complete suites and independent strict coverage gates passed |
+| Four installer combinations | Ubuntu 24.04 / Debian 13 x baselines 2.0.1 / 2.1.0; all 14 scenario sections passed, including runtime/guard preservation and 36 unsafe-path/metadata refusals |
+| Current dependency audit | Complete 22 expected / 22 reported / 22 audited, zero findings, inventory/scanner/policy exits 0/0/0 |
+| Historical compatibility audit | Complete 23/23/23, 23 raw records / 15 package-advisory pairs / 4 historical packages, exits 0/1/0 under the unchanged informational-findings policy |
+| Native CodeQL | CLI 2.27.5; analysis/upload/processing complete, 1 SARIF report / 1 run / 0 findings / 0 errors |
+| Native monitoring | promtool 3.16.0 validated 19 rules and passed both alert and dashboard-expression fixtures |
+| Package | Two identical archive/checksum/provenance sets, SHA-256 validation and artifact upload passed |
+
+Both dependency reports have no missing/skipped/unexpected packages, version
+mismatches or diagnostic problems. Compatibility findings stay visible and are
+not production dependency recommendations or a scan of distribution backports.
+Installer checks use mock systemd inside disposable containers; no real boot,
+server, provider or notification acceptance is claimed.
+
+The implementation tree is `eaa3b48ea334298c5a94671f7744b7db3643b714`.
+Package provenance records tested PR preview
+`9b8fe51e1c673c9a1c8d1122c3e5795c17da3374` with that same tree.
+The **582098-byte** archive has SHA-256
+`2db050517d9a40ef75a1f9a96007bd43c386079df5a7c7bd373d694f816d5227`,
+equal to the locally reproduced archive. It is a development CI artifact, not
+a signed update target or published release.
+
+This documentation-only follow-up records observed implementation evidence.
+Inspect its own current-head CI when resuming; earlier results do not validate
+a later revision. Stable main remains 2.1.0 at
+`fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f`.
 
 ### Continuation after checkpoint 15
 
-1. Commit/push the reviewed implementation with this handoff and roadmap;
-   inspect all eleven CI jobs for that exact revision. Fix any finding with a
-   regression, repeat affected/full required gates, and record observed native
-   results in this file, ROADMAP.md and draft PR #2. Preserve the draft.
+1. Inspect actual HEAD/worktree, draft PR #2 and all eleven current-head CI
+   jobs. The implementation and its full local/native gates above passed;
+   separately verify this documentation follow-up's checks before attributing
+   a result to it. Preserve unfinished work and the draft status. Fix later
+   findings with regressions and retain every coverage/security/installer gate.
 2. The next independent roadmap scope is **2.5 DNS provider abstraction**:
    retain Cloudflare fixed/adaptive behavior and durable ownership receipts,
    define provider capability/credential boundaries and add isolated provider

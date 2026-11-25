@@ -39,9 +39,15 @@ failed guarded services only when no tracked process or retained cgroup exists.
 Missing or administrator-modified baseline units refuse installation.
 Both complete local profiles pass **1427 tests / 7793 statements / 2546 branches
 / 100%**, zero missing/partial/excluded, with **124 additional tests** including
-20 fresh-process cases. Python/shell/workflow/documentation checks pass. Native
-CI for the implementation is pending; do not infer it from checkpoint 14.
-See DEVELOPMENT.md for observed evidence and continuation. The next independent
+20 fresh-process cases. Python/shell/workflow/documentation checks pass.
+Implementation
+[`8dba416`](https://github.com/alphazulu/cgp-certificate-manager/commit/8dba416938bbe17ed72cdab0d8830fe688e0e791)
+passed [PR CI 45536468319](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45536468319),
+all eleven jobs, and push CI 45536461992. Both native full profiles retain the
+same counts; all installer combinations, complete audits, zero CodeQL findings,
+native monitoring and reproducible packaging passed. This documentation-only
+follow-up records that observed implementation run; inspect its own current-head
+CI on resume. See DEVELOPMENT.md for evidence and continuation. The next independent
 roadmap scope is DNS provider abstraction with Cloudflare compatibility and
 isolated contract tests. All real VM/server/signing/production acceptance remains
 deferred; no merge, release, signing key or real update is activated.
@@ -275,7 +281,7 @@ This remains a development checkpoint, not a production release.
 - [x] Define and implement canonical signed manifests, separate local trusted keys, project/channel/version/expiry checks and per-channel anti-rollback floors, with unit tests (checkpoint 14).
 - [x] Inspect exact archive bytes, safely prepare a private source tree, persist an informational plan and revalidate saved status without executing candidate code (checkpoint 14; see docs/UPDATES.md).
 - [x] Add the offline command to installer preservation/handled rollback and an unsigned publisher manifest assembler, with unit and container checks (checkpoint 14; observed evidence in DEVELOPMENT.md).
-- [x] Implement explicit administrator-approved application replacement with complete preimages, bound approval, shared locks, durable phases, independent restart recovery and refusal of unknown/manual changes (checkpoint 15; local gates passed, native CI evidence tracked above).
+- [x] Implement explicit administrator-approved application replacement with complete preimages, bound approval, shared locks, durable phases, independent restart recovery and refusal of unknown/manual changes (checkpoint 15; both local profiles and all eleven implementation CI jobs passed, evidence above).
 - [ ] Select and provision real signing/trust keys, decide rotation/revocation operations and separately authorize release-workflow signing integration. No keys are shipped or generated automatically.
 - [ ] Perform deferred real VM/server update, interruption/recovery and trust-rotation acceptance before RC/production use.
 
