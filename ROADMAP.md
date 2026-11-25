@@ -36,10 +36,17 @@ legacy cleanup and public status fields remain compatible. Review fixed retained
 fallback credentials after multi-account migration and isolated an entrypoint
 test's process umask. Both complete local profiles pass **1478 tests / 7900
 statements / 2568 branches / 100%**, with **51 additional tests** and zero
-missing/partial/excluded paths. Static and documentation checks pass; current
-implementation native CI is pending. See [provider contract](docs/DNS_PROVIDERS.md)
-and DEVELOPMENT.md. Next is RFC2136 with its own ownership/recovery design and
-isolated tests. All real provider, VM/server and signing acceptance stays deferred.
+missing/partial/excluded paths. Static and documentation checks pass.
+Implementation
+[`ea9cfd8`](https://github.com/alphazulu/cgp-certificate-manager/commit/ea9cfd8ab2e23055dcc5d8240c122d1586640df5)
+passed [PR CI 45540453460](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45540453460),
+all eleven jobs, and push CI 45540443609. Native full profiles retain the same
+counts; all installer combinations, complete audits, zero CodeQL findings,
+native monitoring and reproducible packaging passed. This documentation-only
+follow-up records implementation evidence; inspect its own current-head CI on
+resume. See [provider contract](docs/DNS_PROVIDERS.md) and DEVELOPMENT.md.
+Next is RFC2136 with its own ownership/recovery design and isolated tests.
+All real provider, VM/server and signing acceptance stays deferred.
 
 Previous Checkpoint 15 (`2.2.0.dev12`) implements explicitly approved application
 replacement and independent recovery. The trusted runtime lives outside the
@@ -301,7 +308,7 @@ This remains a development checkpoint, not a production release.
 - [ ] Perform deferred real VM/server update, interruption/recovery and trust-rotation acceptance before RC/production use.
 
 ## 2.5 — DNS providers
-- [x] Provider abstraction and integrated Cloudflare compatibility, with explicit capabilities, provider-bound receipts and isolated contract tests (checkpoint 16; both complete local 100% gates passed, native CI pending).
+- [x] Provider abstraction and integrated Cloudflare compatibility, with explicit capabilities, provider-bound receipts and isolated contract tests (checkpoint 16; both complete local 100% gates and all eleven implementation CI jobs passed, evidence above).
 - [ ] RFC2136 backend with its own ownership/recovery design and isolated tests.
 - [ ] PowerDNS, Route53, acme-dns and manual workflow, each with explicit capability and credential boundaries.
 - [ ] Real provider acceptance in the later separately scoped test session.

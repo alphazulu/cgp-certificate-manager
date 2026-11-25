@@ -2,7 +2,7 @@
 
 Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 16 (implementation and local gates passed)
+## Current handoff — checkpoint 16 (implementation and native CI passed)
 
 - Development version **`2.2.0.dev13`**, feature branch and draft PR #2. Starting
   clean HEAD `9ba0915bc02c33b9fe5b0982457d982165bab303`, tree
@@ -70,24 +70,65 @@ COVERAGE_FILE=.coverage.cp16.current /workspace/scratch/cf31ba780290/cgp-current
 Evidence logs and independent coverage JSON reports are in
 `/workspace/scratch/9e49bdf23b66/cp16-full-{compat,current}.log` and
 `/workspace/scratch/9e49bdf23b66/cp16-coverage-{compat,current}.json`; these are
-local transient evidence, not required repository inputs. Python source
-compilation, three shell entrypoints, all **21 workflow shell blocks**, Markdown
-relative links and shell examples, version/plugin metadata, the explicit-provider
-example and `git diff --check` passed. Native CI is still pending for this
-implementation and must be recorded only after observation.
+local transient evidence, not required repository inputs. Compilation of
+**131 Python files**, three shell entrypoints, all **21 workflow shell blocks**,
+**173 relative links / 42 shell examples in 21 Markdown files**, version/plugin
+metadata, the explicit-provider example and `git diff --check` passed for the
+implementation commit. Documentation changes are rechecked before publication.
 
-### Resume checkpoint 16
+### Observed native CI and packaging — checkpoint 16
 
-1. Inspect actual HEAD/tree, draft PR #2 and current-revision CI; preserve any
-   worktree changes. Publish this tested implementation and inspect all eleven
-   native jobs, including both full coverage profiles, four installer cases,
-   both dependency audits, CodeQL, monitoring assets and reproducible packaging.
-2. Record exact implementation commit, run IDs and observed native evidence in
-   this file, ROADMAP.md and draft PR #2. Publish the handoff follow-up and inspect
-   its own CI before declaring the checkpoint complete.
-3. Next independent scope is RFC2136: define credentials, explicit zone identity,
-   supported routes and its own ownership/recovery evidence before enabling it.
-   Add meaningful unit/process tests with every path and preserve both 100% gates.
+Implementation
+[`ea9cfd8`](https://github.com/alphazulu/cgp-certificate-manager/commit/ea9cfd8ab2e23055dcc5d8240c122d1586640df5)
+passed [PR CI 45540453460](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45540453460),
+**all eleven jobs**. [Push CI 45540443609](https://github.com/alphazulu/cgp-certificate-manager/actions/runs/45540443609)
+also passed all eleven. Both native Python **3.12.16** profiles retain **1478
+tests / 7900 statements / 2568 branches / 100%**, with zero missing or partial
+coverage: compat **81.176 s**, current **56.121 s**.
+
+| Required check | Observed implementation result |
+|---|---|
+| Both full test profiles | Complete suites and independent strict coverage gates passed |
+| Four installer combinations | Ubuntu 24.04 / Debian 13 x upgrade baselines 2.0.1 / 2.1.0; every container scenario suite passed |
+| Current dependency audit | Complete 22 expected / 22 reported / 22 audited, zero findings, inventory/scanner/policy exits 0/0/0 |
+| Historical compatibility audit | Complete 23/23/23, 23 raw records / 15 package-advisory pairs / 4 historical packages, exits 0/1/0 under the unchanged informational-findings policy |
+| Native CodeQL | Analysis/upload/processing complete; 1 SARIF report / 1 run / 0 findings / 0 errors |
+| Native monitoring | promtool 3.16.0 validated 19 rules and passed alert and dashboard-expression fixtures |
+| Package | Two identical archive/checksum/provenance sets per run, checksum validation and artifact upload passed |
+
+Both dependency reports have no missing/skipped/unexpected packages, version
+mismatches or diagnostic problems. Historical compatibility findings remain
+visible; that fixture is not a production dependency recommendation or an audit
+of distribution backports. Installer checks use mocked systemd inside disposable
+containers and do not establish real boot, server or provider behavior.
+
+The implementation tree is `8127d8fe791d593e9252ea8f597a1af51727f97a`.
+PR package provenance identifies preview
+`fc13bc5d67cce1440839ce4847cac009d42191cf` with that same tree; push provenance
+identifies the implementation commit above. Both runs produced the same
+**599890-byte** `cgp-certificate-manager-v2.2.0.dev13.tar.gz`, SHA-256
+`db19f14ae00befbdddca66248a0ebf3935a05f94634c11a88e2faf22231dbce3`.
+This is an unsigned development CI artifact, not a release or an activated
+update. No real credentials, providers, servers or signing keys were used.
+
+This documentation-only follow-up records observed implementation evidence.
+Inspect its own current-head CI on resume; earlier results do not validate a
+later revision. The draft PR also records the final handoff's own CI result.
+Stable main remains 2.1.0 at `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f`.
+
+### Continuation after checkpoint 16
+
+1. Inspect actual HEAD/worktree, draft PR #2 and all eleven current-head CI
+   jobs. Preserve unfinished work and distinguish implementation evidence above
+   from any later revision. Keep both strict full coverage gates and add tests
+   with new behavior; do not weaken checks or exclude hard paths.
+2. The next independent scope is **RFC2136**: define credentials, explicit zone
+   identity, supported routes and its own ownership/recovery evidence before
+   enabling the backend. Do not assume Cloudflare record IDs/comments apply.
+   Implement only capabilities that can uphold the documented contract, with
+   unit/process and uncertain-mutation recovery tests alongside code.
+3. Update this handoff, ROADMAP.md and the draft PR in each substantive
+   checkpoint, recording observed tests and exact revision CI.
 4. All real VM/server/provider/recipient/broker/signing acceptance remains
    deferred. Do not select production keys, merge, tag, release, deploy or run
    real provider mutations. Automatic CGP bootstrap stays blocked on its separate
