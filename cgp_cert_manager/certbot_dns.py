@@ -1,4 +1,4 @@
-"""Certbot authenticator for supervised, adaptive Cloudflare DNS challenges."""
+"""Certbot authenticator for supervised, adaptive provider-backed DNS challenges."""
 
 from acme import challenges
 from certbot import errors, interfaces
@@ -10,7 +10,7 @@ from . import certbot_runner, core, dnsauth, dnschecks, dnsconfig
 class Authenticator(common.Plugin, interfaces.Authenticator):
     """Use Certbot's batch authenticator boundary to stop before ACME answer."""
 
-    description = "Managed Cloudflare DNS challenges with adaptive propagation checks"
+    description = "Managed DNS challenges with adaptive propagation checks"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

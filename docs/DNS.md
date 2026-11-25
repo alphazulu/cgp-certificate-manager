@@ -1,6 +1,6 @@
 # DNS preflight and adaptive DNS-01
 
-This describes the unreleased `2.2.0.dev5` development checkpoint. Stable
+This describes the DNS foundation and unreleased `2.2.0.dev13` provider interface. Stable
 production remains `2.1.0`. The DNS checks do not enable CGP bootstrap writes
 or remove any certificate transaction/readiness gate.
 
@@ -36,6 +36,14 @@ described below. Both commands have global scope and reject `--domain`.
 
 ## Configuration and compatibility
 
+Cloudflare is the only enabled provider. The optional top-level selector
+`"dns_provider": "cloudflare"` has the same meaning as omitting the field.
+Unknown or malformed selectors refuse provider operations before credential
+reads or API calls. Selection does not load arbitrary modules. Existing
+credential fields and account order are unchanged; no configuration migration
+is required. See the [provider contract](DNS_PROVIDERS.md) for capabilities,
+legacy compatibility and the boundary for future backends.
+
 Existing configurations keep their fixed delay and existing authenticator:
 one credentials file uses `dns-cloudflare`; multiple credentials files retain
 the manual hooks. The absence of `dns_propagation` means `fixed`. The wizard's
@@ -61,7 +69,8 @@ numeric settings require integers, not booleans or strings. Fixed delay is
 the timeout. `propagation_seconds` retains its fixed-mode meaning; it does not
 become an adaptive timeout or an additional sleep. Validation is shared by
 issuance, diagnostics, auth hooks, wizard Save and installer preflight.
-Cleanup remains available when new DNS settings are invalid.
+Cleanup remains available when propagation settings are invalid; it still
+requires the configured provider and credential paths to match its evidence.
 
 Fixed mode retains the existing explicit `dns_preflight: false` opt-out.
 Adaptive mode requires preflight and rejects that combination before issuing.
@@ -185,10 +194,20 @@ vantage point. No production DNS or ACME queries are part of the unit suite.
 ## Ownership, recovery and process lifetime
 
 Adaptive mode stores private `STATE/dns-challenges/*.json` receipts with the
-selected credentials/zone binding, server identity, exact TXT name/value and
+selected provider/credentials/zone binding, server identity, exact TXT name/value and
 a random ownership comment. Values stay in the private receipt, not reports
 or command arguments. Files are 0600, directories 0700, with the shared
 ownership/link/path checks and atomic file/directory fsync rules.
+
+New receipts use schema 2 with `"provider": "cloudflare"`. Schema 1 always
+means Cloudflare, independently of later settings; reading or cleaning it
+does not rewrite its schema. Every receipt is validated before any record is
+deleted. A provider mismatch refuses the complete cleanup operation. The
+credential binding is the saved absolute path within the configured active
+accounts, not a hash of token bytes or a frozen remote account identity.
+Rotating a token at the same path remains supported; remote zone access and
+record ownership must still pass the existing checks. Public status retains
+only `id`, `name`, `phase`, `owned` and `zone`, without reading token contents.
 
 Intent is durable **before POST**. The returned record ID is durable before
 proceeding. A pre-existing identical TXT is borrowed and never deleted. A lost

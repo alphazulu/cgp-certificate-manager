@@ -101,7 +101,7 @@ class CertbotDNSTests(unittest.TestCase):
         add = Mock()
         self.auth.add_parser_arguments(add)
         add.assert_not_called()
-        self.assertIn("Cloudflare", self.auth.more_info())
+        self.assertIn("DNS", self.auth.more_info())
         self.assertEqual(self.auth.get_chall_pref("example.com"), [challenges.DNS01])
         self.auth.prepare()
         self.cf.assert_not_called()

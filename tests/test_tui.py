@@ -73,6 +73,28 @@ class TUITests(unittest.TestCase):
             with self.subTest(action=action), patch.object(core,'load',return_value=tui.default_config()), patch.object(tui,'main_menu',side_effect=[action]), patch.object(tui,'save_config') as save:
                 self.assertEqual(tui.edit(),tui.CANCELLED)
                 save.assert_not_called()
+
+    def test_unsupported_provider_refuses_before_wizard_or_temporary_credential_staging(self):
+        for value in ('PRIVATE_PROVIDER', None, True, {'name': 'cloudflare'}):
+            cfg = dict(tui.default_config(), dns_provider=value)
+            with self.subTest(provider=value), patch.object(core, 'load', return_value=cfg), \
+                    patch.object(tui.tempfile, 'TemporaryDirectory') as temporary, \
+                    patch.object(tui, 'main_menu') as menu, patch.object(tui, 'write_token') as token, \
+                    patch.object(core, 'zones') as zones, patch.object(tui, 'save_config') as save:
+                with self.assertRaises(core.Error) as raised:
+                    tui.edit()
+                self.assertNotIn('PRIVATE_PROVIDER', str(raised.exception))
+                for operation in (temporary, menu, token, zones, save):
+                    operation.assert_not_called()
+
+    def test_provider_guard_does_not_prevent_editing_invalid_propagation_settings(self):
+        cfg = dict(tui.default_config(), dns_provider='cloudflare', dns_propagation={'mode': 'invalid'})
+        with patch.object(core, 'load', return_value=cfg), patch.object(tui, 'main_menu', return_value='9'), \
+                patch.object(tui, 'save_config') as save:
+            self.assertEqual(tui.edit(), tui.CANCELLED)
+        save.assert_not_called()
+        self.assertEqual(cfg['dns_provider'], 'cloudflare')
+        self.assertEqual(cfg['dns_propagation'], {'mode': 'invalid'})
     def test_dirty_exit_declined_then_confirmed(self):
         with patch.object(core,'load',return_value=tui.default_config()), patch.object(tui,'main_menu',side_effect=['11','9','9']), patch.object(tui,'dialog',return_value='ru'), patch.object(tui,'yes',side_effect=[False,True]), patch.object(tui,'save_config') as save:
             self.assertEqual(tui.edit(),tui.CANCELLED)

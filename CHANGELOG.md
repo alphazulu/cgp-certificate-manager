@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.0.dev13 — unreleased
+
+- Add a static DNS provider interface and integrated Cloudflare adapter with explicit discovery, fixed-native, fixed-hook and owned-TXT capabilities. Route discovery, Certbot arguments/hooks, adaptive lifecycle and installer credential checks through it without adding dependencies or enabling another backend.
+- Preserve implicit Cloudflare selection, configured account precedence, native Certbot arguments, fixed delay, fixed-hook cleanup compatibility and existing public diagnostic/status fields. Reject unsupported selectors and mismatched provider bindings before credential use or remote mutation.
+- Write adaptive receipt schema 2 with an explicit provider. Keep schema 1 permanently Cloudflare-only and readable without migration. Validate the complete ledger before cleanup; retain exact ownership, uncertainty, borrowed-record and complete-list absence rules. Preserve token rotation at the same configured credential path without claiming a credential-content or remote-account snapshot.
+- Add contract, integration, configuration, installer, UI, legacy-receipt and fresh-process tests alongside the implementation. Keep both complete 100% coverage gates and all native CI jobs; observed results and the next checkpoint are recorded in DEVELOPMENT.md and ROADMAP.md.
+- Document the provider extension boundary and separate RFC2136 ownership/recovery work. All real VM/server/provider and production acceptance remains deferred; no merge, release or live DNS operation is activated.
+
 ## 2.2.0.dev12 — unreleased
 
 - Add explicit `cgp-update --review`, `--apply --confirm-update TOKEN` and `--recover`. Bind approval to the signed package, full installed preimages, trusted executor, preserved configuration, machine and prior receipt. Recheck freshness, trust, staged bytes and installation state before replacement; old preparation IDs remain informational.

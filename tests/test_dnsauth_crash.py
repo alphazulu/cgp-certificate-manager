@@ -146,6 +146,22 @@ class DNSAuthCrashTests(unittest.TestCase):
         self.assertEqual([call["method"] for call in calls], ["GET", "POST", "GET", "GET", "DELETE"])
         self.assertEqual(calls[-2]["endpoint"], calls[-1]["endpoint"])
 
+    def test_legacy_cloudflare_intent_recovers_in_a_fresh_process_without_rebinding(self):
+        self.run_child("create", "post_persisted", expected=73)
+        path = next((self.root / "state" / "dns-challenges").glob("*.json"))
+        receipt = self.only_receipt()
+        self.assertEqual(receipt.pop("provider"), "cloudflare")
+        receipt["schema"] = 1
+        storage.atomic_json(path, receipt)
+        before = path.read_bytes()
+        self.assertEqual(json.loads(self.run_child("status").stdout)[0]["phase"], "intent")
+        self.assertEqual(path.read_bytes(), before)
+        self.run_child("cleanup")
+        self.assert_foreign_preserved()
+        self.assertEqual(self.receipts(), [])
+        self.assertEqual(sum(call["method"] == "POST" for call in self.remote()["calls"]), 1)
+        self.assertEqual(sum(call["method"] == "DELETE" for call in self.remote()["calls"]), 1)
+
     def test_death_after_delete_retries_confirmed_absence_without_second_delete(self):
         self.run_child("create")
         self.run_child("cleanup", "delete_persisted", expected=73)

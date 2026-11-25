@@ -1,8 +1,9 @@
 """DNS configuration validation is deterministic and has no external effects."""
 import copy
 import unittest
+from unittest.mock import Mock, patch
 
-from cgp_cert_manager import core, dnsconfig, tui
+from cgp_cert_manager import core, dnsconfig, dnsproviders, tui
 
 
 class DNSConfigTests(unittest.TestCase):
@@ -28,6 +29,43 @@ class DNSConfigTests(unittest.TestCase):
             self.assertEqual(options['timeout_seconds'], timeout)
             self.assertEqual(options['poll_interval_seconds'], poll)
             self.assertEqual(cfg, before)
+
+    def test_explicit_cloudflare_preserves_legacy_options_without_credentials_or_io(self):
+        for mode in ('fixed', 'adaptive'):
+            legacy = {'dns_propagation': {'mode': mode}, 'unrelated': {'retain': True}}
+            explicit = {**copy.deepcopy(legacy), 'dns_provider': 'cloudflare'}
+            before = copy.deepcopy(explicit)
+            with patch.object(core, 'token') as token, patch.object(core, 'cf') as request:
+                self.assertEqual(dnsconfig.validate(explicit), dnsconfig.validate(legacy))
+            token.assert_not_called()
+            request.assert_not_called()
+            self.assertEqual(explicit, before)
+
+    def test_unknown_or_malformed_provider_refuses_without_echoing_or_reading_credentials(self):
+        values = ('PRIVATE_PROVIDER', '', 'Cloudflare', ' cloudflare', 'cloudflare ',
+                  None, True, False, 0, 1, [], {}, {'name': 'cloudflare'})
+        with patch.object(core, 'token') as token, patch.object(core, 'cf') as request:
+            for value in values:
+                cfg = {'dns_provider': value, 'cloudflare_credentials': '/PRIVATE/credentials.ini'}
+                before = copy.deepcopy(cfg)
+                with self.subTest(value=value), self.assertRaises(dnsconfig.DNSConfigError) as raised:
+                    dnsconfig.validate(cfg)
+                self.assertEqual(str(raised.exception), 'Unsupported DNS provider')
+                self.assertIsInstance(raised.exception, ValueError)
+                self.assertEqual(cfg, before)
+        token.assert_not_called()
+        request.assert_not_called()
+
+    def test_adaptive_requires_ownership_support_but_fixed_routing_is_checked_at_issuance(self):
+        provider = Mock()
+        provider.require.side_effect = dnsproviders.ProviderError('PRIVATE capability detail')
+        with patch.object(dnsproviders, 'get_provider', return_value=provider):
+            self.assertEqual(dnsconfig.validate({})['mode'], 'fixed')
+            provider.require.assert_not_called()
+            with self.assertRaises(dnsconfig.DNSConfigError) as raised:
+                dnsconfig.validate({'dns_propagation': {'mode': 'adaptive'}})
+        provider.require.assert_called_once_with('owned_txt')
+        self.assertEqual(str(raised.exception), 'DNS provider lacks required capability')
 
     def test_shapes_and_unknown_keys_are_rejected_without_echoing_values(self):
         cases = [None, [], 'PRIVATE_VALUE', {'dns_propagation': None},
@@ -63,7 +101,7 @@ class DNSConfigTests(unittest.TestCase):
 
     def test_wizard_validates_json_only_dns_options_and_preserves_them(self):
         cfg = tui.default_config()
-        cfg.update(email='admin@example.com', dns_propagation={'mode': 'adaptive'})
+        cfg.update(email='admin@example.com', dns_propagation={'mode': 'adaptive'}, dns_provider='cloudflare')
         cfg['communigate'].update(username='admin', password='dummy')
         before = copy.deepcopy(cfg)
         tui.validate(cfg)

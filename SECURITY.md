@@ -126,6 +126,14 @@ and the stateless probe is not serialized against application replacement.
   resolver assertion, not local DNSSEC validation. A successful observation does
   not prove global propagation. Provider read-then-delete is not an atomic
   compare-and-swap. See [DNS trust, ownership and cleanup](docs/DNS.md).
+- **DNS provider binding:** only the static Cloudflare adapter is enabled.
+  Missing selection and legacy receipt schema 1 always mean Cloudflare; new
+  schema 2 names the provider. Unknown selection or mismatched receipt/zone
+  binding refuses provider mutation. Credential paths, server identity and
+  exact remote ownership remain checked, but token contents are not frozen:
+  ordinary rotation at the same configured path is supported. Fixed hooks
+  keep their historical unowned lifecycle. The adapter does not turn them
+  into durable owned-record cleanup. See [provider contracts](docs/DNS_PROVIDERS.md).
 - **Interrupted operations:** the shared lock coordinates cooperating manager
   processes. Durable journals and receipts preserve unresolved effects; an
   unknown state is not permission to overwrite it or discard evidence.

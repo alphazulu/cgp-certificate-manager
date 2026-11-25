@@ -6,7 +6,7 @@ Automatic Let's Encrypt certificate management for CommuniGate Pro on Linux usin
 
 [Русская документация](README.ru.md)
 
-This branch develops **2.2.0.dev12**. The stable production release is **2.1.0**.
+This branch develops **2.2.0.dev13**. The stable production release is **2.1.0**.
 See [ROADMAP.md](ROADMAP.md) and [DEVELOPMENT.md](DEVELOPMENT.md) for completed work,
 test evidence and the next checkpoint. The development branch is not a release.
 Contributor commands and test boundaries are in [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -37,6 +37,12 @@ persistent execution guard support explicit recovery after interruption while
 preserving certificate/configuration state. Both timers remain stopped after
 apply or recovery. Real signing keys and update activation remain separate
 administrator decisions, and real VM/server acceptance is deferred.
+
+The [DNS provider interface](docs/DNS_PROVIDERS.md) now centralizes discovery,
+authentication and owned TXT cleanup. Cloudflare is the only enabled provider;
+existing configurations keep their meaning without migration. New adaptive
+receipts explicitly name Cloudflare, and legacy receipts remain readable.
+RFC2136 and other backends are separate roadmap work.
 
 ## Why this project exists
 

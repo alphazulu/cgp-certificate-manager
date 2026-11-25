@@ -2,7 +2,98 @@
 
 Updated 2026-11-25 (Asia/Vladivostok). Branch feature/transactional-deployment; stable base v2.1.0 (fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f).
 
-## Current handoff — checkpoint 15 (implementation and native CI passed)
+## Current handoff — checkpoint 16 (implementation and local gates passed)
+
+- Development version **`2.2.0.dev13`**, feature branch and draft PR #2. Starting
+  clean HEAD `9ba0915bc02c33b9fe5b0982457d982165bab303`, tree
+  `d2db699847d248af8ba806fac7c06968e97f6356`. Stable main remains
+  `fffbeda39a6adbb1c7ab8e924f4ec2c0089a2a5f` (`2.1.0`). Starting-head PR CI
+  45537062889 and push CI 45537056001 passed all eleven jobs; those runs belong
+  to checkpoint 15 and are not evidence for this implementation.
+- Implemented the 2.5 provider interface and integrated Cloudflare adapter.
+  **Only Cloudflare is enabled**; missing `dns_provider` retains its legacy
+  meaning. Selection is static and pure. Unknown or malformed selectors refuse
+  provider routes before credential access or API use. No dependencies added.
+- Routed zone discovery, fixed native Certbot arguments, fixed manual hooks,
+  adaptive owned TXT operations and installer credential validation through
+  explicit `zone_discovery`, `fixed_native`, `fixed_hooks`, `owned_txt`
+  capabilities. Required capabilities and source-zone provider bindings are
+  checked before credential reads, preflight or process creation.
+- Kept discovery map and pagination behavior, first-account precedence, fixed
+  delays, command structure, diagnostic/status fields, exact TXT matching,
+  borrowed records, uncertainty handling and complete-list absence proof.
+  Cloudflare wire/ID/ownership/pagination logic lives in `dnsproviders.py`;
+  `dnsauth` retains the durable generic receipt state machine. HTTP error
+  streams close and fixed provider errors do not expose raw responses.
+- New adaptive schema-2 receipts explicitly name Cloudflare. Schema 1 always
+  means Cloudflare and is readable/cleanable without schema migration. The
+  complete ledger is validated before any remote deletion. Credential-path,
+  zone, CGP server identity, owner marker and record-ID checks remain intact.
+  Token bytes are not fingerprinted; rotation at the same configured path
+  remains supported. No inferred or frozen remote-account identity is claimed.
+- New fixed-hook metadata names Cloudflare; legacy three-field metadata still
+  works. Review caught and fixed a compatibility edge: fixed cleanup continues
+  accepting a retained `cloudflare_credentials` fallback after migration to
+  `cloudflare_accounts`, while discovery/new authentication/adaptive cleanup
+  retain active-account precedence. Regression tests cover both metadata forms.
+- Read-only receipt status retains exactly `id`, `name`, `phase`, `owned`,
+  `zone`, with no credential-content reads or receipt writes. Independent
+  review checked mixed schema-1/schema-2 monitoring after credential removal;
+  unsupported selection produces an unknown count/source error without mutation.
+- Added **51 tests** alongside code, including adapter contracts, route and
+  capability refusals, configuration/UI/installer paths, provider/receipt
+  mismatch, legacy recovery and a fresh-process legacy intent case. Fixed a
+  test-only process umask leak with scoped mocking; production hardening is
+  unchanged. The seven affected tests and both complete suites pass afterward.
+- Updated English/Russian README, example configuration, changelog, DNS and
+  security documentation. [DNS_PROVIDERS.md](docs/DNS_PROVIDERS.md) defines the
+  contract and future backend boundary. Neither the fixed hooks nor schema 2
+  gain a remote compare-and-swap or a credential-content snapshot.
+
+### Observed local validation — checkpoint 16
+
+Both complete dependency profiles independently pass **1478 tests / 7900
+statements / 2568 branches / 100%**. Missing statements, missing/partial branches
+and excluded lines are all zero; each `--fail-under=100` gate passes without
+relaxation. Compatibility took **50.089 s**, current **49.186 s**, on Python
+**3.12.14**. The adapter itself covers **167 statements / 62 branches / 100%**.
+
+The complete profile commands use the independently provisioned environments:
+
+```bash
+COVERAGE_FILE=.coverage.cp16.compat /workspace/scratch/cf31ba780290/cgp-compat-env/bin/python -m coverage run --branch --source=cgp_cert_manager,repo_tools -m unittest discover -s tests -v
+COVERAGE_FILE=.coverage.cp16.compat /workspace/scratch/cf31ba780290/cgp-compat-env/bin/python -m coverage report -m --fail-under=100
+COVERAGE_FILE=.coverage.cp16.current /workspace/scratch/cf31ba780290/cgp-current-env/bin/python -m coverage run --branch --source=cgp_cert_manager,repo_tools -m unittest discover -s tests -v
+COVERAGE_FILE=.coverage.cp16.current /workspace/scratch/cf31ba780290/cgp-current-env/bin/python -m coverage report -m --fail-under=100
+```
+
+Evidence logs and independent coverage JSON reports are in
+`/workspace/scratch/9e49bdf23b66/cp16-full-{compat,current}.log` and
+`/workspace/scratch/9e49bdf23b66/cp16-coverage-{compat,current}.json`; these are
+local transient evidence, not required repository inputs. Python source
+compilation, three shell entrypoints, all **21 workflow shell blocks**, Markdown
+relative links and shell examples, version/plugin metadata, the explicit-provider
+example and `git diff --check` passed. Native CI is still pending for this
+implementation and must be recorded only after observation.
+
+### Resume checkpoint 16
+
+1. Inspect actual HEAD/tree, draft PR #2 and current-revision CI; preserve any
+   worktree changes. Publish this tested implementation and inspect all eleven
+   native jobs, including both full coverage profiles, four installer cases,
+   both dependency audits, CodeQL, monitoring assets and reproducible packaging.
+2. Record exact implementation commit, run IDs and observed native evidence in
+   this file, ROADMAP.md and draft PR #2. Publish the handoff follow-up and inspect
+   its own CI before declaring the checkpoint complete.
+3. Next independent scope is RFC2136: define credentials, explicit zone identity,
+   supported routes and its own ownership/recovery evidence before enabling it.
+   Add meaningful unit/process tests with every path and preserve both 100% gates.
+4. All real VM/server/provider/recipient/broker/signing acceptance remains
+   deferred. Do not select production keys, merge, tag, release, deploy or run
+   real provider mutations. Automatic CGP bootstrap stays blocked on its separate
+   external restoration/deletion evidence.
+
+## Previous handoff — checkpoint 15 (implementation and native CI passed)
 
 - Development version **`2.2.0.dev12`** in draft PR #2, branch
   `feature/transactional-deployment`. This resumes and finishes the prior

@@ -1,24 +1,33 @@
 import argparse, shutil, sys, smtplib, socket
 from email.message import EmailMessage
 from .core import *
-from . import __version__, bootstrap, deployment, dnsconfig, storage, update_gate
+from . import __version__, bootstrap, deployment, dnsconfig, dnsproviders, storage, update_gate
 
 def hook(cfg,cleanup):
     update_gate.require_idle()
+    provider=dnsproviders.get_provider(cfg,transport=cf)
+    provider.require('fixed_hooks')
     if cleanup:
-        try: r=json.loads(os.environ['CERTBOT_AUTH_OUTPUT']); path=r['credentials']
-        except (KeyError,ValueError): raise Error('Missing cleanup metadata')
-        allowed={a['credentials'] for a in cfg.get('cloudflare_accounts',[])}|{cfg.get('cloudflare_credentials')}
-        if path not in allowed or not all(re.fullmatch(r'[a-f0-9]{32}',r[k]) for k in ('zone','record')): raise Error('Invalid cleanup metadata')
-        cf(path,'zones/'+r['zone']+'/dns_records/'+r['record'],method='DELETE'); return
+        try: r=json.loads(os.environ['CERTBOT_AUTH_OUTPUT'])
+        except (KeyError,ValueError): raise Error('Missing cleanup metadata') from None
+        legacy={'credentials','zone','record'}
+        if (not isinstance(r,dict) or set(r) not in (legacy,legacy|{'provider'})
+                or r.get('provider','cloudflare')!=provider.name
+                or not isinstance(r['credentials'],str)
+                or r['credentials'] not in provider.fixed_cleanup_credentials(cfg)
+                or not all(isinstance(r[k],str) and re.fullmatch(r'[a-f0-9]{32}',r[k]) for k in ('zone','record'))):
+            raise Error('Invalid cleanup metadata')
+        provider.fixed_delete(r['credentials'],r['zone'],r['record']); return
     options=dnsconfig.validate(cfg)
     name=os.environ.get('CERTBOT_IDENTIFIER') or os.environ['CERTBOT_DOMAIN']; n,e=dns_name(name)
     if not n: raise Error('Invalid challenge domain')
     z=zones(cfg); zone=zone_for(n,z)
     if not zone: raise Error('No Cloudflare zone')
     a=z[zone]; record='_acme-challenge.'+n.removeprefix('*.'); value=os.environ['CERTBOT_VALIDATION']
-    r=cf(a['credentials'],'zones/'+a['id']+'/dns_records',method='POST',data={'type':'TXT','name':record,'content':value,'ttl':120})['result']
-    print(json.dumps({'credentials':a['credentials'],'zone':a['id'],'record':r['id']}),flush=True)
+    if a.get('provider','cloudflare')!=provider.name or a['credentials'] not in provider.credentials(cfg):
+        raise Error('Invalid DNS challenge zone')
+    record_id=provider.fixed_create(a['credentials'],a['id'],record,value)
+    print(json.dumps({'provider':provider.name,'credentials':a['credentials'],'zone':a['id'],'record':record_id}),flush=True)
     time.sleep(options['propagation_seconds'])
 
 def notify(cfg,state,name,message):
@@ -147,9 +156,11 @@ def main():
         return setup()
     # Certbot hooks are children of the process holding this lock.
     if a.hook_auth or a.hook_cleanup:
+        cfg=migrate(load(CONFIG))
+        dnsproviders.provider_name(cfg)
         storage.ensure_private_directory(STATE)
         storage.validate_tree(STATE)
-        hook(migrate(load(CONFIG)),a.hook_cleanup); return 0
+        hook(cfg,a.hook_cleanup); return 0
     with storage.operation_lock(STATE) as lock:
         update_gate.require_idle()
         storage.validate_tree(STATE)

@@ -1,5 +1,5 @@
 """Pure validation shared by DNS diagnostics, issuance, hooks and setup."""
-from . import core
+from . import core, dnsproviders
 
 
 class DNSConfigError(core.Error, ValueError):
@@ -10,6 +10,10 @@ def validate(cfg):
     """Return normalized options without changing an existing configuration."""
     if not isinstance(cfg, dict):
         raise DNSConfigError('DNS configuration must be an object')
+    try:
+        provider = dnsproviders.get_provider(cfg)
+    except dnsproviders.ProviderError:
+        raise DNSConfigError('Unsupported DNS provider') from None
     propagation = cfg.get('dns_propagation', {})
     if not isinstance(propagation, dict) or set(propagation) - {'mode', 'timeout_seconds', 'poll_interval_seconds'}:
         raise DNSConfigError('Invalid DNS propagation options')
@@ -31,4 +35,9 @@ def validate(cfg):
         raise DNSConfigError('DNS polling interval must be less than timeout')
     if mode == 'adaptive' and not result['preflight']:
         raise DNSConfigError('Adaptive DNS propagation requires preflight')
+    if mode == 'adaptive':
+        try:
+            provider.require('owned_txt')
+        except dnsproviders.ProviderError:
+            raise DNSConfigError('DNS provider lacks required capability') from None
     return result

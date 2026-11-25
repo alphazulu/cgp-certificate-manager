@@ -812,7 +812,7 @@ class DNSAuthTests(unittest.TestCase):
     def test_invalid_receipt_schema_identity_value_and_phase_fail_closed(self):
         self.create()
         path, original = self.only_receipt()
-        changes = ({"schema": True}, {"schema": 2}, {"extra": "PRIVATE_RESPONSE"},
+        changes = ({"schema": True}, {"schema": 3}, {"extra": "PRIVATE_RESPONSE"},
                    {"attempt": "bad"}, {"owner": "other"}, {"credentials": None},
                    {"credentials": "/not-configured"}, {"zone": "bad"},
                    {"name": None}, {"name": "example.com"},

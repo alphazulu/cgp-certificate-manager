@@ -226,6 +226,34 @@ class InstallerGuardTests(unittest.TestCase):
         token.assert_not_called()
         self.payload.assert_not_called()
 
+    def test_unsupported_provider_refuses_before_dependency_checks_credentials_or_payload(self):
+        for value in ('PRIVATE_PROVIDER', None, True, {'name': 'cloudflare'}):
+            self.cfg['dns_provider'] = value
+            core.atomic(self.config, self.cfg)
+            before = self.config.read_bytes()
+            with self.subTest(provider=value), patch.object(core, 'token') as token, \
+                    patch.object(core, 'cf') as request, \
+                    patch.object(installer, 'runtime_dependencies') as dependencies:
+                self.assertEqual(installer.main([]), 1)
+                token.assert_not_called()
+                request.assert_not_called()
+                dependencies.assert_not_called()
+            self.assertEqual(self.config.read_bytes(), before)
+        self.assertIn('Unsupported DNS provider', self.errors.getvalue())
+        self.assertNotIn('PRIVATE_PROVIDER', self.errors.getvalue())
+        self.payload.assert_not_called()
+
+    def test_explicit_cloudflare_uses_adapter_credential_validation_without_network(self):
+        self.cfg['dns_provider'] = 'cloudflare'
+        core.atomic(self.config, self.cfg)
+        before = self.config.read_bytes()
+        with patch.object(core, 'token', wraps=core.token) as token, patch.object(core, 'cf') as request:
+            installer.preflight()
+        token.assert_called_once_with(str(self.token))
+        request.assert_not_called()
+        self.assertEqual(self.config.read_bytes(), before)
+        self.payload.assert_not_called()
+
     def test_unsafe_config_is_not_repaired(self):
         before = self.config.read_bytes()
         self.config.chmod(0o644)

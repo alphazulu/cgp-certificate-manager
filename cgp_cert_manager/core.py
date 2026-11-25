@@ -119,18 +119,8 @@ def cf(path, endpoint, method='GET', params=None, data=None):
     return p
 
 def zones(cfg):
-    out={}
-    accounts=cfg.get('cloudflare_accounts') or [{'credentials':cfg['cloudflare_credentials']}]
-    for a in accounts:
-        path=a['credentials']; page=1
-        while True:
-            p=cf(path,'zones',params={'status':'active','page':page,'per_page':50})
-            for z in p['result']:
-                n,e=dns_name(z['name'])
-                if n: out.setdefault(n,{'id':z['id'],'credentials':path,'ns':z.get('name_servers',[])})
-            if page>=p.get('result_info',{}).get('total_pages',1): break
-            page+=1
-    return out
+    from . import dnsproviders
+    return dnsproviders.get_provider(cfg,transport=cf).zones(cfg)
 
 def zone_for(name,z):
     n=name.removeprefix('*.'); return max((x for x in z if n==x or n.endswith('.'+x)),key=len,default=None)
@@ -138,6 +128,8 @@ def zone_for(name,z):
 def covered(n,w): return w.startswith('*.') and not n.startswith('*.') and n.endswith(w[1:]) and n.count('.')==w.count('.')
 
 def discover(cfg,z):
+    from . import dnsproviders
+    dnsproviders.provider_name(cfg)
     overrides={d['cgp_domain']:d for d in cfg.get('domains',[])}
     out=[]
     for name in sorted(set(array(cli(cfg,'LISTDOMAINS')))):
@@ -263,9 +255,15 @@ def dns_preflight(d,z,cfg=None):
     dnschecks.require_ready(d,z,cfg)
 
 def issue(cfg,d,z,args):
-    from . import dnsauth, dnsconfig, storage
+    from . import dnsauth, dnsconfig, dnsproviders, storage
     options=dnsconfig.validate(cfg)
-    paths={z[zone_for(n,z)]['credentials'] for n in d['names']}
+    provider=dnsproviders.get_provider(cfg)
+    sources=[z[zone_for(n,z)] for n in d['names']]
+    if any(source.get('provider','cloudflare')!=provider.name for source in sources):
+        raise Error('DNS zone provider mismatch')
+    paths={source['credentials'] for source in sources}
+    provider.require('owned_txt' if options['mode']=='adaptive' else
+                     'fixed_native' if len(paths)==1 else 'fixed_hooks')
     for path in paths: storage.check_private_file(path)
     if options['mode']=='fixed': dnsauth.assert_clear(cfg)
     local=local_info(d); changed=local is not None and set(local['names'])!=set(d['names'])
@@ -274,7 +272,7 @@ def issue(cfg,d,z,args):
     if options['mode']=='adaptive':
         cmd+=['--authenticator','cgp-dns']
     elif len(paths)==1:
-        cmd+=['--dns-cloudflare','--dns-cloudflare-credentials',next(iter(paths)),'--dns-cloudflare-propagation-seconds',str(options['propagation_seconds'])]
+        cmd+=provider.native_arguments(next(iter(paths)),options['propagation_seconds'])
     else:
         cmd+=['--manual','--preferred-challenges','dns','--manual-auth-hook','/usr/local/sbin/cgp-letsencrypt --hook-auth','--manual-cleanup-hook','/usr/local/sbin/cgp-letsencrypt --hook-cleanup']
     cmd+=['--force-renewal' if changed or args.force_renew else '--keep-until-expiring']

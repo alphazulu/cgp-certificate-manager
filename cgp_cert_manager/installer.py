@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from . import core, dnsconfig, monitor_config, storage, update_gate
+from . import core, dnsconfig, dnsproviders, monitor_config, storage, update_gate
 from .cli import migrate
 from .monitor_config import CONFIG as MONITOR_CONFIG, STATE as MONITOR_STATE
 from .schedule import render
@@ -36,9 +36,7 @@ def preflight():
     cfg = migrate(core.load(core.CONFIG))
     runtime_dependencies(dnsconfig.validate(cfg))
     render(cfg.get("schedule", {}))
-    accounts = cfg.get("cloudflare_accounts") or [{"credentials": cfg["cloudflare_credentials"]}]
-    for account in accounts:
-        core.token(account["credentials"])
+    dnsproviders.get_provider(cfg).validate_credentials(cfg)
 
 
 def check_lock(fd, monitor_fd):

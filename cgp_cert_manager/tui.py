@@ -13,7 +13,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import core, dnsconfig, storage, update_gate
+from . import core, dnsconfig, dnsproviders, storage, update_gate
 from .localization import translate
 
 LANGUAGE='en'
@@ -245,6 +245,9 @@ def confirm_exit(dirty):
 def edit():
     from .cli import migrate
     cfg = migrate(core.load(core.CONFIG, default_config()))
+    # Only the configured backend may validate or stage its own credentials.
+    # Keep propagation editing available even when those settings are invalid.
+    dnsproviders.provider_name(cfg)
     global LANGUAGE
     LANGUAGE=cfg.get('tui_language','en')
     cfg.setdefault('auto_enable_new_domains', True)

@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: cgp-certbot-dns
-Version: 2.2.0.dev12
+Version: 2.2.0.dev13
 Summary: Supervised adaptive Cloudflare DNS authenticator for CGP Certificate Manager
 Requires-Python: >=3.9
 Requires-Dist: certbot>=2.9

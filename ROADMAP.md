@@ -26,7 +26,22 @@
 - [x] Implement operator-assisted resolution: exact-preview confirmation, private authorization/completion evidence, incomplete-decision guard and explicit retry without claiming TLS success. See docs/RESOLUTION.md and checkpoint 5 evidence below.
 - [ ] Final review, 100% measured coverage, upgrade tests, docs, RC, production validation, approval.
 
-Checkpoint 15 (`2.2.0.dev12`) implements explicitly approved application
+Checkpoint 16 (`2.2.0.dev13`) implements the DNS provider interface with an
+integrated Cloudflare adapter and explicit capabilities. Discovery, fixed
+hooks/arguments, adaptive owned TXT lifecycle and installer credentials share
+the adapter. Only Cloudflare is enabled; existing settings retain their meaning.
+New schema-2 receipts bind their provider; schema 1 remains Cloudflare-only with
+no automatic rewrite. Credential-path and token-rotation semantics, fixed-hook
+legacy cleanup and public status fields remain compatible. Review fixed retained
+fallback credentials after multi-account migration and isolated an entrypoint
+test's process umask. Both complete local profiles pass **1478 tests / 7900
+statements / 2568 branches / 100%**, with **51 additional tests** and zero
+missing/partial/excluded paths. Static and documentation checks pass; current
+implementation native CI is pending. See [provider contract](docs/DNS_PROVIDERS.md)
+and DEVELOPMENT.md. Next is RFC2136 with its own ownership/recovery design and
+isolated tests. All real provider, VM/server and signing acceptance stays deferred.
+
+Previous Checkpoint 15 (`2.2.0.dev12`) implements explicitly approved application
 replacement and independent recovery. The trusted runtime lives outside the
 replaceable application; a persistent pending marker guards supported operations
 before import and under their locks. Approval binds complete before/after file
@@ -266,7 +281,7 @@ passed tests, both installer baselines and package. Each installer job passed
 18 new unsafe-path refusal cases and preserved pending journals. This follow-up
 documentation commit records the observed result; inspect current-head checks
 when resuming. See DEVELOPMENT.md for exact next steps and remaining limits.
-Operator-assisted resolution was completed in checkpoint 5; checkpoint 15 is active above.
+Operator-assisted resolution was completed in checkpoint 5; checkpoint 16 is active above.
 This remains a development checkpoint, not a production release.
 
 ## 2.3 — Monitoring
@@ -286,7 +301,10 @@ This remains a development checkpoint, not a production release.
 - [ ] Perform deferred real VM/server update, interruption/recovery and trust-rotation acceptance before RC/production use.
 
 ## 2.5 — DNS providers
-Provider abstraction, Cloudflare compatibility, RFC2136, PowerDNS, Route53, acme-dns and manual workflow.
+- [x] Provider abstraction and integrated Cloudflare compatibility, with explicit capabilities, provider-bound receipts and isolated contract tests (checkpoint 16; both complete local 100% gates passed, native CI pending).
+- [ ] RFC2136 backend with its own ownership/recovery design and isolated tests.
+- [ ] PowerDNS, Route53, acme-dns and manual workflow, each with explicit capability and credential boundaries.
+- [ ] Real provider acceptance in the later separately scoped test session.
 
 ## 3.0 — Multi-server administration
 Separate server identities, least privilege, centralized visibility, independent transactions.

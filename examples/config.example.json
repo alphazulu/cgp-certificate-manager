@@ -1,6 +1,7 @@
 {
   "schema_version": 2,
   "email": "postmaster@example.com",
+  "dns_provider": "cloudflare",
   "cloudflare_credentials": "/etc/cgp-letsencrypt/cloudflare.ini",
   "propagation_seconds": 60,
   "dns_preflight": true,
